@@ -1,0 +1,65 @@
+name: Testes da API
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    # Credenciais precisam bater exatamente com o bloco <php> do phpunit.xml — ele sempre
+    # vence sobre variável de ambiente do shell durante "php artisan test" (testado: um
+    # DB_DATABASE exportado no shell é ignorado), então não adianta sobrescrever por aqui.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: vpceb33fm
+          POSTGRES_DB: pdv_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configurar PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: pdo_pgsql, pgsql, mbstring, bcmath, ctype, fileinfo
+          coverage: none
+
+      - name: Cache do Composer
+        uses: actions/cache@v4
+        with:
+          path: ~/.composer/cache/files
+          key: composer-${{ hashFiles('api/composer.lock') }}
+
+      - name: Instalar dependências
+        working-directory: api
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Gerar APP_KEY (.env mínimo pro artisan rodar fora do contexto de teste)
+        working-directory: api
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+
+      # Sem passo de migration manual de propósito: phpunit.xml já injeta APP_ENV=testing +
+      # DB_DATABASE=pdv_test antes do boot, e o trait RefreshDatabase (usado em todo teste de
+      # api/tests/Feature) migra o banco de teste sozinho no primeiro teste que rodar — é
+      # assim que já funciona localmente, nunca precisou de "php artisan migrate --env=testing"
+      # manual. Rodar isso aqui de novo (repetindo o comando manual) cairia no MESMO bug que
+      # zerou o pdv_dev localmente: sem .env.testing no checkout do CI (é gitignorado),
+      # "--env=testing" voltaria pro .env normal.
+      - name: Rodar testes
+        working-directory: api
+        run: php artisan test

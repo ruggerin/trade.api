@@ -1,0 +1,1449 @@
+{
+  "_type": "export",
+  "__export_format": 4,
+  "__export_date": "2026-08-31T20:35:00.000Z",
+  "__export_source": "pdv-app.docs:v1",
+  "resources": [
+    {
+      "_id": "wrk_pdv_api",
+      "_type": "workspace",
+      "parentId": null,
+      "name": "PDV API",
+      "description": "Coleção gerada a partir de docs/02-API-BACKEND.md — endpoints implementados até agora.",
+      "scope": "collection"
+    },
+    {
+      "_id": "env_pdv_base",
+      "_type": "environment",
+      "parentId": "wrk_pdv_api",
+      "name": "Base Environment",
+      "data": {
+        "base_url": "http://127.0.0.1:8000/api",
+        "token": "",
+        "marca_uuid": "",
+        "usuario_uuid": "",
+        "parametro_uuid": "",
+        "ponto_venda_uuid": "",
+        "visita_uuid": "",
+        "registro_uuid": "",
+        "produto_auditoria_uuid": "",
+        "perfil_uuid": "",
+        "departamento_uuid": "",
+        "secao_uuid": "",
+        "campanha_uuid": "",
+        "item_uuid": "",
+        "empresa_uuid": "",
+        "nivel_exibicao_uuid": ""
+      },
+      "dataPropertyOrder": {
+        "&": ["base_url", "token", "marca_uuid", "usuario_uuid", "parametro_uuid", "ponto_venda_uuid", "visita_uuid", "registro_uuid", "produto_auditoria_uuid", "perfil_uuid", "departamento_uuid", "secao_uuid", "campanha_uuid", "item_uuid", "empresa_uuid", "nivel_exibicao_uuid"]
+      },
+      "color": null,
+      "isPrivate": false,
+      "metaSortKey": 0
+    },
+    {
+      "_id": "fld_auth_empresa",
+      "_type": "request_group",
+      "parentId": "wrk_pdv_api",
+      "name": "Autenticação & Empresa",
+      "description": "",
+      "metaSortKey": -2000
+    },
+    {
+      "_id": "req_empresa_signup",
+      "_type": "request",
+      "parentId": "fld_auth_empresa",
+      "name": "Signup empresa (cria tenant + admin)",
+      "description": "Público — cria a empresa (plano GRATUITO) e o primeiro usuário ADMIN, já retorna token.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/empresas/signup",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"razao_social\": \"Distribuidora Teste LTDA\",\n  \"nome_fantasia\": \"Dist Teste\",\n  \"cnpj\": \"12345678000199\",\n  \"admin_nome\": \"Ana Admin\",\n  \"admin_email\": \"ana@disttest.com.br\",\n  \"admin_senha\": \"senha12345\"\n}"
+      },
+      "authentication": {},
+      "parameters": [],
+      "afterResponseScript": "if (insomnia.response) {\n  const body = insomnia.response.json();\n  if (body && body.token) {\n    insomnia.environment.set('token', body.token);\n    console.log('token salvo no environment');\n  }\n}",
+      "metaSortKey": -1000
+    },
+    {
+      "_id": "req_auth_login",
+      "_type": "request",
+      "parentId": "fld_auth_empresa",
+      "name": "Login",
+      "description": "Público — retorna token + usuário. O script After Response salva o token sozinho na variável {{ _.token }}. Campos dispositivo_* só são obrigatórios para user_type PROMOTOR (login do app mobile) — remova do body pra logar como ADMIN/GESTOR.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/auth/login",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"email\": \"paulo@exemplo.com.br\",\n  \"senha\": \"senha12345\",\n  \"dispositivo_identificador\": \"iphone-abc-123\",\n  \"dispositivo_nome\": \"iPhone 13 do Paulo\"\n}"
+      },
+      "authentication": {},
+      "parameters": [],
+      "afterResponseScript": "if (insomnia.response) {\n  const body = insomnia.response.json();\n  if (body && body.token) {\n    insomnia.environment.set('token', body.token);\n    console.log('token salvo no environment');\n  }\n}",
+      "metaSortKey": -900
+    },
+    {
+      "_id": "req_auth_me",
+      "_type": "request",
+      "parentId": "fld_auth_empresa",
+      "name": "Usuário autenticado (me)",
+      "description": "Retorna o usuário logado + empresa (null se SUPERADMIN) + dispositivo vinculado (só PROMOTOR, null senão).",
+      "method": "GET",
+      "url": "{{ _.base_url }}/auth/me",
+      "headers": [
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {},
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [],
+      "metaSortKey": -800
+    },
+    {
+      "_id": "req_empresa_show",
+      "_type": "request",
+      "parentId": "fld_auth_empresa",
+      "name": "Empresa do usuário autenticado",
+      "description": "",
+      "method": "GET",
+      "url": "{{ _.base_url }}/empresa",
+      "headers": [
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {},
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [],
+      "metaSortKey": -700
+    },
+    {
+      "_id": "req_auth_logout",
+      "_type": "request",
+      "parentId": "fld_auth_empresa",
+      "name": "Logout",
+      "description": "Revoga o token atual.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/auth/logout",
+      "headers": [
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {},
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [],
+      "metaSortKey": -600
+    },
+    {
+      "_id": "req_superadmin_empresas_index",
+      "_type": "request",
+      "parentId": "fld_auth_empresa",
+      "name": "Listar empresas (SUPERADMIN)",
+      "description": "Requer user_type SUPERADMIN. Lista completa, sem paginação — existe hoje só pra alimentar o filtro de empresa na busca de usuários (ver \"Listar usuários\"). O script After Response salva o id da primeira empresa retornada em {{ _.empresa_uuid }}, útil pra testar o filtro.",
+      "method": "GET",
+      "url": "{{ _.base_url }}/superadmin/empresas",
+      "headers": [
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {},
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [],
+      "afterResponseScript": "if (insomnia.response) {\n  const body = insomnia.response.json();\n  if (body && body.empresas && body.empresas[0]) {\n    insomnia.environment.set('empresa_uuid', body.empresas[0].id);\n    console.log('empresa_uuid salvo no environment');\n  }\n}",
+      "metaSortKey": -500
+    },
+    {
+      "_id": "req_superadmin_empresas_store",
+      "_type": "request",
+      "parentId": "fld_auth_empresa",
+      "name": "Criar empresa (SUPERADMIN)",
+      "description": "Requer user_type SUPERADMIN. Provisiona a empresa E o primeiro usuário ADMIN dela na mesma chamada — sem o bloco admin_*, ninguém consegue logar (diferente do signup público, que sempre cria uma empresa nova, este anexa o admin a uma criada aqui). O script After Response salva o id retornado em {{ _.empresa_uuid }}.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/superadmin/empresas",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"razao_social\": \"Comercial Exemplo LTDA\",\n  \"nome_fantasia\": \"Comercial Exemplo\",\n  \"cnpj\": \"12345678000100\",\n  \"plano\": \"START\",\n  \"limite_usuarios\": 5,\n  \"limite_pontos_venda\": 10,\n  \"admin_nome\": \"Admin Exemplo\",\n  \"admin_email\": \"admin@comercialexemplo.com.br\",\n  \"admin_senha\": \"senha12345\"\n}"
+      },
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [],
+      "afterResponseScript": "if (insomnia.response) {\n  const body = insomnia.response.json();\n  if (body && body.empresa && body.empresa.id) {\n    insomnia.environment.set('empresa_uuid', body.empresa.id);\n    console.log('empresa_uuid salvo no environment');\n  }\n}",
+      "metaSortKey": -450
+    },
+    {
+      "_id": "req_superadmin_empresas_update",
+      "_type": "request",
+      "parentId": "fld_auth_empresa",
+      "name": "Editar plano/limites da empresa (SUPERADMIN)",
+      "description": "Requer user_type SUPERADMIN. Preencha {{ _.empresa_uuid }} no Environment. Também é por aqui que se reativa uma empresa bloqueada (ativo: true) — o bloqueio em si é a request \"Bloquear empresa\" (DELETE).",
+      "method": "PUT",
+      "url": "{{ _.base_url }}/superadmin/empresas/{{ _.empresa_uuid }}",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"plano\": \"PRO\",\n  \"limite_usuarios\": 20\n}"
+      },
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [],
+      "metaSortKey": -400
+    },
+    {
+      "_id": "req_superadmin_empresas_destroy",
+      "_type": "request",
+      "parentId": "fld_auth_empresa",
+      "name": "Bloquear empresa (SUPERADMIN)",
+      "description": "Requer user_type SUPERADMIN. Preencha {{ _.empresa_uuid }} no Environment. Soft delete (ativo=false) + revoga na hora os tokens de TODOS os usuários da empresa. Login de qualquer usuário dela passa a dar 422 até reativar (PUT ativo:true).",
+      "method": "DELETE",
+      "url": "{{ _.base_url }}/superadmin/empresas/{{ _.empresa_uuid }}",
+      "headers": [
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {},
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [],
+      "metaSortKey": -350
+    },
+    {
+      "_id": "fld_catalogo",
+      "_type": "request_group",
+      "parentId": "wrk_pdv_api",
+      "name": "Catálogo — Departamentos, Seções, Produtos e Níveis de Exibição",
+      "description": "Leitura aberta a qualquer autenticado, escrita requer a permissão catalogo.gerenciar. Nenhum tem GET por uuid (show), só lista + CRUD de escrita.",
+      "metaSortKey": -1050
+    },
+    {
+      "_id": "req_departamentos_index",
+      "_type": "request",
+      "parentId": "fld_catalogo",
+      "name": "Listar departamentos",
+      "description": "Qualquer usuário autenticado. Filtro opcional ?ativo=1|0.",
+      "method": "GET",
+      "url": "{{ _.base_url }}/departamentos-auditoria",
+      "headers": [
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {},
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [
+        { "name": "ativo", "value": "1", "disabled": true }
+      ],
+      "metaSortKey": -1000
+    },
+    {
+      "_id": "req_departamentos_store",
+      "_type": "request",
+      "parentId": "fld_catalogo",
+      "name": "Criar departamento",
+      "description": "Requer a permissão catalogo.gerenciar (ADMIN sempre libera). O script After Response salva o id retornado em {{ _.departamento_uuid }}.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/departamentos-auditoria",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"descricao\": \"Saneantes\"\n}"
+      },
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [],
+      "afterResponseScript": "if (insomnia.response) {\n  const body = insomnia.response.json();\n  if (body && body.departamento && body.departamento.id) {\n    insomnia.environment.set('departamento_uuid', body.departamento.id);\n    console.log('departamento_uuid salvo no environment');\n  }\n}",
+      "metaSortKey": -900
+    },
+    {
+      "_id": "req_departamentos_update",
+      "_type": "request",
+      "parentId": "fld_catalogo",
+      "name": "Atualizar departamento",
+      "description": "Requer a permissão catalogo.gerenciar (ADMIN sempre libera). Preencha {{ _.departamento_uuid }} no Environment.",
+      "method": "PUT",
+      "url": "{{ _.base_url }}/departamentos-auditoria/{{ _.departamento_uuid }}",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"descricao\": \"Saneantes e Limpeza\"\n}"
+      },
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [],
+      "metaSortKey": -800
+    },
+    {
+      "_id": "req_departamentos_destroy",
+      "_type": "request",
+      "parentId": "fld_catalogo",
+      "name": "Desativar departamento (soft delete)",
+      "description": "Requer a permissão catalogo.gerenciar (ADMIN sempre libera). Define ativo=false, nunca apaga de verdade.",
+      "method": "DELETE",
+      "url": "{{ _.base_url }}/departamentos-auditoria/{{ _.departamento_uuid }}",
+      "headers": [
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {},
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [],
+      "metaSortKey": -700
+    },
+    {
+      "_id": "req_secoes_index",
+      "_type": "request",
+      "parentId": "fld_catalogo",
+      "name": "Listar seções",
+      "description": "Qualquer usuário autenticado. Filtros opcionais ?ativo=1|0 e ?departamento_uuid=.",
+      "method": "GET",
+      "url": "{{ _.base_url }}/secoes-auditoria",
+      "headers": [
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {},
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [
+        { "name": "ativo", "value": "1", "disabled": true },
+        { "name": "departamento_uuid", "value": "{{ _.departamento_uuid }}", "disabled": true }
+      ],
+      "metaSortKey": -600
+    },
+    {
+      "_id": "req_secoes_store",
+      "_type": "request",
+      "parentId": "fld_catalogo",
+      "name": "Criar seção",
+      "description": "Requer a permissão catalogo.gerenciar (ADMIN sempre libera). departamento_uuid é opcional. O script After Response salva o id retornado em {{ _.secao_uuid }}.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/secoes-auditoria",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"descricao\": \"Desinfetantes\",\n  \"departamento_uuid\": \"{{ _.departamento_uuid }}\"\n}"
+      },
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [],
+      "afterResponseScript": "if (insomnia.response) {\n  const body = insomnia.response.json();\n  if (body && body.secao && body.secao.id) {\n    insomnia.environment.set('secao_uuid', body.secao.id);\n    console.log('secao_uuid salvo no environment');\n  }\n}",
+      "metaSortKey": -500
+    },
+    {
+      "_id": "req_secoes_update",
+      "_type": "request",
+      "parentId": "fld_catalogo",
+      "name": "Atualizar seção",
+      "description": "Requer a permissão catalogo.gerenciar (ADMIN sempre libera). Preencha {{ _.secao_uuid }} no Environment.",
+      "method": "PUT",
+      "url": "{{ _.base_url }}/secoes-auditoria/{{ _.secao_uuid }}",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"descricao\": \"Desinfetantes e Alvejantes\"\n}"
+      },
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [],
+      "metaSortKey": -400
+    },
+    {
+      "_id": "req_secoes_destroy",
+      "_type": "request",
+      "parentId": "fld_catalogo",
+      "name": "Desativar seção (soft delete)",
+      "description": "Requer a permissão catalogo.gerenciar (ADMIN sempre libera). Define ativo=false, nunca apaga de verdade.",
+      "method": "DELETE",
+      "url": "{{ _.base_url }}/secoes-auditoria/{{ _.secao_uuid }}",
+      "headers": [
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {},
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [],
+      "metaSortKey": -300
+    },
+    {
+      "_id": "req_niveis_exibicao_index",
+      "_type": "request",
+      "parentId": "fld_catalogo",
+      "name": "Listar níveis de exibição",
+      "description": "Qualquer usuário autenticado. Filtro opcional ?ativo=1|0. Lista própria por empresa (ex.: \"Prateleira\", \"Ponta de gôndola\") — era campo de texto livre no produto, virou relação de verdade.",
+      "method": "GET",
+      "url": "{{ _.base_url }}/niveis-exibicao",
+      "headers": [
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {},
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [
+        { "name": "ativo", "value": "1", "disabled": true }
+      ],
+      "metaSortKey": -250
+    },
+    {
+      "_id": "req_niveis_exibicao_store",
+      "_type": "request",
+      "parentId": "fld_catalogo",
+      "name": "Criar nível de exibição",
+      "description": "Requer a permissão catalogo.gerenciar (ADMIN sempre libera). O script After Response salva o id retornado em {{ _.nivel_exibicao_uuid }}.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/niveis-exibicao",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"descricao\": \"Prateleira\"\n}"
+      },
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [],
+      "afterResponseScript": "if (insomnia.response) {\n  const body = insomnia.response.json();\n  if (body && body.nivel_exibicao && body.nivel_exibicao.id) {\n    insomnia.environment.set('nivel_exibicao_uuid', body.nivel_exibicao.id);\n    console.log('nivel_exibicao_uuid salvo no environment');\n  }\n}",
+      "metaSortKey": -240
+    },
+    {
+      "_id": "req_niveis_exibicao_update",
+      "_type": "request",
+      "parentId": "fld_catalogo",
+      "name": "Atualizar nível de exibição",
+      "description": "Requer a permissão catalogo.gerenciar (ADMIN sempre libera). Preencha {{ _.nivel_exibicao_uuid }} no Environment.",
+      "method": "PUT",
+      "url": "{{ _.base_url }}/niveis-exibicao/{{ _.nivel_exibicao_uuid }}",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"descricao\": \"Ponta de gôndola\"\n}"
+      },
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [],
+      "metaSortKey": -230
+    },
+    {
+      "_id": "req_niveis_exibicao_destroy",
+      "_type": "request",
+      "parentId": "fld_catalogo",
+      "name": "Desativar nível de exibição (soft delete)",
+      "description": "Requer a permissão catalogo.gerenciar (ADMIN sempre libera). Define ativo=false, nunca apaga de verdade.",
+      "method": "DELETE",
+      "url": "{{ _.base_url }}/niveis-exibicao/{{ _.nivel_exibicao_uuid }}",
+      "headers": [
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {},
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [],
+      "metaSortKey": -220
+    },
+    {
+      "_id": "req_produtos_index",
+      "_type": "request",
+      "parentId": "fld_catalogo",
+      "name": "Listar produtos",
+      "description": "Qualquer usuário autenticado. Filtros opcionais ?ativo=1|0, ?departamento_uuid= e ?secao_uuid=.",
+      "method": "GET",
+      "url": "{{ _.base_url }}/produtos-auditoria",
+      "headers": [
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {},
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [
+        { "name": "ativo", "value": "1", "disabled": true },
+        { "name": "departamento_uuid", "value": "{{ _.departamento_uuid }}", "disabled": true },
+        { "name": "secao_uuid", "value": "{{ _.secao_uuid }}", "disabled": true }
+      ],
+      "metaSortKey": -200
+    },
+    {
+      "_id": "req_produtos_store",
+      "_type": "request",
+      "parentId": "fld_catalogo",
+      "name": "Criar produto",
+      "description": "Requer a permissão catalogo.gerenciar (ADMIN sempre libera). departamento_uuid/secao_uuid/nivel_exibicao_uuid são opcionais (um produto pode ficar solto, sem seção/nível). propriedade aceita PROPRIA|CONCORRENTE. Rode \"Criar nível de exibição\" antes pra preencher {{ _.nivel_exibicao_uuid }}. O script After Response salva o id retornado em {{ _.produto_auditoria_uuid }}.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/produtos-auditoria",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"descricao\": \"Desinfetante 2L\",\n  \"secao_uuid\": \"{{ _.secao_uuid }}\",\n  \"departamento_uuid\": \"{{ _.departamento_uuid }}\",\n  \"nivel_exibicao_uuid\": \"{{ _.nivel_exibicao_uuid }}\",\n  \"propriedade\": \"PROPRIA\"\n}"
+      },
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [],
+      "afterResponseScript": "if (insomnia.response) {\n  const body = insomnia.response.json();\n  if (body && body.produto && body.produto.id) {\n    insomnia.environment.set('produto_auditoria_uuid', body.produto.id);\n    console.log('produto_auditoria_uuid salvo no environment');\n  }\n}",
+      "metaSortKey": -100
+    },
+    {
+      "_id": "req_produtos_update",
+      "_type": "request",
+      "parentId": "fld_catalogo",
+      "name": "Atualizar produto",
+      "description": "Requer a permissão catalogo.gerenciar (ADMIN sempre libera). Preencha {{ _.produto_auditoria_uuid }} no Environment.",
+      "method": "PUT",
+      "url": "{{ _.base_url }}/produtos-auditoria/{{ _.produto_auditoria_uuid }}",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"descricao\": \"Desinfetante 2L Lavanda\"\n}"
+      },
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [],
+      "metaSortKey": 0
+    },
+    {
+      "_id": "req_produtos_destroy",
+      "_type": "request",
+      "parentId": "fld_catalogo",
+      "name": "Desativar produto (soft delete)",
+      "description": "Requer a permissão catalogo.gerenciar (ADMIN sempre libera). Define ativo=false, nunca apaga de verdade.",
+      "method": "DELETE",
+      "url": "{{ _.base_url }}/produtos-auditoria/{{ _.produto_auditoria_uuid }}",
+      "headers": [
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {},
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [],
+      "metaSortKey": 100
+    },
+    {
+      "_id": "fld_marcas",
+      "_type": "request_group",
+      "parentId": "wrk_pdv_api",
+      "name": "Catálogo — Marcas de Auditoria",
+      "description": "",
+      "metaSortKey": -1000
+    },
+    {
+      "_id": "req_marcas_index",
+      "_type": "request",
+      "parentId": "fld_marcas",
+      "name": "Listar marcas",
+      "description": "Qualquer usuário autenticado. Filtro opcional ?ativo=1|0.",
+      "method": "GET",
+      "url": "{{ _.base_url }}/marcas-auditoria",
+      "headers": [
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {},
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [
+        { "name": "ativo", "value": "1", "disabled": true }
+      ],
+      "metaSortKey": -1000
+    },
+    {
+      "_id": "req_marcas_store",
+      "_type": "request",
+      "parentId": "fld_marcas",
+      "name": "Criar marca",
+      "description": "Requer a permissão catalogo.gerenciar (ADMIN sempre libera). O script After Response salva o id retornado em {{ _.marca_uuid }}.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/marcas-auditoria",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"descricao\": \"Topazio\",\n  \"propriedade\": \"PROPRIA\"\n}"
+      },
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [],
+      "afterResponseScript": "if (insomnia.response) {\n  const body = insomnia.response.json();\n  if (body && body.marca && body.marca.id) {\n    insomnia.environment.set('marca_uuid', body.marca.id);\n    console.log('marca_uuid salvo no environment');\n  }\n}",
+      "metaSortKey": -900
+    },
+    {
+      "_id": "req_marcas_update",
+      "_type": "request",
+      "parentId": "fld_marcas",
+      "name": "Atualizar marca",
+      "description": "Requer a permissão catalogo.gerenciar (ADMIN sempre libera). Preencha {{ _.marca_uuid }} no Environment.",
+      "method": "PUT",
+      "url": "{{ _.base_url }}/marcas-auditoria/{{ _.marca_uuid }}",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"propriedade\": \"CONCORRENTE\"\n}"
+      },
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [],
+      "metaSortKey": -800
+    },
+    {
+      "_id": "req_marcas_destroy",
+      "_type": "request",
+      "parentId": "fld_marcas",
+      "name": "Desativar marca (soft delete)",
+      "description": "Requer a permissão catalogo.gerenciar (ADMIN sempre libera). Define ativo=false, nunca apaga de verdade.",
+      "method": "DELETE",
+      "url": "{{ _.base_url }}/marcas-auditoria/{{ _.marca_uuid }}",
+      "headers": [
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {},
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [],
+      "metaSortKey": -700
+    },
+    {
+      "_id": "fld_usuarios",
+      "_type": "request_group",
+      "parentId": "wrk_pdv_api",
+      "name": "Usuários",
+      "description": "Tudo restrito à permissão usuarios.gerenciar (ADMIN sempre libera), inclusive a leitura. SUPERADMIN é um caso à parte: passa em GET (busca cross-empresa), POST (criar em qualquer empresa via empresa_uuid) e PUT (editar/resetar senha/desativar via ativo:false de qualquer empresa), nunca em DELETE — \"bloquear\" pelo endpoint dedicado continua exclusivo do ADMIN/GESTOR daquela empresa.",
+      "metaSortKey": -900
+    },
+    {
+      "_id": "req_usuarios_index",
+      "_type": "request",
+      "parentId": "fld_usuarios",
+      "name": "Listar usuários",
+      "description": "Requer a permissão usuarios.gerenciar (ADMIN sempre libera). Filtros opcionais ?ativo=1|0 e ?user_type=ADMIN|GESTOR|PROMOTOR. Cada usuário traz dispositivo (identificador/nome/ultimo_acesso_em) quando é PROMOTOR e já logou pelo mobile alguma vez — null senão. Logado como SUPERADMIN, traz usuários de TODAS as empresas (cada um com o campo empresa preenchido) e aceita ?empresa_uuid= (rode \"Listar empresas (SUPERADMIN)\" primeiro pra preencher {{ _.empresa_uuid }}) pra restringir a busca a uma empresa.",
+      "method": "GET",
+      "url": "{{ _.base_url }}/usuarios",
+      "headers": [
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {},
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [
+        { "name": "ativo", "value": "1", "disabled": true },
+        { "name": "user_type", "value": "PROMOTOR", "disabled": true },
+        { "name": "empresa_uuid", "value": "{{ _.empresa_uuid }}", "disabled": true }
+      ],
+      "metaSortKey": -1000
+    },
+    {
+      "_id": "req_usuarios_store",
+      "_type": "request",
+      "parentId": "fld_usuarios",
+      "name": "Criar usuário",
+      "description": "Requer a permissão usuarios.gerenciar (ADMIN sempre libera). Sujeito ao limite de usuários do plano. perfil_uuid é opcional e só vale pra user_type GESTOR. empresa_uuid é proibido aqui — só SUPERADMIN manda (ver \"Criar usuário em qualquer empresa (SUPERADMIN)\"), ADMIN/GESTOR já criam sempre na própria empresa. O script After Response salva o id retornado em {{ _.usuario_uuid }}.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/usuarios",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"nome\": \"Paulo Promotor\",\n  \"email\": \"paulo@exemplo.com.br\",\n  \"senha\": \"senha12345\",\n  \"user_type\": \"PROMOTOR\"\n}"
+      },
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [],
+      "afterResponseScript": "if (insomnia.response) {\n  const body = insomnia.response.json();\n  if (body && body.usuario && body.usuario.id) {\n    insomnia.environment.set('usuario_uuid', body.usuario.id);\n    console.log('usuario_uuid salvo no environment');\n  }\n}",
+      "metaSortKey": -900
+    },
+    {
+      "_id": "req_usuarios_store_superadmin",
+      "_type": "request",
+      "parentId": "fld_usuarios",
+      "name": "Criar usuário em qualquer empresa (SUPERADMIN)",
+      "description": "Requer user_type SUPERADMIN. empresa_uuid é obrigatório (rode \"Listar empresas (SUPERADMIN)\" primeiro pra preencher {{ _.empresa_uuid }}) — é assim que o suporte adiciona alguém pra um cliente sem precisar da senha dele. perfil_uuid não é aceito na prática: mesmo pra user_type GESTOR, o SUPERADMIN não lista perfis de empresa alheia (GET /perfis é restrito a ADMIN da própria empresa) — quem atribui perfil depois é o ADMIN de lá, editando o usuário. Sujeito ao limite de usuários do plano DA EMPRESA ESCOLHIDA. O script After Response salva o id retornado em {{ _.usuario_uuid }}.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/usuarios",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"nome\": \"Gestor Criado Pelo Suporte\",\n  \"email\": \"gestor.suporte@exemplo.com.br\",\n  \"senha\": \"senha12345\",\n  \"user_type\": \"PROMOTOR\",\n  \"empresa_uuid\": \"{{ _.empresa_uuid }}\"\n}"
+      },
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [],
+      "afterResponseScript": "if (insomnia.response) {\n  const body = insomnia.response.json();\n  if (body && body.usuario && body.usuario.id) {\n    insomnia.environment.set('usuario_uuid', body.usuario.id);\n    console.log('usuario_uuid salvo no environment');\n  }\n}",
+      "metaSortKey": -850
+    },
+    {
+      "_id": "req_usuarios_update",
+      "_type": "request",
+      "parentId": "fld_usuarios",
+      "name": "Atualizar usuário (ou resetar senha)",
+      "description": "Requer a permissão usuarios.gerenciar (ADMIN sempre libera). SUPERADMIN também passa aqui (pode editar/resetar senha/desativar via ativo:false de QUALQUER empresa, nunca DELETE) — perfil_uuid é validado contra a empresa do usuário alvo, não do chamador. Preencha {{ _.usuario_uuid }} no Environment. Body de exemplo reseta a senha — troque pelos campos que quiser editar (ex.: \"perfil_uuid\": \"{{ _.perfil_uuid }}\" pra atribuir perfil a um GESTOR, ou \"ativo\": false pra desativar).",
+      "method": "PUT",
+      "url": "{{ _.base_url }}/usuarios/{{ _.usuario_uuid }}",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"senha\": \"novaSenha123\"\n}"
+      },
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [],
+      "metaSortKey": -800
+    },
+    {
+      "_id": "req_usuarios_destroy",
+      "_type": "request",
+      "parentId": "fld_usuarios",
+      "name": "Desativar usuário (soft delete)",
+      "description": "Requer a permissão usuarios.gerenciar (ADMIN sempre libera). Define ativo=false e revoga os tokens do usuário. Não permite desativar a si mesmo.",
+      "method": "DELETE",
+      "url": "{{ _.base_url }}/usuarios/{{ _.usuario_uuid }}",
+      "headers": [
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {},
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [],
+      "metaSortKey": -700
+    },
+    {
+      "_id": "fld_parametros",
+      "_type": "request_group",
+      "parentId": "wrk_pdv_api",
+      "name": "Parâmetros",
+      "description": "Configuração chave/valor por empresa, cacheada pelo mobile.",
+      "metaSortKey": -800
+    },
+    {
+      "_id": "req_parametros_index",
+      "_type": "request",
+      "parentId": "fld_parametros",
+      "name": "Listar parâmetros",
+      "description": "Qualquer usuário autenticado. Lista completa, sem paginação (pra cache local). Filtro opcional ?ativo=1|0.",
+      "method": "GET",
+      "url": "{{ _.base_url }}/parametros",
+      "headers": [
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {},
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [
+        { "name": "ativo", "value": "1", "disabled": true }
+      ],
+      "metaSortKey": -1000
+    },
+    {
+      "_id": "req_parametros_store",
+      "_type": "request",
+      "parentId": "fld_parametros",
+      "name": "Criar parâmetro",
+      "description": "Requer a permissão parametros.gerenciar (ADMIN sempre libera). chave só aceita maiúsculas/números/underscore. O script After Response salva o id retornado em {{ _.parametro_uuid }}.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/parametros",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"chave\": \"CHECKIN_RAIO_METROS\",\n  \"valor\": \"200\",\n  \"descricao\": \"Raio máximo em metros para permitir check-in no PDV\"\n}"
+      },
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [],
+      "afterResponseScript": "if (insomnia.response) {\n  const body = insomnia.response.json();\n  if (body && body.parametro && body.parametro.id) {\n    insomnia.environment.set('parametro_uuid', body.parametro.id);\n    console.log('parametro_uuid salvo no environment');\n  }\n}",
+      "metaSortKey": -900
+    },
+    {
+      "_id": "req_parametros_update",
+      "_type": "request",
+      "parentId": "fld_parametros",
+      "name": "Atualizar parâmetro",
+      "description": "Requer a permissão parametros.gerenciar (ADMIN sempre libera). Preencha {{ _.parametro_uuid }} no Environment.",
+      "method": "PUT",
+      "url": "{{ _.base_url }}/parametros/{{ _.parametro_uuid }}",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"valor\": \"300\"\n}"
+      },
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [],
+      "metaSortKey": -800
+    },
+    {
+      "_id": "req_parametros_destroy",
+      "_type": "request",
+      "parentId": "fld_parametros",
+      "name": "Desativar parâmetro (soft delete)",
+      "description": "Requer a permissão parametros.gerenciar (ADMIN sempre libera). Define ativo=false, nunca apaga de verdade.",
+      "method": "DELETE",
+      "url": "{{ _.base_url }}/parametros/{{ _.parametro_uuid }}",
+      "headers": [
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {},
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [],
+      "metaSortKey": -700
+    },
+    {
+      "_id": "fld_pontos_venda",
+      "_type": "request_group",
+      "parentId": "wrk_pdv_api",
+      "name": "Pontos de Venda",
+      "description": "Leitura aberta a qualquer autenticado, escrita por permissão pontos_venda.gerenciar.",
+      "metaSortKey": -700
+    },
+    {
+      "_id": "req_pdv_index",
+      "_type": "request",
+      "parentId": "fld_pontos_venda",
+      "name": "Listar pontos de venda",
+      "description": "Qualquer usuário autenticado. Filtros opcionais ?ativo=1|0 e ?busca=texto.",
+      "method": "GET",
+      "url": "{{ _.base_url }}/pontos-venda",
+      "headers": [
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {},
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [
+        { "name": "ativo", "value": "1", "disabled": true },
+        { "name": "busca", "value": "super", "disabled": true }
+      ],
+      "metaSortKey": -1000
+    },
+    {
+      "_id": "req_pdv_show",
+      "_type": "request",
+      "parentId": "fld_pontos_venda",
+      "name": "Detalhe do ponto de venda",
+      "description": "Preencha {{ _.ponto_venda_uuid }} no Environment.",
+      "method": "GET",
+      "url": "{{ _.base_url }}/pontos-venda/{{ _.ponto_venda_uuid }}",
+      "headers": [
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {},
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [],
+      "metaSortKey": -900
+    },
+    {
+      "_id": "req_pdv_store",
+      "_type": "request",
+      "parentId": "fld_pontos_venda",
+      "name": "Criar ponto de venda",
+      "description": "Requer a permissão pontos_venda.gerenciar (ADMIN sempre libera). Sujeito ao limite de PDVs do plano. Use coordenadas reais pra poder testar o check-in depois. O script After Response salva o id retornado em {{ _.ponto_venda_uuid }}.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/pontos-venda",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"razao_social\": \"Supermercado Teste LTDA\",\n  \"fantasia\": \"Super Teste\",\n  \"latitude\": -3.1019,\n  \"longitude\": -60.025,\n  \"endereco\": \"Av Teste, 123\",\n  \"cidade\": \"Manaus\"\n}"
+      },
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [],
+      "afterResponseScript": "if (insomnia.response) {\n  const body = insomnia.response.json();\n  if (body && body.ponto_venda && body.ponto_venda.id) {\n    insomnia.environment.set('ponto_venda_uuid', body.ponto_venda.id);\n    console.log('ponto_venda_uuid salvo no environment');\n  }\n}",
+      "metaSortKey": -800
+    },
+    {
+      "_id": "req_pdv_update",
+      "_type": "request",
+      "parentId": "fld_pontos_venda",
+      "name": "Atualizar ponto de venda",
+      "description": "Requer a permissão pontos_venda.gerenciar (ADMIN sempre libera). Preencha {{ _.ponto_venda_uuid }} no Environment.",
+      "method": "PUT",
+      "url": "{{ _.base_url }}/pontos-venda/{{ _.ponto_venda_uuid }}",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"telefone\": \"92999998888\"\n}"
+      },
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [],
+      "metaSortKey": -700
+    },
+    {
+      "_id": "req_pdv_destroy",
+      "_type": "request",
+      "parentId": "fld_pontos_venda",
+      "name": "Desativar ponto de venda (soft delete)",
+      "description": "Requer a permissão pontos_venda.gerenciar (ADMIN sempre libera). Define ativo=false, nunca apaga de verdade.",
+      "method": "DELETE",
+      "url": "{{ _.base_url }}/pontos-venda/{{ _.ponto_venda_uuid }}",
+      "headers": [
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {},
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [],
+      "metaSortKey": -600
+    },
+    {
+      "_id": "fld_campanhas",
+      "_type": "request_group",
+      "parentId": "wrk_pdv_api",
+      "name": "Campanhas de Auditoria",
+      "description": "Leitura aberta a qualquer autenticado. Escrita (campanha e itens) requer a permissão campanhas.gerenciar, separada de catalogo.gerenciar — uma empresa pode ter GESTOR que só cuida do catálogo sem poder criar campanhas, ou vice-versa.",
+      "metaSortKey": -600
+    },
+    {
+      "_id": "req_campanhas_disponiveis",
+      "_type": "request",
+      "parentId": "fld_campanhas",
+      "name": "O que auditar no PDV (disponiveis)",
+      "description": "Qualquer usuário autenticado. Preencha {{ _.ponto_venda_uuid }} no Environment. Precisa existir campanha ativa/vigente com itens pra retornar algo — ver docs/02-API-BACKEND.md, regra de negócio 2.",
+      "method": "GET",
+      "url": "{{ _.base_url }}/campanhas-auditoria/disponiveis",
+      "headers": [
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {},
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [
+        { "name": "ponto_venda_uuid", "value": "{{ _.ponto_venda_uuid }}" }
+      ],
+      "metaSortKey": -1000
+    },
+    {
+      "_id": "req_campanhas_index",
+      "_type": "request",
+      "parentId": "fld_campanhas",
+      "name": "Listar campanhas",
+      "description": "Qualquer usuário autenticado. Filtro opcional ?ativo=1|0.",
+      "method": "GET",
+      "url": "{{ _.base_url }}/campanhas-auditoria",
+      "headers": [
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {},
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [
+        { "name": "ativo", "value": "1", "disabled": true }
+      ],
+      "metaSortKey": -900
+    },
+    {
+      "_id": "req_campanhas_show",
+      "_type": "request",
+      "parentId": "fld_campanhas",
+      "name": "Detalhe da campanha (com itens)",
+      "description": "Qualquer usuário autenticado. Preencha {{ _.campanha_uuid }} no Environment. itens já vem com a entidade resolvida (produto/departamento/secao/marca conforme tipo_item).",
+      "method": "GET",
+      "url": "{{ _.base_url }}/campanhas-auditoria/{{ _.campanha_uuid }}",
+      "headers": [
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {},
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [],
+      "metaSortKey": -800
+    },
+    {
+      "_id": "req_campanhas_store",
+      "_type": "request",
+      "parentId": "fld_campanhas",
+      "name": "Criar campanha",
+      "description": "Requer a permissão campanhas.gerenciar (ADMIN sempre libera) — separada de catalogo.gerenciar. vigencia_fim precisa ser >= vigencia_inicio. O script After Response salva o id retornado em {{ _.campanha_uuid }}.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/campanhas-auditoria",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"descricao\": \"Campanha Saneantes Q1\",\n  \"vigencia_inicio\": \"2026-01-01\",\n  \"vigencia_fim\": \"2026-12-31\"\n}"
+      },
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [],
+      "afterResponseScript": "if (insomnia.response) {\n  const body = insomnia.response.json();\n  if (body && body.campanha && body.campanha.id) {\n    insomnia.environment.set('campanha_uuid', body.campanha.id);\n    console.log('campanha_uuid salvo no environment');\n  }\n}",
+      "metaSortKey": -700
+    },
+    {
+      "_id": "req_campanhas_update",
+      "_type": "request",
+      "parentId": "fld_campanhas",
+      "name": "Atualizar campanha",
+      "description": "Requer a permissão campanhas.gerenciar (ADMIN sempre libera). Preencha {{ _.campanha_uuid }} no Environment.",
+      "method": "PUT",
+      "url": "{{ _.base_url }}/campanhas-auditoria/{{ _.campanha_uuid }}",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"descricao\": \"Campanha Saneantes Q1 (revisada)\"\n}"
+      },
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [],
+      "metaSortKey": -600
+    },
+    {
+      "_id": "req_campanhas_destroy",
+      "_type": "request",
+      "parentId": "fld_campanhas",
+      "name": "Desativar campanha (soft delete)",
+      "description": "Requer a permissão campanhas.gerenciar (ADMIN sempre libera). Define ativo=false, nunca apaga de verdade.",
+      "method": "DELETE",
+      "url": "{{ _.base_url }}/campanhas-auditoria/{{ _.campanha_uuid }}",
+      "headers": [
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {},
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [],
+      "metaSortKey": -500
+    },
+    {
+      "_id": "req_campanha_itens_store",
+      "_type": "request",
+      "parentId": "fld_campanhas",
+      "name": "Adicionar item à campanha (hierarquia)",
+      "description": "Requer a permissão campanhas.gerenciar (ADMIN sempre libera). Preencha {{ _.campanha_uuid }} no Environment. Só o campo uuid correspondente a tipo_item é aceito (ex.: tipo_item SECAO exige secao_uuid, proíbe produto_uuid/departamento_uuid/marca_uuid — 422 senão). Troque tipo_item e o campo uuid pra testar cada granularidade: PRODUTO+produto_uuid, SECAO+secao_uuid, DEPARTAMENTO+departamento_uuid, MARCA+marca_uuid. O script After Response salva o id retornado em {{ _.item_uuid }}.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/campanhas-auditoria/{{ _.campanha_uuid }}/itens",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"tipo_item\": \"SECAO\",\n  \"secao_uuid\": \"{{ _.secao_uuid }}\"\n}"
+      },
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [],
+      "afterResponseScript": "if (insomnia.response) {\n  const body = insomnia.response.json();\n  if (body && body.item && body.item.id) {\n    insomnia.environment.set('item_uuid', body.item.id);\n    console.log('item_uuid salvo no environment');\n  }\n}",
+      "metaSortKey": -400
+    },
+    {
+      "_id": "req_campanha_itens_destroy",
+      "_type": "request",
+      "parentId": "fld_campanhas",
+      "name": "Remover item da campanha",
+      "description": "Requer a permissão campanhas.gerenciar (ADMIN sempre libera). Preencha {{ _.campanha_uuid }} e {{ _.item_uuid }} no Environment. Hard delete de verdade (campanha_itens não tem coluna ativo) — a linha some do banco, não é só ativo=false.",
+      "method": "DELETE",
+      "url": "{{ _.base_url }}/campanhas-auditoria/{{ _.campanha_uuid }}/itens/{{ _.item_uuid }}",
+      "headers": [
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {},
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [],
+      "metaSortKey": -300
+    },
+    {
+      "_id": "fld_visitas",
+      "_type": "request_group",
+      "parentId": "wrk_pdv_api",
+      "name": "Visitas",
+      "description": "Qualquer user_type autenticado, com ownership: PROMOTOR só acessa as próprias visitas.",
+      "metaSortKey": -500
+    },
+    {
+      "_id": "req_visitas_checkin",
+      "_type": "request",
+      "parentId": "fld_visitas",
+      "name": "Check-in",
+      "description": "Distância calculada no servidor via Haversine — fora do raio configurado (parametro CHECKIN_RAIO_METROS ou env, default 200m) dá 422. Use as mesmas coordenadas do PDV criado pra garantir que passa. O script After Response salva o id retornado em {{ _.visita_uuid }}.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/visitas",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"ponto_venda_uuid\": \"{{ _.ponto_venda_uuid }}\",\n  \"latitude\": -3.1019,\n  \"longitude\": -60.025\n}"
+      },
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [],
+      "afterResponseScript": "if (insomnia.response) {\n  const body = insomnia.response.json();\n  if (body && body.visita && body.visita.id) {\n    insomnia.environment.set('visita_uuid', body.visita.id);\n    console.log('visita_uuid salvo no environment');\n  }\n}",
+      "metaSortKey": -1000
+    },
+    {
+      "_id": "req_visitas_checkout",
+      "_type": "request",
+      "parentId": "fld_visitas",
+      "name": "Checkout",
+      "description": "Preencha {{ _.visita_uuid }} no Environment. Exige a visita ainda ABERTA. Distância é só registrada, não bloqueia.",
+      "method": "PATCH",
+      "url": "{{ _.base_url }}/visitas/{{ _.visita_uuid }}/checkout",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"latitude\": -3.1019,\n  \"longitude\": -60.025\n}"
+      },
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [],
+      "metaSortKey": -900
+    },
+    {
+      "_id": "req_visitas_show",
+      "_type": "request",
+      "parentId": "fld_visitas",
+      "name": "Detalhe da visita",
+      "description": "Preencha {{ _.visita_uuid }} no Environment. Inclui os registros.",
+      "method": "GET",
+      "url": "{{ _.base_url }}/visitas/{{ _.visita_uuid }}",
+      "headers": [
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {},
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [],
+      "metaSortKey": -800
+    },
+    {
+      "_id": "req_visitas_index",
+      "_type": "request",
+      "parentId": "fld_visitas",
+      "name": "Histórico / listar visitas",
+      "description": "usuario_uuid=eu filtra pelo próprio autenticado (PROMOTOR sempre força as próprias, mesmo passando outro uuid). ADMIN/GESTOR também aceitam ponto_venda_uuid, data_inicio, data_fim.",
+      "method": "GET",
+      "url": "{{ _.base_url }}/visitas",
+      "headers": [
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {},
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [
+        { "name": "usuario_uuid", "value": "eu" },
+        { "name": "ponto_venda_uuid", "value": "{{ _.ponto_venda_uuid }}", "disabled": true },
+        { "name": "data_inicio", "value": "2026-01-01", "disabled": true },
+        { "name": "data_fim", "value": "2026-12-31", "disabled": true }
+      ],
+      "metaSortKey": -700
+    },
+    {
+      "_id": "fld_registros",
+      "_type": "request_group",
+      "parentId": "wrk_pdv_api",
+      "name": "Registros de Visita",
+      "description": "Fotos/rupturas/observações dentro de uma visita ABERTA.",
+      "metaSortKey": -400
+    },
+    {
+      "_id": "req_registros_store",
+      "_type": "request",
+      "parentId": "fld_registros",
+      "name": "Criar registro (foto/ruptura/observação)",
+      "description": "Preencha {{ _.visita_uuid }} no Environment. multipart/form-data — clique no campo imagem e selecione um arquivo real do seu computador. tipo_registro FOTO exige imagem; OBSERVACAO exige observacao. produto_auditoria_uuid é opcional (registro geral sem produto vinculado). O script After Response salva o id retornado em {{ _.registro_uuid }}.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/visitas/{{ _.visita_uuid }}/registros",
+      "headers": [
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {
+        "mimeType": "multipart/form-data",
+        "params": [
+          { "name": "tipo_registro", "value": "FOTO" },
+          { "name": "produto_auditoria_uuid", "value": "{{ _.produto_auditoria_uuid }}", "disabled": true },
+          { "name": "ruptura", "value": "0", "disabled": true },
+          { "name": "observacao", "value": "", "disabled": true },
+          { "name": "imagem", "type": "file", "fileName": "" }
+        ]
+      },
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [],
+      "afterResponseScript": "if (insomnia.response) {\n  const body = insomnia.response.json();\n  if (body && body.registro && body.registro.id) {\n    insomnia.environment.set('registro_uuid', body.registro.id);\n    console.log('registro_uuid salvo no environment');\n  }\n}",
+      "metaSortKey": -1000
+    },
+    {
+      "_id": "req_registros_imagem",
+      "_type": "request",
+      "parentId": "fld_registros",
+      "name": "Baixar imagem do registro",
+      "description": "Preencha {{ _.visita_uuid }} e {{ _.registro_uuid }} no Environment. Resposta binária — use o botão \"Preview\" do Insomnia (ou \"Save Response\") pra ver a imagem, não vem como JSON.",
+      "method": "GET",
+      "url": "{{ _.base_url }}/visitas/{{ _.visita_uuid }}/registros/{{ _.registro_uuid }}/imagem",
+      "headers": [],
+      "body": {},
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [],
+      "metaSortKey": -900
+    },
+    {
+      "_id": "fld_perfis",
+      "_type": "request_group",
+      "parentId": "wrk_pdv_api",
+      "name": "Perfis (RBAC)",
+      "description": "RBAC por empresa — sempre user_type ADMIN, nunca delegável por permissão. GESTOR sem perfil (ou com perfil sem a permissão) leva 403 nas rotas de escrita de outros recursos.",
+      "metaSortKey": -300
+    },
+    {
+      "_id": "req_perfis_index",
+      "_type": "request",
+      "parentId": "fld_perfis",
+      "name": "Listar perfis",
+      "description": "Requer user_type ADMIN. Lista completa, sem paginação. Filtro opcional ?ativo=1|0.",
+      "method": "GET",
+      "url": "{{ _.base_url }}/perfis",
+      "headers": [
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {},
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [
+        { "name": "ativo", "value": "1", "disabled": true }
+      ],
+      "metaSortKey": -1000
+    },
+    {
+      "_id": "req_perfis_store",
+      "_type": "request",
+      "parentId": "fld_perfis",
+      "name": "Criar perfil",
+      "description": "Requer user_type ADMIN. permissoes é um array do catálogo fixo: pontos_venda.gerenciar, catalogo.gerenciar, campanhas.gerenciar, parametros.gerenciar, usuarios.gerenciar. O script After Response salva o id retornado em {{ _.perfil_uuid }}.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/perfis",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"nome\": \"Supervisor Regional\",\n  \"descricao\": \"So mexe no catalogo\",\n  \"permissoes\": [\"catalogo.gerenciar\"]\n}"
+      },
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [],
+      "afterResponseScript": "if (insomnia.response) {\n  const body = insomnia.response.json();\n  if (body && body.perfil && body.perfil.id) {\n    insomnia.environment.set('perfil_uuid', body.perfil.id);\n    console.log('perfil_uuid salvo no environment');\n  }\n}",
+      "metaSortKey": -900
+    },
+    {
+      "_id": "req_perfis_update",
+      "_type": "request",
+      "parentId": "fld_perfis",
+      "name": "Atualizar perfil",
+      "description": "Requer user_type ADMIN. Preencha {{ _.perfil_uuid }} no Environment.",
+      "method": "PUT",
+      "url": "{{ _.base_url }}/perfis/{{ _.perfil_uuid }}",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"permissoes\": [\"catalogo.gerenciar\", \"pontos_venda.gerenciar\"]\n}"
+      },
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [],
+      "metaSortKey": -800
+    },
+    {
+      "_id": "req_perfis_destroy",
+      "_type": "request",
+      "parentId": "fld_perfis",
+      "name": "Desativar perfil (soft delete)",
+      "description": "Requer user_type ADMIN. Define ativo=false — todo GESTOR com esse perfil perde as permissões dele automaticamente.",
+      "method": "DELETE",
+      "url": "{{ _.base_url }}/perfis/{{ _.perfil_uuid }}",
+      "headers": [
+        { "name": "Accept", "value": "application/json" }
+      ],
+      "body": {},
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      },
+      "parameters": [],
+      "metaSortKey": -700
+    }
+  ]
+}
