@@ -1,0 +1,23 @@
+services:
+  app:
+    build: .
+    container_name: tradeteste_api
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:9002:8080"
+    volumes:
+      - storage_logs:/var/www/html/storage/logs
+    networks:
+      - tradeteste
+      - postgres-docker_default
+
+networks:
+  tradeteste:
+    driver: bridge
+  postgres-docker_default:
+    external: true
+
+volumes:
+  storage_logs:
