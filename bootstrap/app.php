@@ -15,6 +15,15 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // Atrás de nginx (host + o nginx dentro do próprio container) que sempre manda
+        // X-Forwarded-Proto — sem isso, Request::isSecure() nunca vê "https" (a conexão real
+        // php-fpm↔nginx interna é HTTP simples), e toda URL absoluta gerada pelo Laravel
+        // (url()/route(), ex.: foto_url, contrato arquivo) sai como http:// mesmo servida atrás
+        // de HTTPS — no cliente isso é bloqueado como mixed content ("recurso não carrega").
+        // '*' é seguro aqui: a app só é alcançável via os nossos próprios nginx (porta do
+        // container publicada só em 127.0.0.1), não há proxy de terceiros na frente.
+        $middleware->trustProxies(at: '*');
+
         $middleware->alias([
             'user_type' => \App\Http\Middleware\EnsureUserType::class,
             'permissao' => \App\Http\Middleware\EnsurePermissao::class,
