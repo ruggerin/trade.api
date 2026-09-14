@@ -30,6 +30,7 @@ class TipoRegistro extends Model
         'campanha_auditoria_id',
         'granularidade_padrao',
         'eh_ruptura',
+        'eh_alerta',
     ];
 
     protected function casts(): array
@@ -42,6 +43,7 @@ class TipoRegistro extends Model
             'escopo_acao' => EscopoAcaoTipoRegistro::class,
             'granularidade_padrao' => GranularidadeResposta::class,
             'eh_ruptura' => 'boolean',
+            'eh_alerta' => 'boolean',
         ];
     }
 

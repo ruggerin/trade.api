@@ -147,6 +147,34 @@ class VisitaRegistroController extends Controller
         ]);
     }
 
+    /**
+     * Marca um alerta (VisitaRegistro de um TipoRegistro com eh_alerta=true) como resolvido —
+     * Painel de Atividades. Só ADMIN/GESTOR: é ação de supervisão sobre a visita de outra
+     * pessoa, PROMOTOR não usa o painel. Sem "atribuir" a alguém — o primeiro que agir resolve,
+     * igual um grupo de WhatsApp real. Idempotente: resolver de novo um já resolvido não é erro,
+     * só mantém o estado atual — não é ação destrutiva que precise travar repetição. Ver
+     * docs/17-PAINEL-ATIVIDADES.md.
+     */
+    public function resolverAlerta(Request $request, Visita $visita, VisitaRegistro $registro): JsonResponse
+    {
+        if (! in_array($request->user()->user_type, [UserType::ADMIN, UserType::GESTOR], true)) {
+            abort(403, 'Esta ação é só para ADMIN/GESTOR.');
+        }
+
+        abort_if($registro->visita_id !== $visita->id, 404);
+
+        if ($registro->alerta_resolvido_em === null) {
+            $registro->update(['alerta_resolvido_em' => now(), 'alerta_resolvido_por_id' => $request->user()->id]);
+        }
+
+        $registro->setRelation('visita', $visita);
+        $registro->load(['produtoAuditoria', 'tipoRegistro', 'secao', 'departamento', 'marca', 'resolvidoPor']);
+
+        return response()->json([
+            'registro' => new VisitaRegistroResource($registro),
+        ]);
+    }
+
     private function autorizarAcesso(Request $request, Visita $visita): void
     {
         if ($request->user()->user_type === UserType::PROMOTOR && $visita->usuario_id !== $request->user()->id) {

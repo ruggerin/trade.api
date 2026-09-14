@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AgendaVisitaController;
+use App\Http\Controllers\AtividadeController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CampanhaAuditoriaController;
 use App\Http\Controllers\CampanhaItemController;
@@ -88,6 +89,14 @@ Route::middleware('auth:sanctum')->group(function (): void {
     // (REGISTRO_CANCELAMENTO_PERMITIDO), ADMIN/GESTOR sempre podem. Ver
     // VisitaRegistroController::cancelar.
     Route::post('/visitas/{visita}/registros/{registro}/cancelar', [VisitaRegistroController::class, 'cancelar']);
+    // Painel de Atividades: ADMIN/GESTOR marca um alerta como resolvido — ver
+    // VisitaRegistroController::resolverAlerta e docs/17-PAINEL-ATIVIDADES.md.
+    Route::post('/visitas/{visita}/registros/{registro}/resolver-alerta', [VisitaRegistroController::class, 'resolverAlerta']);
+
+    // Painel de Atividades: feed agregado (check-in/checkout/alertas) pra ADMIN/GESTOR
+    // acompanhar tudo que rolou nas visitas do dia, todo mundo junto — ver
+    // AtividadeController::index e docs/17-PAINEL-ATIVIDADES.md.
+    Route::get('/atividades', [AtividadeController::class, 'index']);
 
     // Intervenção administrativa em visita (cancelar / forçar checkout com horário real /
     // corrigir horários) — exige a permissão dedicada visitas.intervir (ADMIN sempre; GESTOR só

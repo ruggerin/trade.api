@@ -65,6 +65,7 @@ class UpdateTipoRegistroRequest extends FormRequest
                 'required', Rule::in(array_column(GranularidadeResposta::cases(), 'value')),
             ],
             'eh_ruptura' => ['sometimes', 'boolean'],
+            'eh_alerta' => ['sometimes', 'boolean'],
         ];
     }
 
