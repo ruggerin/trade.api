@@ -1,0 +1,32 @@
+# Tudo que a imagem não precisa (ou que reconstrói/monta em runtime) — mantém o contexto de
+# build pequeno e garante que nada de dev/local vaza pra dentro da imagem.
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+
+vendor/
+node_modules/
+
+storage/logs/*
+storage/framework/cache/*
+storage/framework/sessions/*
+storage/framework/views/*
+storage/app/*
+!storage/app/.gitignore
+
+tests/
+.phpunit.result.cache
+.phpunit.cache
+
+# Manifesto de provedores (packages.php/services.php) não é versionado — reflete o composer
+# install de quem rodou por último localmente (pode incluir pacote de dev tipo laravel/pail).
+# A imagem gera o próprio, coerente com o vendor --no-dev (ver Dockerfile).
+bootstrap/cache/*.php
+
+.fleet
+.idea
+.nova
+.vscode
+.zed

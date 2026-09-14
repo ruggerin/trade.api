@@ -81,7 +81,6 @@ class VisitaRegistroController extends Controller
             'secao_id' => $secaoId,
             'departamento_id' => $departamentoId,
             'marca_id' => $marcaId,
-            'momento' => $dados['momento'] ?? null,
             'ruptura' => $dados['ruptura'] ?? false,
             'observacao' => $dados['observacao'] ?? null,
             'valores_campos' => $dados['valores_campos'] ?? null,
@@ -90,7 +89,7 @@ class VisitaRegistroController extends Controller
         if ($request->hasFile('imagem')) {
             $arquivo = $request->file('imagem');
             $nomeArquivo = "{$registro->uuid}.".($arquivo->extension() ?: 'jpg');
-            $arquivo->storeAs("visitas/{$visita->id}", $nomeArquivo, 'local');
+            $arquivo->storeAs("visitas/{$visita->id}", $nomeArquivo, config('filesystems.default'));
             $registro->update(['imagem_path' => "visitas/{$visita->id}/{$nomeArquivo}"]);
         }
 
@@ -114,7 +113,7 @@ class VisitaRegistroController extends Controller
         abort_if($registro->visita_id !== $visita->id, 404);
         abort_if(! $registro->imagem_path, 404);
 
-        return Storage::disk('local')->response($registro->imagem_path);
+        return Storage::disk(config('filesystems.default'))->response($registro->imagem_path);
     }
 
     /**

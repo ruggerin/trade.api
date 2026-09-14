@@ -1,0 +1,64 @@
+# Sobe só a API, pensado pra rodar numa VPS que já tem outras aplicações (por isso a porta do
+# host é configurável) e que, no caso comum, já tem um Postgres rodando fora daqui — por isso o
+# serviço "db" é facultativo (profile "db", nunca sobe sozinho).
+#
+# Uso:
+#   docker compose up -d --build              # só a API, usando o Postgres que você já tem
+#   docker compose --profile db up -d --build # API + um Postgres novo, containerizado aqui
+#
+# Variáveis lidas de api/.env (o MESMO .env do Laravel — Compose carrega automaticamente o
+# .env ao lado deste arquivo pra resolver os ${...} abaixo, e o env_file: joga o arquivo
+# inteiro dentro do container também). Não precisa de um .env separado só pro Compose.
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: pdv-app-api
+    restart: unless-stopped
+    # A VPS já tem outras aplicações rodando em portas variadas — troque API_PORT no seu
+    # api/.env se 8000 colidir com alguma delas. Dentro do container sempre é 80 (Nginx).
+    ports:
+      - "${API_PORT:-8000}:80"
+    env_file:
+      - .env
+    environment:
+      RUN_MIGRATIONS: "${RUN_MIGRATIONS:-true}"
+    volumes:
+      # Só importa quando FILESYSTEM_DISK=local (ver api/.env) — uploads (foto de perfil,
+      # registros de visita, ver docs/02-API-BACKEND.md) precisam sobreviver a um
+      # rebuild/redeploy da imagem nesse modo. Com FILESYSTEM_DISK=s3 (DigitalOcean Spaces já
+      # configurado, pasta AWS_ROOT), o storage é externo ao container — este volume vira
+      # inofensivo (nada escreve nele), mas não custa deixar montado.
+      - api_storage:/var/www/html/storage/app
+    # host.docker.internal funciona nativo no Docker Desktop (Windows/Mac); no Linux (a VPS)
+    # precisa deste mapeamento explícito. Só importa se o seu Postgres externo roda direto no
+    # host da VPS (fora de outro container) e você apontou DB_HOST=host.docker.internal no
+    # api/.env — se o Postgres já está noutro container/rede Docker, prefira anexar este serviço
+    # à rede dele (seção "networks" comentada abaixo) em vez de usar host.docker.internal.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # networks:
+    #   - rede_externa_do_postgres
+
+  # Só sobe com "docker compose --profile db up" — pra quem NÃO tem Postgres próprio ainda (ex.:
+  # ambiente novo, ou só testando). Reaproveita DB_DATABASE/DB_USERNAME/DB_PASSWORD do mesmo
+  # api/.env (são as credenciais que o Laravel já espera) — lembre de apontar DB_HOST=db no
+  # api/.env quando usar este profile, em vez do host externo.
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    profiles: ["db"]
+    environment:
+      POSTGRES_DB: ${DB_DATABASE:-pdv}
+      POSTGRES_USER: ${DB_USERNAME:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?defina DB_PASSWORD no api/.env pra usar o profile "db"}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+volumes:
+  api_storage:
+  db_data:

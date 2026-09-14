@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\TipoRegistro\MoverTipoRegistroRequest;
 use App\Http\Requests\TipoRegistro\StoreTipoRegistroRequest;
 use App\Http\Requests\TipoRegistro\UpdateTipoRegistroRequest;
 use App\Http\Resources\TipoRegistroResource;
@@ -13,6 +14,7 @@ use App\Models\TipoRegistro;
 use App\Models\TipoRegistroSecaoExcecao;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class TipoRegistroController extends Controller
 {
@@ -26,6 +28,10 @@ class TipoRegistroController extends Controller
                 fn ($query) => $query->where('empresa_id', Empresa::where('uuid', $request->string('empresa_uuid'))->value('id')),
             )
             ->with(['campos', 'empresa', 'campanhaAuditoria', 'excecoesGranularidade.secao'])
+            // Sequência de exibição escolhida pelo gestor (ver mover() abaixo) — mesma ordem
+            // pro admin e pro mobile, que consome este mesmo endpoint. `descricao` só entra
+            // como desempate defensivo (na operação normal `ordem` já é único por empresa).
+            ->orderBy('ordem')
             ->orderBy('descricao')
             ->paginate();
 
@@ -46,6 +52,11 @@ class TipoRegistroController extends Controller
 
         $tipo = TipoRegistro::create([
             'descricao' => $dados['descricao'],
+            'icone' => $dados['icone'] ?? null,
+            // Novo tipo sempre vai pro fim da lista — mesmo raciocínio de "onde entraria um
+            // item novo" em qualquer lista ordenada manualmente. Scoped à empresa pelo global
+            // scope de BelongsToEmpresa (mesma query que index() usa).
+            'ordem' => (TipoRegistro::max('ordem') ?? -1) + 1,
             'exige_foto' => $dados['exige_foto'] ?? false,
             'permite_vincular_catalogo' => $dados['permite_vincular_catalogo'] ?? false,
             'acao_obrigatoria' => $dados['acao_obrigatoria'] ?? false,
@@ -110,6 +121,35 @@ class TipoRegistroController extends Controller
         $tipoRegistro->update(['ativo' => false]);
 
         return response()->json(status: 204);
+    }
+
+    /**
+     * Sequência de exibição — troca a `ordem` deste tipo com a do vizinho (anterior/seguinte,
+     * conforme `direcao`) em vez de expor o número cru pro front mexer direto (evita duas linhas
+     * acabando com a mesma ordem por engano). Sem vizinho nessa direção (já é o primeiro/último),
+     * não faz nada — não é erro, só não tem pra onde mover. Ver docs/03-ADMIN-WEB.md.
+     */
+    public function mover(MoverTipoRegistroRequest $request, TipoRegistro $tipoRegistro): JsonResponse
+    {
+        $direcao = $request->validated('direcao');
+
+        $vizinho = $direcao === 'cima'
+            ? TipoRegistro::where('ordem', '<', $tipoRegistro->ordem)->orderByDesc('ordem')->first()
+            : TipoRegistro::where('ordem', '>', $tipoRegistro->ordem)->orderBy('ordem')->first();
+
+        if ($vizinho) {
+            DB::transaction(function () use ($tipoRegistro, $vizinho): void {
+                $ordemAtual = $tipoRegistro->ordem;
+                $tipoRegistro->update(['ordem' => $vizinho->ordem]);
+                $vizinho->update(['ordem' => $ordemAtual]);
+            });
+        }
+
+        return response()->json([
+            'tipo_registro' => new TipoRegistroResource(
+                $tipoRegistro->fresh()->load(['campos', 'campanhaAuditoria', 'excecoesGranularidade.secao']),
+            ),
+        ]);
     }
 
     /**

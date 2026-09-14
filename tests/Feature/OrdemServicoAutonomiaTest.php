@@ -112,7 +112,9 @@ class OrdemServicoAutonomiaTest extends TestCase
         $os = OrdemServico::factory()->create(['empresa_id' => $empresa->id, 'usuario_id' => $promotor->id]);
         Sanctum::actingAs($promotor);
 
-        $novoPrazo = now()->addDays(2);
+        // Meio-dia fixo: prazo_fim é sempre "novoPrazo + 2h" — perto da meia-noite isso viraria
+        // dia seguinte e o isSameDay abaixo ia falhar por causa da hora do teste, não da regra.
+        $novoPrazo = now()->addDays(2)->setTime(12, 0);
         $response = $this->postJson("/api/ordens-servico/{$os->uuid}/reagendar", [
             'prazo_inicio' => $novoPrazo->toDateTimeString(),
             'prazo_fim' => $novoPrazo->copy()->addHours(2)->toDateTimeString(),
@@ -127,14 +129,17 @@ class OrdemServicoAutonomiaTest extends TestCase
         $empresa = Empresa::factory()->create();
         $this->ligarModoAprovacao($empresa);
         $promotor = Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]);
-        $prazoOriginal = now()->addDay();
+        // Meio-dia fixo nos dois — cada um vira "+2h" nalgum momento do teste, perto da
+        // meia-noite isso cruzaria pro dia seguinte e o isSameDay abaixo falharia pela hora em
+        // que o teste rodou, não pela regra sendo testada.
+        $prazoOriginal = now()->addDay()->setTime(12, 0);
         $os = OrdemServico::factory()->create([
             'empresa_id' => $empresa->id, 'usuario_id' => $promotor->id,
             'prazo_inicio' => $prazoOriginal, 'prazo_fim' => $prazoOriginal->copy()->addHours(2),
         ]);
         Sanctum::actingAs($promotor);
 
-        $novoPrazo = now()->addDays(5);
+        $novoPrazo = now()->addDays(5)->setTime(12, 0);
         $response = $this->postJson("/api/ordens-servico/{$os->uuid}/reagendar", [
             'prazo_inicio' => $novoPrazo->toDateTimeString(),
             'prazo_fim' => $novoPrazo->copy()->addHours(2)->toDateTimeString(),
@@ -298,7 +303,9 @@ class OrdemServicoAutonomiaTest extends TestCase
     {
         $empresa = Empresa::factory()->create();
         $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
-        $proposto = now()->addDays(3);
+        // Meio-dia fixo — vira "+2h" no fim (ver abaixo), perto da meia-noite cruzaria pro dia
+        // seguinte e o isSameDay falharia pela hora do teste, não pela regra.
+        $proposto = now()->addDays(3)->setTime(12, 0);
         $os = OrdemServico::factory()->create([
             'empresa_id' => $empresa->id, 'status' => 'REAGENDAMENTO_SOLICITADO',
             'prazo_inicio_proposto' => $proposto, 'prazo_fim_proposto' => $proposto->copy()->addHours(2),
@@ -318,8 +325,9 @@ class OrdemServicoAutonomiaTest extends TestCase
     {
         $empresa = Empresa::factory()->create();
         $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
-        $original = now()->addDay();
-        $proposto = now()->addDays(3);
+        // Meio-dia fixo nos dois, mesmo motivo dos testes acima.
+        $original = now()->addDay()->setTime(12, 0);
+        $proposto = now()->addDays(3)->setTime(12, 0);
         $os = OrdemServico::factory()->create([
             'empresa_id' => $empresa->id, 'status' => 'REAGENDAMENTO_SOLICITADO',
             'prazo_inicio' => $original, 'prazo_fim' => $original->copy()->addHours(2),

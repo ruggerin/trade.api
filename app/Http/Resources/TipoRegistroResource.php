@@ -15,6 +15,11 @@ class TipoRegistroResource extends JsonResource
         return [
             'id' => $this->uuid,
             'descricao' => $this->descricao,
+            // Slug do Material Design Icons, sem prefixo — ver App\Support\IconeTipoRegistro.
+            'icone' => $this->icone,
+            // Sequência de exibição (admin e mobile listam por ela) — ver
+            // TipoRegistroController::index/store/mover.
+            'ordem' => $this->ordem,
             'exige_foto' => $this->exige_foto,
             'permite_vincular_catalogo' => $this->permite_vincular_catalogo,
             'acao_obrigatoria' => $this->acao_obrigatoria,

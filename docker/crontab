@@ -1,0 +1,4 @@
+# Único ponto de entrada do scheduler do Laravel — routes/console.php decide o que roda de fato
+# e quando (Schedule::command(...)->daily()/->dailyAt(...)), este cron só chama schedule:run a
+# cada minuto, do jeito recomendado pela própria documentação do Laravel.
+* * * * * cd /var/www/html && php artisan schedule:run >> /dev/null 2>&1

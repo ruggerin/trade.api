@@ -20,6 +20,8 @@ class TipoRegistro extends Model
     protected $fillable = [
         'empresa_id',
         'descricao',
+        'icone',
+        'ordem',
         'exige_foto',
         'permite_vincular_catalogo',
         'ativo',
@@ -84,15 +86,17 @@ class TipoRegistro extends Model
     public static function seedPadrao(int $empresaId): void
     {
         foreach ([
-            ['descricao' => 'Foto', 'exige_foto' => true, 'eh_ruptura' => false],
+            ['descricao' => 'Foto', 'icone' => 'camera', 'exige_foto' => true, 'eh_ruptura' => false],
             // eh_ruptura=true + granularidade_padrao=PRODUTO — já nasce pronta pra ser a coluna
             // "Ruptura" da grade de coleta (Fase 2), sem o gestor precisar configurar nada.
-            ['descricao' => 'Ruptura', 'exige_foto' => false, 'eh_ruptura' => true],
-            ['descricao' => 'Observação', 'exige_foto' => false, 'eh_ruptura' => false],
-        ] as $tipo) {
+            ['descricao' => 'Ruptura', 'icone' => 'package-variant-remove', 'exige_foto' => false, 'eh_ruptura' => true],
+            ['descricao' => 'Observação', 'icone' => 'note-text-outline', 'exige_foto' => false, 'eh_ruptura' => false],
+        ] as $ordem => $tipo) {
             self::create([
                 'empresa_id' => $empresaId,
                 'descricao' => $tipo['descricao'],
+                'icone' => $tipo['icone'],
+                'ordem' => $ordem,
                 'exige_foto' => $tipo['exige_foto'],
                 'permite_vincular_catalogo' => false,
                 'eh_ruptura' => $tipo['eh_ruptura'],

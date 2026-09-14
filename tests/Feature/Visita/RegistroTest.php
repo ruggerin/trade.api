@@ -99,68 +99,6 @@ class RegistroTest extends TestCase
         Storage::disk('local')->assertExists($visita->registros()->first()->imagem_path);
     }
 
-    public function test_registro_geral_aceita_marcacao_de_momento_antes_ou_depois(): void
-    {
-        Storage::fake('local');
-
-        $empresa = Empresa::factory()->create();
-        $pdv = PontoVenda::factory()->create(['empresa_id' => $empresa->id]);
-        $promotor = Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]);
-        $visitaUuid = $this->abrirVisita($promotor, $pdv);
-        $fotoUuid = $this->tipoRegistroUuid($empresa, 'Foto');
-
-        $antes = $this->postJson("/api/visitas/{$visitaUuid}/registros", [
-            'tipo_registro_uuid' => $fotoUuid,
-            'momento' => 'ANTES',
-            'imagem' => $this->imagemFake(),
-        ]);
-        $antes->assertCreated()->assertJsonPath('registro.momento', 'ANTES');
-
-        $depois = $this->postJson("/api/visitas/{$visitaUuid}/registros", [
-            'tipo_registro_uuid' => $fotoUuid,
-            'momento' => 'DEPOIS',
-            'imagem' => $this->imagemFake(),
-        ]);
-        $depois->assertCreated()->assertJsonPath('registro.momento', 'DEPOIS');
-    }
-
-    public function test_registro_sem_momento_continua_valido(): void
-    {
-        Storage::fake('local');
-
-        $empresa = Empresa::factory()->create();
-        $pdv = PontoVenda::factory()->create(['empresa_id' => $empresa->id]);
-        $promotor = Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]);
-        $visitaUuid = $this->abrirVisita($promotor, $pdv);
-
-        $this->postJson("/api/visitas/{$visitaUuid}/registros", [
-            'tipo_registro_uuid' => $this->tipoRegistroUuid($empresa, 'Foto'),
-            'imagem' => $this->imagemFake(),
-        ])->assertCreated()->assertJsonPath('registro.momento', null);
-    }
-
-    public function test_momento_e_aceito_junto_com_produto_vinculado(): void
-    {
-        $empresa = Empresa::factory()->create();
-        $pdv = PontoVenda::factory()->create(['empresa_id' => $empresa->id]);
-        $promotor = Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]);
-        $produto = ProdutoAuditoria::create([
-            'empresa_id' => $empresa->id,
-            'descricao' => 'Produto Teste',
-            'propriedade' => 'PROPRIA',
-        ]);
-        $visitaUuid = $this->abrirVisita($promotor, $pdv);
-
-        $response = $this->postJson("/api/visitas/{$visitaUuid}/registros", [
-            'tipo_registro_uuid' => $this->tipoRegistroUuid($empresa, 'Ruptura'),
-            'produto_auditoria_uuid' => $produto->uuid,
-            'ruptura' => true,
-            'momento' => 'ANTES',
-        ]);
-
-        $response->assertCreated()->assertJsonPath('registro.momento', 'ANTES');
-    }
-
     public function test_mesmo_produto_aceita_varios_registros_livremente(): void
     {
         $empresa = Empresa::factory()->create();
@@ -177,13 +115,13 @@ class RegistroTest extends TestCase
             'empresa_id' => $empresa->id, 'descricao' => 'Ponto extra', 'permite_vincular_catalogo' => false,
         ]);
 
-        // Antes, depois, e um terceiro registro de outro tipo — tudo pro mesmo produto, na
-        // mesma visita, sem nenhuma trava de quantidade nem de combinação com momento.
+        // Dois registros do mesmo tipo e um terceiro de outro tipo — tudo pro mesmo produto, na
+        // mesma visita, sem nenhuma trava de quantidade.
         $this->postJson("/api/visitas/{$visitaUuid}/registros", [
-            'tipo_registro_uuid' => $tipoObservacao, 'produto_auditoria_uuid' => $produto->uuid, 'momento' => 'ANTES',
+            'tipo_registro_uuid' => $tipoObservacao, 'produto_auditoria_uuid' => $produto->uuid, 'observacao' => 'Antes',
         ])->assertCreated();
         $this->postJson("/api/visitas/{$visitaUuid}/registros", [
-            'tipo_registro_uuid' => $tipoObservacao, 'produto_auditoria_uuid' => $produto->uuid, 'momento' => 'DEPOIS',
+            'tipo_registro_uuid' => $tipoObservacao, 'produto_auditoria_uuid' => $produto->uuid, 'observacao' => 'Depois',
         ])->assertCreated();
         $this->postJson("/api/visitas/{$visitaUuid}/registros", [
             'tipo_registro_uuid' => $tipoPontoExtra->uuid, 'produto_auditoria_uuid' => $produto->uuid,
@@ -191,22 +129,6 @@ class RegistroTest extends TestCase
 
         $this->assertDatabaseCount('visita_registros', 3);
         $this->assertEquals(3, \App\Models\VisitaRegistro::where('produto_auditoria_id', $produto->id)->count());
-    }
-
-    public function test_momento_invalido_e_rejeitado(): void
-    {
-        Storage::fake('local');
-
-        $empresa = Empresa::factory()->create();
-        $pdv = PontoVenda::factory()->create(['empresa_id' => $empresa->id]);
-        $promotor = Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]);
-        $visitaUuid = $this->abrirVisita($promotor, $pdv);
-
-        $this->postJson("/api/visitas/{$visitaUuid}/registros", [
-            'tipo_registro_uuid' => $this->tipoRegistroUuid($empresa, 'Foto'),
-            'momento' => 'DURANTE',
-            'imagem' => $this->imagemFake(),
-        ])->assertStatus(422)->assertJsonValidationErrors('momento');
     }
 
     public function test_registro_de_ruptura_vinculado_a_produto(): void

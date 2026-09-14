@@ -19,6 +19,8 @@ class SortimentoPontoVendaResource extends JsonResource
                 'id' => $this->produto->uuid,
                 'descricao' => $this->produto->descricao,
                 'propriedade' => $this->produto->propriedade,
+                'imagem_url' => $this->produto->imagem_url,
+                'codigo_barras' => $this->produto->codigo_barras,
                 // Ver docs/16-GRANULARIDADE-CHECKLIST-AUDITORIA.md §6.
                 'produto_chave' => $this->produto->produto_chave,
                 // Usado pra agrupar por linha/seção na grade de coleta (Fase 2) — ver

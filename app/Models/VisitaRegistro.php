@@ -2,7 +2,6 @@
 
 namespace App\Models;
 
-use App\Enums\MomentoRegistro;
 use App\Enums\TipoItemCampanha;
 use App\Models\Concerns\HasUuid;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -28,7 +27,6 @@ class VisitaRegistro extends Model
         'secao_id',
         'departamento_id',
         'marca_id',
-        'momento',
         'ruptura',
         'observacao',
         'imagem_path',
@@ -42,7 +40,6 @@ class VisitaRegistro extends Model
     {
         return [
             'tipo_vinculo' => TipoItemCampanha::class,
-            'momento' => MomentoRegistro::class,
             'ruptura' => 'boolean',
             'valores_campos' => 'array',
             'cancelado_em' => 'datetime',

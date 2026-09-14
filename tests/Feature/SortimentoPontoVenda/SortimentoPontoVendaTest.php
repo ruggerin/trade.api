@@ -149,4 +149,27 @@ class SortimentoPontoVendaTest extends TestCase
         $this->assertCount(1, $response->json('ponto_venda.sortimento'));
         $this->assertSame('Nescau', $response->json('ponto_venda.sortimento.0.produto.descricao'));
     }
+
+    /**
+     * Imagem e código de barras do produto — usados no app mobile pra mostrar a miniatura e o
+     * botão "Ver detalhes" na lista de produtos da visita (ver VisitaAndamentoScreen.tsx).
+     */
+    public function test_sortimento_expoe_imagem_e_codigo_de_barras_do_produto(): void
+    {
+        $empresa = Empresa::factory()->create();
+        $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
+        $pdv = PontoVenda::factory()->create(['empresa_id' => $empresa->id]);
+        $produto = ProdutoAuditoria::factory()->create([
+            'empresa_id' => $empresa->id,
+            'imagem_url' => 'https://exemplo.com/nescau.png',
+            'codigo_barras' => '7891000100103',
+        ]);
+        Sanctum::actingAs($admin);
+        $this->postJson("/api/pontos-venda/{$pdv->uuid}/sortimento", ['tipo_item' => 'PRODUTO', 'produto_uuid' => $produto->uuid])->assertCreated();
+
+        $response = $this->getJson("/api/pontos-venda/{$pdv->uuid}")->assertOk();
+
+        $response->assertJsonPath('ponto_venda.sortimento.0.produto.imagem_url', 'https://exemplo.com/nescau.png')
+            ->assertJsonPath('ponto_venda.sortimento.0.produto.codigo_barras', '7891000100103');
+    }
 }
