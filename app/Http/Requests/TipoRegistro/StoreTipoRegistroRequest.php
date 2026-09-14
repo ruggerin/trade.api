@@ -72,6 +72,9 @@ class StoreTipoRegistroRequest extends FormRequest
             // Marca a coluna "Ruptura" da grade de coleta — ver
             // docs/16-GRANULARIDADE-CHECKLIST-AUDITORIA.md §9.
             'eh_ruptura' => ['nullable', 'boolean'],
+            // Dispara evento de alerta no Painel de Atividades — ver
+            // docs/17-PAINEL-ATIVIDADES.md.
+            'eh_alerta' => ['nullable', 'boolean'],
         ];
     }
 

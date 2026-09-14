@@ -16,7 +16,11 @@ class VisitaRegistroResource extends JsonResource
             'id' => $this->uuid,
             'tipo_registro' => $this->whenLoaded(
                 'tipoRegistro',
-                fn () => $this->tipoRegistro ? ['id' => $this->tipoRegistro->uuid, 'descricao' => $this->tipoRegistro->descricao] : null,
+                fn () => $this->tipoRegistro ? [
+                    'id' => $this->tipoRegistro->uuid,
+                    'descricao' => $this->tipoRegistro->descricao,
+                    'icone' => $this->tipoRegistro->icone,
+                ] : null,
             ),
             'produto_auditoria' => $this->whenLoaded(
                 'produtoAuditoria',
@@ -49,6 +53,14 @@ class VisitaRegistroResource extends JsonResource
             // Soft — a linha continua existindo mesmo cancelada (rastro histórico). Ver
             // App\Support\CancelamentoRegistro.
             'cancelado_em' => $this->cancelado_em,
+            // Resolução de alerta no Painel de Atividades — só relevante quando o
+            // TipoRegistro tem eh_alerta=true. Ver VisitaRegistroController::resolverAlerta e
+            // docs/17-PAINEL-ATIVIDADES.md.
+            'alerta_resolvido_em' => $this->alerta_resolvido_em,
+            'resolvido_por' => $this->whenLoaded(
+                'resolvidoPor',
+                fn () => $this->resolvidoPor ? ['id' => $this->resolvidoPor->uuid, 'nome' => $this->resolvidoPor->nome] : null,
+            ),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];

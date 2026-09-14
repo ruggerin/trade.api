@@ -64,6 +64,7 @@ class TipoRegistroController extends Controller
             'campanha_auditoria_id' => $this->resolverCampanhaAuditoriaId($dados['campanha_auditoria_uuid'] ?? null),
             'granularidade_padrao' => $dados['granularidade_padrao'] ?? null,
             'eh_ruptura' => $dados['eh_ruptura'] ?? false,
+            'eh_alerta' => $dados['eh_alerta'] ?? false,
         ]);
         $this->sincronizarCampos($tipo, $dados['campos'] ?? []);
         $this->sincronizarExcecoesGranularidade($tipo, $dados['excecoes_granularidade'] ?? []);

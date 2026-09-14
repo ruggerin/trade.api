@@ -34,6 +34,11 @@ class VisitaRegistro extends Model
         // Só o próprio VisitaRegistroController::cancelar escreve aqui — soft, nunca hard
         // delete (mantém o registro e a foto como rastro histórico do que foi cancelado).
         'cancelado_em',
+        // Resolução de alerta (Painel de Atividades) — mesmo raciocínio soft-state de
+        // cancelado_em, só tem efeito visível quando a empresa liga o Parametro
+        // ATIVIDADES_ALERTA_REQUER_RESOLUCAO. Ver VisitaRegistroController::resolverAlerta.
+        'alerta_resolvido_em',
+        'alerta_resolvido_por_id',
     ];
 
     protected function casts(): array
@@ -43,12 +48,18 @@ class VisitaRegistro extends Model
             'ruptura' => 'boolean',
             'valores_campos' => 'array',
             'cancelado_em' => 'datetime',
+            'alerta_resolvido_em' => 'datetime',
         ];
     }
 
     public function visita(): BelongsTo
     {
         return $this->belongsTo(Visita::class);
+    }
+
+    public function resolvidoPor(): BelongsTo
+    {
+        return $this->belongsTo(Usuario::class, 'alerta_resolvido_por_id');
     }
 
     public function tipoRegistro(): BelongsTo

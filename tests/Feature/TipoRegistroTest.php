@@ -52,6 +52,22 @@ class TipoRegistroTest extends TestCase
             ->assertJsonPath('tipo_registro.campos.0.chave', 'quantidade');
     }
 
+    public function test_admin_marca_tipo_como_alerta_e_atualiza_a_flag(): void
+    {
+        $empresa = Empresa::factory()->create();
+        $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
+        Sanctum::actingAs($admin);
+
+        $response = $this->postJson('/api/tipos-registro', [
+            'descricao' => 'Avaria', 'eh_alerta' => true,
+        ]);
+        $response->assertCreated()->assertJsonPath('tipo_registro.eh_alerta', true);
+
+        $tipoUuid = $response->json('tipo_registro.id');
+        $this->putJson("/api/tipos-registro/{$tipoUuid}", ['eh_alerta' => false])
+            ->assertOk()->assertJsonPath('tipo_registro.eh_alerta', false);
+    }
+
     public function test_chave_de_campo_invalida_retorna_422(): void
     {
         $empresa = Empresa::factory()->create();

@@ -30,6 +30,9 @@ class TipoRegistroResource extends JsonResource
             // Marca a coluna "Ruptura" da grade de coleta (Fase 2) — ver
             // docs/16-GRANULARIDADE-CHECKLIST-AUDITORIA.md §9.
             'eh_ruptura' => $this->eh_ruptura,
+            // Dispara evento de alerta no Painel de Atividades — ver
+            // docs/17-PAINEL-ATIVIDADES.md.
+            'eh_alerta' => $this->eh_alerta,
             'excecoes_granularidade' => $this->whenLoaded(
                 'excecoesGranularidade',
                 fn () => $this->excecoesGranularidade->map(fn ($excecao) => [
