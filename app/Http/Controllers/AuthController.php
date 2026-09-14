@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Enums\UserType;
 use App\Http\Requests\Auth\LoginRequest;
+use App\Http\Requests\Usuario\AtualizarFotoUsuarioRequest;
 use App\Http\Resources\UsuarioResource;
 use App\Models\Dispositivo;
 use App\Models\Usuario;
@@ -11,6 +12,7 @@ use App\Models\UsuarioLoginLog;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
@@ -97,6 +99,42 @@ class AuthController extends Controller
 
         return response()->json([
             'usuario' => new UsuarioResource($usuario),
+        ]);
+    }
+
+    /**
+     * Self-service — qualquer usuário autenticado troca a própria foto, sem exigir
+     * `usuarios.gerenciar` (essa permissão é pra alguém mexer no cadastro de outro usuário).
+     * Substitui o arquivo anterior em vez de acumular, mesmo raciocínio de
+     * TipoRegistroController::sincronizarCampos (não deixa lixo órfão no disco).
+     */
+    public function atualizarFoto(AtualizarFotoUsuarioRequest $request): JsonResponse
+    {
+        $usuario = $request->user();
+
+        if ($usuario->foto_path) {
+            Storage::disk(config('filesystems.default'))->delete($usuario->foto_path);
+        }
+
+        $caminho = $request->file('imagem')->store("usuarios/{$usuario->id}", config('filesystems.default'));
+        $usuario->update(['foto_path' => $caminho]);
+
+        return response()->json([
+            'usuario' => new UsuarioResource($usuario->fresh()->loadMissing(['empresa', 'perfil', 'dispositivo'])),
+        ]);
+    }
+
+    public function removerFoto(Request $request): JsonResponse
+    {
+        $usuario = $request->user();
+
+        if ($usuario->foto_path) {
+            Storage::disk(config('filesystems.default'))->delete($usuario->foto_path);
+            $usuario->update(['foto_path' => null]);
+        }
+
+        return response()->json([
+            'usuario' => new UsuarioResource($usuario->fresh()->loadMissing(['empresa', 'perfil', 'dispositivo'])),
         ]);
     }
 }

@@ -19,6 +19,7 @@ use App\Models\PontoVenda;
 use App\Models\Usuario;
 use App\Models\Visita;
 use App\Models\VisitaIntervencao;
+use App\Support\CancelamentoVisita;
 use App\Support\Haversine;
 use App\Support\RaioCheckin;
 use Illuminate\Http\JsonResponse;
@@ -197,6 +198,47 @@ class VisitaController extends Controller
                 ->where('id', $visita->ordem_servico_id)
                 ->update(['status' => StatusOrdemServico::CONCLUIDA]);
         }
+
+        return response()->json([
+            'visita' => new VisitaResource($visita),
+        ]);
+    }
+
+    /**
+     * Autosserviço: o próprio promotor cancela (anula) a visita que ele mesmo abriu, antes de
+     * finalizar — ex.: check-in por engano, loja fechada. Diferente da intervenção
+     * administrativa (cancelar() abaixo): sem `motivo`, sem log em `visita_intervencoes` (essa
+     * tabela é reservada pra ADMIN/GESTOR agindo sobre a visita de outra pessoa), gated por
+     * `Parametro` (VISITA_CANCELAMENTO_PERMITIDO, ausente/inativo = `false`, default
+     * conservador) — mesmo raciocínio de App\Support\CancelamentoRegistro. ADMIN/GESTOR não
+     * passam por aqui: eles já têm o `cancelar()` de baixo, sem depender deste parâmetro.
+     */
+    public function cancelarPropria(Request $request, Visita $visita): JsonResponse
+    {
+        $this->autorizarAcesso($request, $visita);
+
+        $usuario = $request->user();
+        if ($usuario->user_type !== UserType::PROMOTOR) {
+            abort(403, 'Esta ação é só para o promotor cancelar a própria visita.');
+        }
+
+        if (! CancelamentoVisita::permitidoParaPromotor($usuario->empresa)) {
+            abort(403, 'Cancelamento de visita não está habilitado para promotores.');
+        }
+
+        if ($visita->status !== StatusVisita::ABERTA) {
+            return response()->json(['message' => 'Só é possível cancelar uma visita em andamento.'], 422);
+        }
+
+        DB::transaction(function () use ($visita): void {
+            $visita->update(['status' => StatusVisita::CANCELADA]);
+
+            if ($visita->ordem_servico_id) {
+                OrdemServico::withoutGlobalScopes()
+                    ->where('id', $visita->ordem_servico_id)
+                    ->update(['status' => StatusOrdemServico::PENDENTE, 'visita_id' => null]);
+            }
+        });
 
         return response()->json([
             'visita' => new VisitaResource($visita),

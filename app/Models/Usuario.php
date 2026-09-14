@@ -27,6 +27,7 @@ class Usuario extends Authenticatable
         'centro_custo_id',
         'ativo',
         'avatar_url',
+        'foto_path',
     ];
 
     protected $hidden = [

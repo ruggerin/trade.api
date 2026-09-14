@@ -117,6 +117,7 @@ class CampanhaAuditoriaController extends Controller
             'produto_uuid' => $entry['produto']->uuid,
             'descricao' => $entry['produto']->descricao,
             'imagem_url' => $entry['produto']->imagem_url,
+            'codigo_barras' => $entry['produto']->codigo_barras,
             'propriedade' => $entry['produto']->propriedade,
             // Ver docs/16-GRANULARIDADE-CHECKLIST-AUDITORIA.md §6 — usado em
             // confirmarFinalizacao() pra nomear produto-chave ausente, em vez de só contar.

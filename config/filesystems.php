@@ -55,8 +55,13 @@ return [
             'bucket' => env('AWS_BUCKET'),
             'url' => env('AWS_URL'),
             'endpoint' => env('AWS_ENDPOINT'),
-            'root' => env('AWS_ROOT'),
             'use_path_style_endpoint' => env('AWS_USE_PATH_STYLE_ENDPOINT', false),
+            // Prefixo de pasta dentro do bucket — o mesmo bucket "prossiga" (DigitalOcean
+            // Spaces) já é compartilhado entre projetos da StoneUp (ver
+            // faztabloide.com/backend, que usa "fazencarte/images"); este projeto usa a sua
+            // própria pasta (AWS_ROOT) pra nunca misturar arquivo de um projeto com o de outro
+            // no mesmo bucket.
+            'root' => env('AWS_ROOT', ''),
             'throw' => false,
             'report' => false,
         ],

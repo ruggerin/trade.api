@@ -35,6 +35,14 @@ Route::post('/auth/login', [AuthController::class, 'login']);
 Route::middleware('auth:sanctum')->group(function (): void {
     Route::post('/auth/logout', [AuthController::class, 'logout']);
     Route::get('/auth/me', [AuthController::class, 'me']);
+    // Self-service de foto de perfil — qualquer autenticado troca a própria, sem exigir
+    // usuarios.gerenciar (ver AuthController::atualizarFoto). A rota de leitura (servir o
+    // arquivo) fica fora do grupo `permissao:usuarios.gerenciar` abaixo de propósito: o próprio
+    // dono precisa poder ver a própria foto (/auth/me.foto_url aponta pra ela) mesmo sendo
+    // PROMOTOR — ver UsuarioController::foto.
+    Route::post('/auth/me/foto', [AuthController::class, 'atualizarFoto']);
+    Route::delete('/auth/me/foto', [AuthController::class, 'removerFoto']);
+    Route::get('/usuarios/{usuario}/foto', [UsuarioController::class, 'foto']);
     Route::get('/empresa', [EmpresaController::class, 'show']);
 
     // Catálogo de auditoria: leitura para qualquer usuário autenticado, escrita por
@@ -69,6 +77,11 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::get('/visitas/{visita}', [VisitaController::class, 'show']);
     Route::post('/visitas', [VisitaController::class, 'store']);
     Route::patch('/visitas/{visita}/checkout', [VisitaController::class, 'checkout']);
+    // Autosserviço: promotor cancela a própria visita em andamento, parametrizável por empresa
+    // (VISITA_CANCELAMENTO_PERMITIDO) — mesmo raciocínio do cancelamento de registro, não se
+    // confunde com a intervenção administrativa (bloco visitas.intervir abaixo). Ver
+    // VisitaController::cancelarPropria.
+    Route::post('/visitas/{visita}/cancelar-propria', [VisitaController::class, 'cancelarPropria']);
     Route::post('/visitas/{visita}/registros', [VisitaRegistroController::class, 'store']);
     Route::get('/visitas/{visita}/registros/{registro}/imagem', [VisitaRegistroController::class, 'imagem']);
     // Cancelamento (soft) de um registro já feito — parametrizável por empresa pra PROMOTOR
@@ -182,6 +195,9 @@ Route::middleware('auth:sanctum')->group(function (): void {
         Route::post('/tipos-registro', [TipoRegistroController::class, 'store']);
         Route::put('/tipos-registro/{tipoRegistro}', [TipoRegistroController::class, 'update']);
         Route::delete('/tipos-registro/{tipoRegistro}', [TipoRegistroController::class, 'destroy']);
+        // Sequência de exibição (admin e mobile, ver TipoRegistroController::index) — troca a
+        // `ordem` deste tipo com a do vizinho (anterior/seguinte), em vez de expor o número cru.
+        Route::post('/tipos-registro/{tipoRegistro}/mover', [TipoRegistroController::class, 'mover']);
     });
 
     // Campanhas: permissão própria, separada do catálogo — definir "o que auditar" é uma

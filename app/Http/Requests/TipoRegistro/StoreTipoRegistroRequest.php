@@ -5,6 +5,7 @@ namespace App\Http\Requests\TipoRegistro;
 use App\Enums\EscopoAcaoTipoRegistro;
 use App\Enums\GranularidadeResposta;
 use App\Enums\TipoCampoRegistro;
+use App\Support\IconeTipoRegistro;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
@@ -16,10 +17,20 @@ class StoreTipoRegistroRequest extends FormRequest
         return true;
     }
 
+    protected function prepareForValidation(): void
+    {
+        if ($this->has('icone')) {
+            $this->merge(['icone' => IconeTipoRegistro::normalizar($this->input('icone'))]);
+        }
+    }
+
     public function rules(): array
     {
         return [
             'descricao' => ['required', 'string', 'max:255'],
+            // Slug do Material Design Icons, já normalizado em prepareForValidation() (sem
+            // prefixo "mdi-", minúsculo) — ver App\Support\IconeTipoRegistro.
+            'icone' => ['nullable', 'string', 'max:60', 'regex:/^[a-z0-9-]+$/'],
             'exige_foto' => ['nullable', 'boolean'],
             'permite_vincular_catalogo' => ['nullable', 'boolean'],
             // Ação obrigatória (ver App\Enums\EscopoAcaoTipoRegistro) — vira pendência na aba
@@ -69,6 +80,7 @@ class StoreTipoRegistroRequest extends FormRequest
         return [
             'campos.*.chave.regex' => 'A chave deve conter apenas letras minúsculas, números e underscore (ex.: quantidade).',
             'campos.*.opcoes.required_if' => 'Informe ao menos uma opção pra um campo de múltipla escolha.',
+            'icone.regex' => 'Código de ícone inválido — use o slug do Material Design Icons (ex.: camera, alert, arrow-right).',
         ];
     }
 

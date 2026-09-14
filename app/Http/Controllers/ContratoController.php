@@ -148,7 +148,7 @@ class ContratoController extends Controller
 
         $arquivo = $request->file('arquivo');
         $nomeArquivo = "{$contrato->uuid}.".($arquivo->extension() ?: 'pdf');
-        $arquivo->storeAs('contratos', $nomeArquivo, 'local');
+        $arquivo->storeAs('contratos', $nomeArquivo, config('filesystems.default'));
         $contrato->update(['arquivo_path' => "contratos/{$nomeArquivo}"]);
         $contrato->load(['pontoVenda', 'empresa']);
         $this->registrarHistorico($request, $contrato, $substituindo ? 'Arquivo assinado substituído' : 'Arquivo assinado anexado');
@@ -162,7 +162,7 @@ class ContratoController extends Controller
     {
         abort_if(! $contrato->arquivo_path, 404);
 
-        return Storage::disk('local')->response($contrato->arquivo_path);
+        return Storage::disk(config('filesystems.default'))->response($contrato->arquivo_path);
     }
 
     /**

@@ -266,4 +266,26 @@ class GranularidadeChecklistTest extends TestCase
             ->assertJsonPath('produtos.0.secao_uuid', $secao->uuid)
             ->assertJsonPath('produtos.0.secao_descricao', $secao->descricao);
     }
+
+    /**
+     * Imagem e código de barras — usados no app mobile pra mostrar a miniatura e o botão "Ver
+     * detalhes" na lista de produtos da visita (ver VisitaAndamentoScreen.tsx).
+     */
+    public function test_disponiveis_expoe_imagem_e_codigo_de_barras(): void
+    {
+        ['empresa' => $empresa, 'pdv' => $pdv, 'promotor' => $promotor, 'produto' => $produto] = $this->cenario();
+        $produto->update(['imagem_url' => 'https://exemplo.com/produto.png', 'codigo_barras' => '7891000100103']);
+        $campanha = \App\Models\CampanhaAuditoria::factory()->create([
+            'empresa_id' => $empresa->id, 'vigencia_inicio' => now()->subDay(), 'vigencia_fim' => now()->addDay(),
+        ]);
+        \App\Models\CampanhaItem::create([
+            'campanha_id' => $campanha->id, 'tipo_item' => 'PRODUTO', 'produto_id' => $produto->id,
+        ]);
+        Sanctum::actingAs($promotor);
+
+        $this->getJson("/api/campanhas-auditoria/disponiveis?ponto_venda_uuid={$pdv->uuid}")
+            ->assertOk()
+            ->assertJsonPath('produtos.0.imagem_url', 'https://exemplo.com/produto.png')
+            ->assertJsonPath('produtos.0.codigo_barras', '7891000100103');
+    }
 }

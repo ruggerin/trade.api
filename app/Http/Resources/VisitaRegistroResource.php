@@ -40,7 +40,6 @@ class VisitaRegistroResource extends JsonResource
                 'marca',
                 fn () => $this->marca ? ['id' => $this->marca->uuid, 'descricao' => $this->marca->descricao] : null,
             ),
-            'momento' => $this->momento,
             'ruptura' => $this->ruptura,
             'observacao' => $this->observacao,
             'valores_campos' => $this->valores_campos,

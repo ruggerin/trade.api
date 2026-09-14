@@ -3,7 +3,6 @@
 namespace App\Http\Requests\VisitaRegistro;
 
 use App\Enums\GranularidadeResposta;
-use App\Enums\MomentoRegistro;
 use App\Enums\TipoCampoRegistro;
 use App\Enums\TipoItemCampanha;
 use App\Models\ProdutoAuditoria;
@@ -66,11 +65,6 @@ class StoreVisitaRegistroRequest extends FormRequest
             ],
             'ruptura' => ['nullable', 'boolean'],
             'observacao' => ['nullable', 'string'],
-            // Livre mesmo com produto vinculado — o mesmo produto pode ter mais de um registro
-            // na mesma visita (antes, depois, um "Ponto extra" novo, etc.), cada um seu próprio
-            // momento opcional. Antes proibia junto de produto_auditoria_uuid; mudou porque
-            // "antes/depois" faz sentido tanto pro registro geral quanto por produto específico.
-            'momento' => ['nullable', Rule::enum(MomentoRegistro::class)],
             // Valores dos campos customizados do tipo_registro escolhido — validados dinamicamente
             // contra a definição de cada campo (ver withValidator abaixo), não dá pra expressar
             // isso como regra estática.

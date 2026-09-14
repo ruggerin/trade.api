@@ -26,6 +26,8 @@ class TipoRegistroTest extends TestCase
         $descricoes = TipoRegistro::where('empresa_id', $empresa->id)->pluck('descricao')->sort()->values()->all();
 
         $this->assertSame(['Foto', 'Observação', 'Ruptura'], $descricoes);
+        // Os 3 já nascem com ícone — sem o gestor precisar configurar nada de cara.
+        $this->assertSame('camera', TipoRegistro::where(['empresa_id' => $empresa->id, 'descricao' => 'Foto'])->value('icone'));
     }
 
     public function test_admin_cria_tipo_de_registro_com_campos_customizados(): void
@@ -217,5 +219,190 @@ class TipoRegistroTest extends TestCase
 
         $response->assertOk()->assertJsonPath('tipo_registro.campanha_auditoria_uuid', null);
         $this->assertDatabaseHas('tipos_registro', ['id' => $tipo->id, 'campanha_auditoria_id' => null]);
+    }
+
+    /**
+     * Ícone — ver App\Support\IconeTipoRegistro e docs/03-ADMIN-WEB.md#tipos-de-registro. O
+     * gestor digita o slug do Material Design Icons, com ou sem o prefixo "mdi-"/"mdi:" que o
+     * site do MDI mostra junto do nome — os dois formatos precisam normalizar pro mesmo valor,
+     * porque é ele que o mobile usa direto como `name` do MaterialCommunityIcons.
+     */
+    public function test_icone_com_prefixo_mdi_e_normalizado_sem_prefixo(): void
+    {
+        $empresa = Empresa::factory()->create();
+        $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
+        Sanctum::actingAs($admin);
+
+        $response = $this->postJson('/api/tipos-registro', [
+            'descricao' => 'Ponto extra',
+            'icone' => 'mdi-arrow-right',
+        ]);
+
+        $response->assertCreated()->assertJsonPath('tipo_registro.icone', 'arrow-right');
+    }
+
+    public function test_icone_com_prefixo_mdi_dois_pontos_tambem_e_normalizado(): void
+    {
+        $empresa = Empresa::factory()->create();
+        $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
+        Sanctum::actingAs($admin);
+
+        $response = $this->postJson('/api/tipos-registro', [
+            'descricao' => 'Ponto extra',
+            'icone' => 'mdi:camera',
+        ]);
+
+        $response->assertCreated()->assertJsonPath('tipo_registro.icone', 'camera');
+    }
+
+    public function test_icone_com_caractere_invalido_retorna_422(): void
+    {
+        $empresa = Empresa::factory()->create();
+        $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
+        Sanctum::actingAs($admin);
+
+        $this->postJson('/api/tipos-registro', [
+            'descricao' => 'Ponto extra',
+            'icone' => 'câmera азиатский',
+        ])->assertStatus(422)->assertJsonValidationErrors('icone');
+    }
+
+    public function test_icone_e_opcional(): void
+    {
+        $empresa = Empresa::factory()->create();
+        $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
+        Sanctum::actingAs($admin);
+
+        $this->postJson('/api/tipos-registro', ['descricao' => 'Ponto extra'])
+            ->assertCreated()->assertJsonPath('tipo_registro.icone', null);
+    }
+
+    public function test_update_troca_o_icone(): void
+    {
+        $empresa = Empresa::factory()->create();
+        $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
+        $tipo = TipoRegistro::create(['empresa_id' => $empresa->id, 'descricao' => 'Ponto extra', 'icone' => 'camera']);
+        Sanctum::actingAs($admin);
+
+        $response = $this->putJson("/api/tipos-registro/{$tipo->uuid}", ['icone' => 'mdi-tag']);
+
+        $response->assertOk()->assertJsonPath('tipo_registro.icone', 'tag');
+    }
+
+    /**
+     * Sequência de exibição (`ordem`) — ver TipoRegistroController::index/store/mover e
+     * docs/03-ADMIN-WEB.md#tipos-de-registro. Precisa ser a mesma ordem no admin e no mobile,
+     * já que os dois consomem o mesmo GET /api/tipos-registro.
+     */
+    public function test_listagem_ordena_por_ordem_nao_alfabetica(): void
+    {
+        $empresa = Empresa::factory()->create();
+        $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
+        // Toda empresa nasce com os 3 tipos de fábrica (ver seedPadrao) — removidos aqui pra
+        // isolar só a mecânica de ordenação sendo testada.
+        TipoRegistro::where('empresa_id', $empresa->id)->delete();
+        TipoRegistro::create(['empresa_id' => $empresa->id, 'descricao' => 'Zebra', 'ordem' => 0]);
+        TipoRegistro::create(['empresa_id' => $empresa->id, 'descricao' => 'Abacate', 'ordem' => 1]);
+        Sanctum::actingAs($admin);
+
+        $response = $this->getJson('/api/tipos-registro')->assertOk();
+
+        $this->assertSame(['Zebra', 'Abacate'], collect($response->json('tipos_registro'))->pluck('descricao')->all());
+    }
+
+    public function test_tipo_novo_nasce_no_fim_da_lista(): void
+    {
+        $empresa = Empresa::factory()->create();
+        $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
+        Sanctum::actingAs($admin);
+        // Os 3 de fábrica já ocupam ordem 0, 1, 2 (ver TipoRegistro::seedPadrao).
+
+        $response = $this->postJson('/api/tipos-registro', ['descricao' => 'Ponto extra']);
+
+        $response->assertCreated()->assertJsonPath('tipo_registro.ordem', 3);
+    }
+
+    public function test_mover_para_cima_troca_com_o_anterior(): void
+    {
+        $empresa = Empresa::factory()->create();
+        $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
+        TipoRegistro::where('empresa_id', $empresa->id)->delete();
+        $primeiro = TipoRegistro::create(['empresa_id' => $empresa->id, 'descricao' => 'Primeiro', 'ordem' => 0]);
+        $segundo = TipoRegistro::create(['empresa_id' => $empresa->id, 'descricao' => 'Segundo', 'ordem' => 1]);
+        Sanctum::actingAs($admin);
+
+        $response = $this->postJson("/api/tipos-registro/{$segundo->uuid}/mover", ['direcao' => 'cima']);
+
+        $response->assertOk()->assertJsonPath('tipo_registro.ordem', 0);
+        $this->assertDatabaseHas('tipos_registro', ['id' => $primeiro->id, 'ordem' => 1]);
+        $this->assertDatabaseHas('tipos_registro', ['id' => $segundo->id, 'ordem' => 0]);
+    }
+
+    public function test_mover_para_baixo_troca_com_o_seguinte(): void
+    {
+        $empresa = Empresa::factory()->create();
+        $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
+        TipoRegistro::where('empresa_id', $empresa->id)->delete();
+        $primeiro = TipoRegistro::create(['empresa_id' => $empresa->id, 'descricao' => 'Primeiro', 'ordem' => 0]);
+        $segundo = TipoRegistro::create(['empresa_id' => $empresa->id, 'descricao' => 'Segundo', 'ordem' => 1]);
+        Sanctum::actingAs($admin);
+
+        $response = $this->postJson("/api/tipos-registro/{$primeiro->uuid}/mover", ['direcao' => 'baixo']);
+
+        $response->assertOk()->assertJsonPath('tipo_registro.ordem', 1);
+        $this->assertDatabaseHas('tipos_registro', ['id' => $segundo->id, 'ordem' => 0]);
+    }
+
+    public function test_mover_para_cima_o_primeiro_da_lista_nao_faz_nada(): void
+    {
+        $empresa = Empresa::factory()->create();
+        $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
+        TipoRegistro::where('empresa_id', $empresa->id)->delete();
+        $primeiro = TipoRegistro::create(['empresa_id' => $empresa->id, 'descricao' => 'Primeiro', 'ordem' => 0]);
+        TipoRegistro::create(['empresa_id' => $empresa->id, 'descricao' => 'Segundo', 'ordem' => 1]);
+        Sanctum::actingAs($admin);
+
+        $response = $this->postJson("/api/tipos-registro/{$primeiro->uuid}/mover", ['direcao' => 'cima']);
+
+        $response->assertOk()->assertJsonPath('tipo_registro.ordem', 0);
+    }
+
+    public function test_mover_de_outra_empresa_nao_troca_ordem_entre_empresas(): void
+    {
+        $empresaA = Empresa::factory()->create();
+        $empresaB = Empresa::factory()->create();
+        $adminA = Usuario::factory()->admin()->create(['empresa_id' => $empresaA->id]);
+        TipoRegistro::where('empresa_id', $empresaA->id)->delete();
+        TipoRegistro::where('empresa_id', $empresaB->id)->delete();
+        $tipoA = TipoRegistro::create(['empresa_id' => $empresaA->id, 'descricao' => 'Só da A', 'ordem' => 5]);
+        $tipoB = TipoRegistro::create(['empresa_id' => $empresaB->id, 'descricao' => 'Só da B', 'ordem' => 0]);
+        Sanctum::actingAs($adminA);
+
+        // Nenhum tipo da empresa A tem ordem menor que 5 (o global scope não enxerga a B) —
+        // "mover pra cima" não deve fazer nada, muito menos mexer no tipo da outra empresa.
+        $this->postJson("/api/tipos-registro/{$tipoA->uuid}/mover", ['direcao' => 'cima'])
+            ->assertOk()->assertJsonPath('tipo_registro.ordem', 5);
+        $this->assertDatabaseHas('tipos_registro', ['id' => $tipoB->id, 'ordem' => 0]);
+    }
+
+    public function test_mover_exige_direcao_valida(): void
+    {
+        $empresa = Empresa::factory()->create();
+        $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
+        $tipo = TipoRegistro::create(['empresa_id' => $empresa->id, 'descricao' => 'Ponto extra']);
+        Sanctum::actingAs($admin);
+
+        $this->postJson("/api/tipos-registro/{$tipo->uuid}/mover", ['direcao' => 'lado'])
+            ->assertStatus(422)->assertJsonValidationErrors('direcao');
+    }
+
+    public function test_gestor_sem_permissao_nao_pode_mover(): void
+    {
+        $empresa = Empresa::factory()->create();
+        $gestor = Usuario::factory()->gestor()->create(['empresa_id' => $empresa->id]);
+        $tipo = TipoRegistro::create(['empresa_id' => $empresa->id, 'descricao' => 'Ponto extra']);
+        Sanctum::actingAs($gestor);
+
+        $this->postJson("/api/tipos-registro/{$tipo->uuid}/mover", ['direcao' => 'cima'])->assertForbidden();
     }
 }

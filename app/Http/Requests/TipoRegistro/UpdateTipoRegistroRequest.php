@@ -5,6 +5,7 @@ namespace App\Http\Requests\TipoRegistro;
 use App\Enums\EscopoAcaoTipoRegistro;
 use App\Enums\GranularidadeResposta;
 use App\Enums\TipoCampoRegistro;
+use App\Support\IconeTipoRegistro;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
@@ -16,10 +17,18 @@ class UpdateTipoRegistroRequest extends FormRequest
         return true;
     }
 
+    protected function prepareForValidation(): void
+    {
+        if ($this->has('icone')) {
+            $this->merge(['icone' => IconeTipoRegistro::normalizar($this->input('icone'))]);
+        }
+    }
+
     public function rules(): array
     {
         return [
             'descricao' => ['sometimes', 'required', 'string', 'max:255'],
+            'icone' => ['sometimes', 'nullable', 'string', 'max:60', 'regex:/^[a-z0-9-]+$/'],
             'exige_foto' => ['sometimes', 'boolean'],
             'permite_vincular_catalogo' => ['sometimes', 'boolean'],
             'ativo' => ['sometimes', 'boolean'],
@@ -64,6 +73,7 @@ class UpdateTipoRegistroRequest extends FormRequest
         return [
             'campos.*.chave.regex' => 'A chave deve conter apenas letras minúsculas, números e underscore (ex.: quantidade).',
             'campos.*.opcoes.required_if' => 'Informe ao menos uma opção pra um campo de múltipla escolha.',
+            'icone.regex' => 'Código de ícone inválido — use o slug do Material Design Icons (ex.: camera, alert, arrow-right).',
         ];
     }
 

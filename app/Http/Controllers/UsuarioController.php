@@ -16,9 +16,25 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class UsuarioController extends Controller
 {
+    /**
+     * Serve a foto de perfil enviada pelo próprio usuário (ver AuthController::atualizarFoto) —
+     * fora do grupo `permissao:usuarios.gerenciar` de propósito: qualquer autenticado da mesma
+     * empresa pode ver a foto de um colega (isolamento de tenant já garantido pelo route model
+     * binding + global scope), não só quem gerencia usuários. Mesmo padrão de
+     * VisitaRegistroController::imagem.
+     */
+    public function foto(Usuario $usuario): StreamedResponse
+    {
+        abort_if(! $usuario->foto_path, 404);
+
+        return Storage::disk(config('filesystems.default'))->response($usuario->foto_path);
+    }
+
     public function index(Request $request): JsonResponse
     {
         $usuarios = Usuario::query()
