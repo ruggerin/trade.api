@@ -53,6 +53,9 @@ class UpdateTipoRegistroRequest extends FormRequest
             'campos.*.opcoes' => ['required_if:campos.*.tipo_campo,MULTIPLA_ESCOLHA', 'array', 'min:1'],
             'campos.*.opcoes.*' => ['string', 'max:255'],
             'campos.*.obrigatorio' => ['nullable', 'boolean'],
+            // Campo condicional — ver StoreTipoRegistroRequest.
+            'campos.*.depende_de_chave' => ['nullable', 'string', 'max:50'],
+            'campos.*.depende_de_valor' => ['required_with:campos.*.depende_de_chave', 'nullable', 'string'],
             'granularidade_padrao' => ['nullable', Rule::in(array_column(GranularidadeResposta::cases(), 'value'))],
             // Quando enviado, substitui a lista inteira de exceções (ver
             // TipoRegistroController::sincronizarExcecoesGranularidade).
@@ -86,6 +89,8 @@ class UpdateTipoRegistroRequest extends FormRequest
                 if ($chaves->count() !== $chaves->unique()->count()) {
                     $validator->errors()->add('campos', 'As chaves dos campos precisam ser únicas dentro do mesmo tipo.');
                 }
+
+                $this->validarCondicional($validator);
             }
 
             if ($this->has('excecoes_granularidade')) {
@@ -95,5 +100,33 @@ class UpdateTipoRegistroRequest extends FormRequest
                 }
             }
         });
+    }
+
+    /** Ver StoreTipoRegistroRequest::validarCondicional (mesma regra). */
+    protected function validarCondicional(Validator $validator): void
+    {
+        $campos = array_values($this->input('campos', []));
+        $indicePorChave = [];
+        foreach ($campos as $indice => $campo) {
+            if (! empty($campo['chave'])) {
+                $indicePorChave[$campo['chave']] = $indice;
+            }
+        }
+
+        foreach ($campos as $indice => $campo) {
+            $dependeDeChave = $campo['depende_de_chave'] ?? null;
+            if ($dependeDeChave === null) {
+                continue;
+            }
+
+            if (! array_key_exists($dependeDeChave, $indicePorChave)) {
+                $validator->errors()->add("campos.{$indice}.depende_de_chave", 'Precisa referenciar a chave de outro campo deste mesmo formulário.');
+                continue;
+            }
+
+            if ($indicePorChave[$dependeDeChave] >= $indice) {
+                $validator->errors()->add("campos.{$indice}.depende_de_chave", 'Só pode depender de um campo anterior na ordem do formulário.');
+            }
+        }
     }
 }

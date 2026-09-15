@@ -82,9 +82,10 @@ class VisitaController extends Controller
             'intervencoes.usuario',
             'registros.produtoAuditoria', 'registros.tipoRegistro',
             'registros.secao', 'registros.departamento', 'registros.marca',
+            'registros.imagens',
         ]);
-        // Evita 1 query por registro só pra montar imagem_url (ver VisitaRegistroResource) —
-        // a visita pai já é conhecida aqui.
+        // Evita 1 query por registro só pra montar a url de cada imagem (ver
+        // VisitaRegistroResource) — a visita pai já é conhecida aqui.
         $visita->registros->each(fn ($registro) => $registro->setRelation('visita', $visita));
 
         return response()->json([

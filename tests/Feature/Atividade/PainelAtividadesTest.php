@@ -155,6 +155,35 @@ class PainelAtividadesTest extends TestCase
         $this->assertNotSame($registroResolvidoUuid, $eventos->first()['registro']['id']);
     }
 
+    public function test_pagina_o_feed_em_paginas_de_20(): void
+    {
+        $empresa = Empresa::factory()->create();
+        $pdv = PontoVenda::factory()->create(['empresa_id' => $empresa->id]);
+        $promotor = Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]);
+        $tipoAlerta = $this->criarTipoAlerta($empresa);
+        $visitaUuid = $this->abrirVisita($promotor, $pdv);
+
+        // 25 alertas + 1 check-in (abrirVisita) = 26 eventos no total, sem filtro nenhum.
+        for ($i = 0; $i < 25; $i++) {
+            $this->criarRegistro($visitaUuid, $tipoAlerta->uuid);
+        }
+
+        $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
+        Sanctum::actingAs($admin);
+
+        $pagina1 = $this->getJson('/api/atividades')->assertOk();
+        $this->assertCount(20, $pagina1->json('eventos'));
+        $this->assertSame(1, $pagina1->json('meta.current_page'));
+        $this->assertSame(2, $pagina1->json('meta.last_page'));
+        $this->assertSame(26, $pagina1->json('meta.total'));
+        $this->assertSame(20, $pagina1->json('meta.per_page'));
+
+        $pagina2 = $this->getJson('/api/atividades?page=2')->assertOk();
+        $this->assertCount(6, $pagina2->json('eventos'));
+        $this->assertSame(2, $pagina2->json('meta.current_page'));
+        $this->assertSame(26, $pagina2->json('meta.total'));
+    }
+
     public function test_isolamento_entre_empresas(): void
     {
         $empresaA = Empresa::factory()->create();

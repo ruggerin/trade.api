@@ -9,6 +9,7 @@ use App\Models\ProdutoAuditoria;
 use App\Models\SecaoAuditoria;
 use App\Models\TipoRegistro;
 use App\Support\GranularidadeChecklist;
+use Carbon\Carbon;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -24,9 +25,20 @@ class StoreVisitaRegistroRequest extends FormRequest
     public function rules(): array
     {
         $empresaId = $this->user()->empresa_id;
+        /** @var \App\Models\Visita $visita */
+        $visita = $this->route('visita');
 
         return [
-            'imagem' => ['nullable', 'file', 'image', 'max:8192'],
+            // Dois jeitos de anexar foto, combináveis — ver docs/21-EVIDENCIA-EM-FOTOS.md.
+            'imagens' => ['nullable', 'array'],
+            'imagens.*' => ['file', 'image', 'max:8192'],
+            // Foto já existente NESTA MESMA visita (evidência compartilhada entre respostas) —
+            // só cria o vínculo, sem reenviar arquivo.
+            'imagens_existentes_uuids' => ['nullable', 'array'],
+            'imagens_existentes_uuids.*' => [
+                'bail', 'string', 'uuid',
+                Rule::exists('imagens_registro', 'uuid')->where('visita_id', $visita?->id),
+            ],
             // Escopado por empresa — sem isso, um uuid de outro tenant passava na validação e só
             // quebrava depois no controller (tipo_registro_id é NOT NULL, resolvido via query
             // já tenant-scoped, que devolve null pra um uuid de fora → erro 500 em vez de 422).
@@ -92,8 +104,10 @@ class StoreVisitaRegistroRequest extends FormRequest
                 return;
             }
 
-            if ($tipoRegistro->exige_foto && ! $this->hasFile('imagem')) {
-                $validator->errors()->add('imagem', "Obrigatória para o tipo de registro \"{$tipoRegistro->descricao}\".");
+            $totalImagens = ($this->hasFile('imagens') ? count($this->file('imagens')) : 0)
+                + count($this->input('imagens_existentes_uuids', []));
+            if ($tipoRegistro->exige_foto && $totalImagens === 0) {
+                $validator->errors()->add('imagens', "Obrigatória para o tipo de registro \"{$tipoRegistro->descricao}\".");
             }
 
             $this->validarGranularidade($validator, $tipoRegistro);
@@ -101,6 +115,18 @@ class StoreVisitaRegistroRequest extends FormRequest
             $valores = $this->input('valores_campos', []);
 
             foreach ($tipoRegistro->campos as $campo) {
+                // Campo condicional (decisão 7 de docs/20-FORMULARIO-DINAMICO-CAMPANHA.md) — sem
+                // a condição satisfeita, a pergunta não deveria nem ter aparecido pro promotor:
+                // não é checada como obrigatória, e nenhuma validação de tipo roda sobre ela
+                // (um valor enviado mesmo assim é descartado depois, ver passedValidation()).
+                if ($campo->depende_de_campo_id) {
+                    $campoPai = $tipoRegistro->campos->firstWhere('id', $campo->depende_de_campo_id);
+                    $condicaoSatisfeita = $campoPai && (($valores[$campoPai->chave] ?? null) === $campo->depende_de_valor);
+                    if (! $condicaoSatisfeita) {
+                        continue;
+                    }
+                }
+
                 $valor = $valores[$campo->chave] ?? null;
 
                 if ($campo->obrigatorio && ($valor === null || $valor === '')) {
@@ -119,8 +145,83 @@ class StoreVisitaRegistroRequest extends FormRequest
                 if ($campo->tipo_campo === TipoCampoRegistro::MULTIPLA_ESCOLHA && ! in_array($valor, $campo->opcoes ?? [], true)) {
                     $validator->errors()->add("valores_campos.{$campo->chave}", "Valor inválido pro campo \"{$campo->rotulo}\".");
                 }
+
+                // "0"/"1" — mesma convenção do campo `ruptura` já existente (nunca "true"/"false").
+                if ($campo->tipo_campo === TipoCampoRegistro::BOOLEANO && ! in_array($valor, ['0', '1'], true)) {
+                    $validator->errors()->add("valores_campos.{$campo->chave}", "Valor inválido pro campo \"{$campo->rotulo}\".");
+                }
+
+                if ($campo->tipo_campo === TipoCampoRegistro::DATA && ! $this->ehDataValida($valor)) {
+                    $validator->errors()->add("valores_campos.{$campo->chave}", "O campo \"{$campo->rotulo}\" precisa ser uma data válida no formato dd/mm/aaaa.");
+                }
             }
         });
+    }
+
+    /** dd/mm/aaaa estrito — Carbon::createFromFormat aceita "31/02/2026" e normaliza pra março, então confere o round-trip pra rejeitar datas inválidas de verdade. */
+    private function ehDataValida(string $valor): bool
+    {
+        try {
+            return Carbon::createFromFormat('d/m/Y', $valor)?->format('d/m/Y') === $valor;
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    /**
+     * Sobrescreve (não `passedValidation()` + `merge()` — o Validator já tirou um snapshot dos
+     * dados antes disso rodar, `merge()` só atualiza o request em si, `validated()` continua
+     * devolvendo o valor original) pra filtrar `valores_campos`, mantendo só respostas de campos
+     * cuja condição (decisão 7 de docs/20-FORMULARIO-DINAMICO-CAMPANHA.md) foi de fato
+     * satisfeita — descarta qualquer valor enviado pra uma pergunta que não deveria ter aparecido
+     * (ver comentário no withValidator acima). `VisitaRegistroController::store` usa
+     * `$request->validated()`, então o valor filtrado aqui é o que efetivamente é gravado.
+     */
+    public function validated($key = null, $default = null)
+    {
+        $dados = parent::validated();
+
+        if (array_key_exists('valores_campos', $dados)) {
+            $dados['valores_campos'] = $this->filtrarValoresCampos($dados['valores_campos'] ?? []);
+        }
+
+        return $key === null ? $dados : data_get($dados, $key, $default);
+    }
+
+    private function filtrarValoresCampos(array $valores): array
+    {
+        if (! $this->filled('tipo_registro_uuid')) {
+            return $valores;
+        }
+
+        $tipoRegistro = TipoRegistro::withoutGlobalScopes()
+            ->with('campos')
+            ->where('uuid', $this->input('tipo_registro_uuid'))
+            ->first();
+
+        if (! $tipoRegistro) {
+            return $valores;
+        }
+
+        $filtrados = [];
+
+        foreach ($tipoRegistro->campos as $campo) {
+            if (! array_key_exists($campo->chave, $valores)) {
+                continue;
+            }
+
+            if ($campo->depende_de_campo_id) {
+                $campoPai = $tipoRegistro->campos->firstWhere('id', $campo->depende_de_campo_id);
+                $condicaoSatisfeita = $campoPai && (($valores[$campoPai->chave] ?? null) === $campo->depende_de_valor);
+                if (! $condicaoSatisfeita) {
+                    continue;
+                }
+            }
+
+            $filtrados[$campo->chave] = $valores[$campo->chave];
+        }
+
+        return $filtrados;
     }
 
     /**

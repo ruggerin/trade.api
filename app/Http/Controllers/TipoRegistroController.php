@@ -27,7 +27,7 @@ class TipoRegistroController extends Controller
                 $request->filled('empresa_uuid'),
                 fn ($query) => $query->where('empresa_id', Empresa::where('uuid', $request->string('empresa_uuid'))->value('id')),
             )
-            ->with(['campos', 'empresa', 'campanhaAuditoria', 'excecoesGranularidade.secao'])
+            ->with(['campos.dependeDe', 'empresa', 'campanhaAuditoria', 'excecoesGranularidade.secao'])
             // Sequência de exibição escolhida pelo gestor (ver mover() abaixo) — mesma ordem
             // pro admin e pro mobile, que consome este mesmo endpoint. `descricao` só entra
             // como desempate defensivo (na operação normal `ordem` já é único por empresa).
@@ -50,25 +50,33 @@ class TipoRegistroController extends Controller
     {
         $dados = $request->validated();
 
-        $tipo = TipoRegistro::create([
-            'descricao' => $dados['descricao'],
-            'icone' => $dados['icone'] ?? null,
-            // Novo tipo sempre vai pro fim da lista — mesmo raciocínio de "onde entraria um
-            // item novo" em qualquer lista ordenada manualmente. Scoped à empresa pelo global
-            // scope de BelongsToEmpresa (mesma query que index() usa).
-            'ordem' => (TipoRegistro::max('ordem') ?? -1) + 1,
-            'exige_foto' => $dados['exige_foto'] ?? false,
-            'permite_vincular_catalogo' => $dados['permite_vincular_catalogo'] ?? false,
-            'acao_obrigatoria' => $dados['acao_obrigatoria'] ?? false,
-            'escopo_acao' => $dados['escopo_acao'] ?? null,
-            'campanha_auditoria_id' => $this->resolverCampanhaAuditoriaId($dados['campanha_auditoria_uuid'] ?? null),
-            'granularidade_padrao' => $dados['granularidade_padrao'] ?? null,
-            'eh_ruptura' => $dados['eh_ruptura'] ?? false,
-            'eh_alerta' => $dados['eh_alerta'] ?? false,
-        ]);
-        $this->sincronizarCampos($tipo, $dados['campos'] ?? []);
-        $this->sincronizarExcecoesGranularidade($tipo, $dados['excecoes_granularidade'] ?? []);
-        $tipo->load(['campos', 'campanhaAuditoria', 'excecoesGranularidade.secao']);
+        // Transação: `sincronizarCampos`/`sincronizarExcecoesGranularidade` são várias queries
+        // depois do `TipoRegistro` já criado — sem isso, uma falha no meio (ex.: um valor de
+        // campo rejeitado pelo banco que a validação não pegou) deixa um `TipoRegistro` órfão,
+        // sem nenhum campo, em vez de nada ser salvo.
+        $tipo = DB::transaction(function () use ($dados) {
+            $tipo = TipoRegistro::create([
+                'descricao' => $dados['descricao'],
+                'icone' => $dados['icone'] ?? null,
+                // Novo tipo sempre vai pro fim da lista — mesmo raciocínio de "onde entraria um
+                // item novo" em qualquer lista ordenada manualmente. Scoped à empresa pelo global
+                // scope de BelongsToEmpresa (mesma query que index() usa).
+                'ordem' => (TipoRegistro::max('ordem') ?? -1) + 1,
+                'exige_foto' => $dados['exige_foto'] ?? false,
+                'permite_vincular_catalogo' => $dados['permite_vincular_catalogo'] ?? false,
+                'acao_obrigatoria' => $dados['acao_obrigatoria'] ?? false,
+                'escopo_acao' => $dados['escopo_acao'] ?? null,
+                'campanha_auditoria_id' => $this->resolverCampanhaAuditoriaId($dados['campanha_auditoria_uuid'] ?? null),
+                'granularidade_padrao' => $dados['granularidade_padrao'] ?? null,
+                'eh_ruptura' => $dados['eh_ruptura'] ?? false,
+                'eh_alerta' => $dados['eh_alerta'] ?? false,
+            ]);
+            $this->sincronizarCampos($tipo, $dados['campos'] ?? []);
+            $this->sincronizarExcecoesGranularidade($tipo, $dados['excecoes_granularidade'] ?? []);
+
+            return $tipo;
+        });
+        $tipo->load(['campos.dependeDe', 'campanhaAuditoria', 'excecoesGranularidade.secao']);
 
         return response()->json([
             'tipo_registro' => new TipoRegistroResource($tipo),
@@ -88,17 +96,22 @@ class TipoRegistroController extends Controller
             $dados['campanha_auditoria_id'] = null;
         }
 
-        $tipoRegistro->update(collect($dados)->except(['campos', 'excecoes_granularidade'])->all());
+        // Mesma razão da transação em store(): sincronizarCampos/sincronizarExcecoesGranularidade
+        // fazem delete-all + recreate — uma falha no meio deixaria o tipo sem NENHUM campo em vez
+        // de manter o estado anterior ou salvar o novo por completo.
+        DB::transaction(function () use ($tipoRegistro, $dados): void {
+            $tipoRegistro->update(collect($dados)->except(['campos', 'excecoes_granularidade'])->all());
 
-        if (array_key_exists('campos', $dados)) {
-            $this->sincronizarCampos($tipoRegistro, $dados['campos']);
-        }
+            if (array_key_exists('campos', $dados)) {
+                $this->sincronizarCampos($tipoRegistro, $dados['campos']);
+            }
 
-        if (array_key_exists('excecoes_granularidade', $dados)) {
-            $this->sincronizarExcecoesGranularidade($tipoRegistro, $dados['excecoes_granularidade']);
-        }
+            if (array_key_exists('excecoes_granularidade', $dados)) {
+                $this->sincronizarExcecoesGranularidade($tipoRegistro, $dados['excecoes_granularidade']);
+            }
+        });
 
-        $tipoRegistro->load(['campos', 'campanhaAuditoria', 'excecoesGranularidade.secao']);
+        $tipoRegistro->load(['campos.dependeDe', 'campanhaAuditoria', 'excecoesGranularidade.secao']);
 
         return response()->json([
             'tipo_registro' => new TipoRegistroResource($tipoRegistro),
@@ -148,7 +161,7 @@ class TipoRegistroController extends Controller
 
         return response()->json([
             'tipo_registro' => new TipoRegistroResource(
-                $tipoRegistro->fresh()->load(['campos', 'campanhaAuditoria', 'excecoesGranularidade.secao']),
+                $tipoRegistro->fresh()->load(['campos.dependeDe', 'campanhaAuditoria', 'excecoesGranularidade.secao']),
             ),
         ]);
     }
@@ -157,13 +170,23 @@ class TipoRegistroController extends Controller
      * Substitui a lista de campos inteira (delete-all + recreate) em vez de tentar casar item a
      * item — mais simples que reconciliar por chave/id, e a lista costuma ser pequena (poucos
      * campos por tipo). A ordem de exibição no formulário é a própria ordem do array recebido.
+     *
+     * Duas passadas por causa do campo condicional (`depende_de_chave`, ver decisão 7 de
+     * docs/20-FORMULARIO-DINAMICO-CAMPANHA.md): o `id` do campo pai só existe depois de criado,
+     * então a 1ª passada cria todos os campos (sem a dependência), a 2ª resolve
+     * `depende_de_chave` → `depende_de_campo_id` já com todos os ids conhecidos.
+     * `StoreTipoRegistroRequest::withValidator` garante que `depende_de_chave` (quando presente)
+     * aponta pra uma chave que existe neste mesmo array, então o `$idsPorChave[...]` abaixo
+     * nunca fica sem match.
      */
     private function sincronizarCampos(TipoRegistro $tipo, array $campos): void
     {
         CampoTipoRegistro::where('tipo_registro_id', $tipo->id)->delete();
 
+        $idsPorChave = [];
+        $criados = [];
         foreach (array_values($campos) as $indice => $campo) {
-            CampoTipoRegistro::create([
+            $criado = CampoTipoRegistro::create([
                 'tipo_registro_id' => $tipo->id,
                 'chave' => $campo['chave'],
                 'rotulo' => $campo['rotulo'],
@@ -172,6 +195,17 @@ class TipoRegistroController extends Controller
                 'obrigatorio' => $campo['obrigatorio'] ?? false,
                 'ordem' => $indice,
             ]);
+            $idsPorChave[$campo['chave']] = $criado->id;
+            $criados[] = [$criado, $campo['depende_de_chave'] ?? null, $campo['depende_de_valor'] ?? null];
+        }
+
+        foreach ($criados as [$criado, $dependeDeChave, $dependeDeValor]) {
+            if ($dependeDeChave !== null) {
+                $criado->update([
+                    'depende_de_campo_id' => $idsPorChave[$dependeDeChave] ?? null,
+                    'depende_de_valor' => $dependeDeValor,
+                ]);
+            }
         }
     }
 

@@ -96,6 +96,88 @@ class TipoRegistroTest extends TestCase
         ])->assertStatus(422)->assertJsonValidationErrors('campos.0.opcoes');
     }
 
+    public function test_cria_campos_booleano_e_data(): void
+    {
+        $empresa = Empresa::factory()->create();
+        $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
+        Sanctum::actingAs($admin);
+
+        $response = $this->postJson('/api/tipos-registro', [
+            'descricao' => 'Loja Perfeita',
+            'campos' => [
+                ['chave' => 'promocionado', 'rotulo' => 'Produto promocionado?', 'tipo_campo' => 'BOOLEANO'],
+                ['chave' => 'validade', 'rotulo' => 'Validade do produto', 'tipo_campo' => 'DATA'],
+            ],
+        ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('tipo_registro.campos.0.tipo_campo', 'BOOLEANO')
+            ->assertJsonPath('tipo_registro.campos.1.tipo_campo', 'DATA');
+    }
+
+    public function test_campo_condicional_referencia_chave_de_campo_anterior(): void
+    {
+        $empresa = Empresa::factory()->create();
+        $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
+        Sanctum::actingAs($admin);
+
+        $response = $this->postJson('/api/tipos-registro', [
+            'descricao' => 'Cartaz promocional',
+            'campos' => [
+                ['chave' => 'instalou', 'rotulo' => 'Instalou o cartaz?', 'tipo_campo' => 'BOOLEANO'],
+                [
+                    'chave' => 'motivo', 'rotulo' => 'Por que não instalou?', 'tipo_campo' => 'MULTIPLA_ESCOLHA',
+                    'opcoes' => ['Cliente não deixou', 'Acabou a fita', 'Outro'],
+                    'depende_de_chave' => 'instalou', 'depende_de_valor' => '0',
+                ],
+            ],
+        ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('tipo_registro.campos.1.depende_de_chave', 'instalou')
+            ->assertJsonPath('tipo_registro.campos.1.depende_de_valor', '0');
+
+        $this->assertDatabaseHas('campos_tipo_registro', [
+            'chave' => 'motivo',
+            'depende_de_campo_id' => CampoTipoRegistro::where('chave', 'instalou')->value('id'),
+        ]);
+    }
+
+    public function test_campo_condicional_referenciando_chave_inexistente_retorna_422(): void
+    {
+        $empresa = Empresa::factory()->create();
+        $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
+        Sanctum::actingAs($admin);
+
+        $this->postJson('/api/tipos-registro', [
+            'descricao' => 'Cartaz promocional',
+            'campos' => [
+                [
+                    'chave' => 'motivo', 'rotulo' => 'Motivo', 'tipo_campo' => 'TEXTO',
+                    'depende_de_chave' => 'nao_existe', 'depende_de_valor' => '0',
+                ],
+            ],
+        ])->assertStatus(422)->assertJsonValidationErrors('campos.0.depende_de_chave');
+    }
+
+    public function test_campo_condicional_referenciando_campo_posterior_retorna_422(): void
+    {
+        $empresa = Empresa::factory()->create();
+        $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
+        Sanctum::actingAs($admin);
+
+        $this->postJson('/api/tipos-registro', [
+            'descricao' => 'Cartaz promocional',
+            'campos' => [
+                [
+                    'chave' => 'motivo', 'rotulo' => 'Motivo', 'tipo_campo' => 'TEXTO',
+                    'depende_de_chave' => 'instalou', 'depende_de_valor' => '0',
+                ],
+                ['chave' => 'instalou', 'rotulo' => 'Instalou o cartaz?', 'tipo_campo' => 'BOOLEANO'],
+            ],
+        ])->assertStatus(422)->assertJsonValidationErrors('campos.0.depende_de_chave');
+    }
+
     public function test_update_substitui_a_lista_de_campos_inteira(): void
     {
         $empresa = Empresa::factory()->create();

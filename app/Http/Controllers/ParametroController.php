@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Requests\Parametro\StoreParametroRequest;
 use App\Http\Requests\Parametro\UpdateParametroRequest;
 use App\Http\Resources\ParametroResource;
+use App\Models\Empresa;
 use App\Models\Parametro;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -20,6 +21,16 @@ class ParametroController extends Controller
     {
         $parametros = Parametro::query()
             ->when($request->has('ativo'), fn ($query) => $query->where('ativo', $request->boolean('ativo')))
+            // Só tem efeito prático pro SUPERADMIN — pra ele, que não pertence a empresa
+            // nenhuma, BelongsToEmpresa não filtra a query, então sem isso a lista viria com o
+            // parâmetro de toda empresa cliente misturado. Filtro de suporte: escolher uma
+            // empresa pra ver o que ela configurou (ex.: CHECKIN_RAIO_METROS mal ajustado), ver
+            // docs/02-API-BACKEND.md#multi-tenancy-e-isolamento-de-dados.
+            ->when(
+                $request->filled('empresa_uuid'),
+                fn ($query) => $query->where('empresa_id', Empresa::where('uuid', $request->string('empresa_uuid'))->value('id')),
+            )
+            ->with('empresa')
             ->orderBy('chave')
             ->get();
 

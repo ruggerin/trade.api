@@ -56,6 +56,12 @@ class StoreTipoRegistroRequest extends FormRequest
             'campos.*.opcoes' => ['required_if:campos.*.tipo_campo,MULTIPLA_ESCOLHA', 'array', 'min:1'],
             'campos.*.opcoes.*' => ['string', 'max:255'],
             'campos.*.obrigatorio' => ['nullable', 'boolean'],
+            // Campo condicional (decisão 7 de docs/20-FORMULARIO-DINAMICO-CAMPANHA.md) — referencia
+            // a `chave` de outro campo DESTE MESMO array (não um uuid — o campo pai pode ser novo,
+            // ainda sem id, na mesma requisição). Validado contra o array inteiro em withValidator
+            // abaixo (precisa existir e vir antes na ordem).
+            'campos.*.depende_de_chave' => ['nullable', 'string', 'max:50'],
+            'campos.*.depende_de_valor' => ['required_with:campos.*.depende_de_chave', 'nullable', 'string'],
             // Granularidade padrão da pergunta (LINHA/PRODUTO) — ver
             // App\Support\GranularidadeChecklist. `null` = sem regra, comportamento livre atual.
             'granularidade_padrao' => ['nullable', Rule::in(array_column(GranularidadeResposta::cases(), 'value'))],
@@ -95,10 +101,45 @@ class StoreTipoRegistroRequest extends FormRequest
                 $validator->errors()->add('campos', 'As chaves dos campos precisam ser únicas dentro do mesmo tipo.');
             }
 
+            $this->validarCondicional($validator);
+
             $secoesExcecao = collect($this->input('excecoes_granularidade', []))->pluck('secao_uuid')->filter();
             if ($secoesExcecao->count() !== $secoesExcecao->unique()->count()) {
                 $validator->errors()->add('excecoes_granularidade', 'Cada seção só pode ter uma exceção de granularidade.');
             }
         });
+    }
+
+    /**
+     * Campo condicional só pode depender de um campo ANTERIOR na `ordem` do formulário (a
+     * cadeia sempre desce, nunca uma pergunta de baixo condiciona uma de cima) — trava que,
+     * sozinha, também evita dependência circular (um grafo onde toda aresta aponta pra um índice
+     * menor nunca tem ciclo), ver decisão 7 de docs/20-FORMULARIO-DINAMICO-CAMPANHA.md.
+     */
+    protected function validarCondicional(Validator $validator): void
+    {
+        $campos = array_values($this->input('campos', []));
+        $indicePorChave = [];
+        foreach ($campos as $indice => $campo) {
+            if (! empty($campo['chave'])) {
+                $indicePorChave[$campo['chave']] = $indice;
+            }
+        }
+
+        foreach ($campos as $indice => $campo) {
+            $dependeDeChave = $campo['depende_de_chave'] ?? null;
+            if ($dependeDeChave === null) {
+                continue;
+            }
+
+            if (! array_key_exists($dependeDeChave, $indicePorChave)) {
+                $validator->errors()->add("campos.{$indice}.depende_de_chave", 'Precisa referenciar a chave de outro campo deste mesmo formulário.');
+                continue;
+            }
+
+            if ($indicePorChave[$dependeDeChave] >= $indice) {
+                $validator->errors()->add("campos.{$indice}.depende_de_chave", 'Só pode depender de um campo anterior na ordem do formulário.');
+            }
+        }
     }
 }

@@ -18,7 +18,10 @@ class CampoTipoRegistro extends Model
 
     protected $table = 'campos_tipo_registro';
 
-    protected $fillable = ['tipo_registro_id', 'chave', 'rotulo', 'tipo_campo', 'opcoes', 'obrigatorio', 'ordem'];
+    protected $fillable = [
+        'tipo_registro_id', 'chave', 'rotulo', 'tipo_campo', 'opcoes', 'obrigatorio', 'ordem',
+        'depende_de_campo_id', 'depende_de_valor',
+    ];
 
     protected function casts(): array
     {
@@ -32,5 +35,11 @@ class CampoTipoRegistro extends Model
     public function tipoRegistro(): BelongsTo
     {
         return $this->belongsTo(TipoRegistro::class);
+    }
+
+    /** Campo condicional (decisão 7 de docs/20-FORMULARIO-DINAMICO-CAMPANHA.md) — só preenchido quando este campo depende de outro do mesmo TipoRegistro. */
+    public function dependeDe(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'depende_de_campo_id');
     }
 }
