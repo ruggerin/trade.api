@@ -4,6 +4,7 @@ namespace App\Http\Requests\TipoRegistro;
 
 use App\Enums\EscopoAcaoTipoRegistro;
 use App\Enums\GranularidadeResposta;
+use App\Enums\SortimentoOrigemCampo;
 use App\Enums\TipoCampoRegistro;
 use App\Support\IconeTipoRegistro;
 use Illuminate\Foundation\Http\FormRequest;
@@ -56,6 +57,32 @@ class UpdateTipoRegistroRequest extends FormRequest
             // Campo condicional — ver StoreTipoRegistroRequest.
             'campos.*.depende_de_chave' => ['nullable', 'string', 'max:50'],
             'campos.*.depende_de_valor' => ['required_with:campos.*.depende_de_chave', 'nullable', 'string'],
+            // Campo SORTIMENTO — ver StoreTipoRegistroRequest.
+            'campos.*.sortimento_origem' => [
+                'required_if:campos.*.tipo_campo,SORTIMENTO', 'nullable',
+                Rule::in(array_column(SortimentoOrigemCampo::cases(), 'value')),
+            ],
+            'campos.*.sortimento_tipo_vinculo' => [
+                'required_if:campos.*.sortimento_origem,DINAMICO', 'nullable',
+                Rule::in(['SECAO', 'DEPARTAMENTO', 'MARCA']),
+            ],
+            'campos.*.sortimento_secao_uuid' => [
+                'required_if:campos.*.sortimento_tipo_vinculo,SECAO', 'nullable', 'string',
+                Rule::exists('secoes_auditoria', 'uuid')->where('empresa_id', $this->user()->empresa_id),
+            ],
+            'campos.*.sortimento_departamento_uuid' => [
+                'required_if:campos.*.sortimento_tipo_vinculo,DEPARTAMENTO', 'nullable', 'string',
+                Rule::exists('departamentos_auditoria', 'uuid')->where('empresa_id', $this->user()->empresa_id),
+            ],
+            'campos.*.sortimento_marca_uuid' => [
+                'required_if:campos.*.sortimento_tipo_vinculo,MARCA', 'nullable', 'string',
+                Rule::exists('marcas_auditoria', 'uuid')->where('empresa_id', $this->user()->empresa_id),
+            ],
+            'campos.*.sortimento_produtos_uuids' => ['required_if:campos.*.sortimento_origem,FIXO', 'array', 'min:1'],
+            'campos.*.sortimento_produtos_uuids.*' => [
+                'string', Rule::exists('produtos_auditoria', 'uuid')->where('empresa_id', $this->user()->empresa_id),
+            ],
+            'campos.*.confirmar_ruptura_ausentes' => ['nullable', 'boolean'],
             'granularidade_padrao' => ['nullable', Rule::in(array_column(GranularidadeResposta::cases(), 'value'))],
             // Quando enviado, substitui a lista inteira de exceções (ver
             // TipoRegistroController::sincronizarExcecoesGranularidade).
@@ -69,6 +96,8 @@ class UpdateTipoRegistroRequest extends FormRequest
             ],
             'eh_ruptura' => ['sometimes', 'boolean'],
             'eh_alerta' => ['sometimes', 'boolean'],
+            'usa_pontuacao' => ['sometimes', 'boolean'],
+            'disponivel_registro_livre' => ['sometimes', 'boolean'],
         ];
     }
 

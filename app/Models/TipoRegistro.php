@@ -31,6 +31,8 @@ class TipoRegistro extends Model
         'granularidade_padrao',
         'eh_ruptura',
         'eh_alerta',
+        'usa_pontuacao',
+        'disponivel_registro_livre',
     ];
 
     protected function casts(): array
@@ -44,6 +46,8 @@ class TipoRegistro extends Model
             'granularidade_padrao' => GranularidadeResposta::class,
             'eh_ruptura' => 'boolean',
             'eh_alerta' => 'boolean',
+            'usa_pontuacao' => 'boolean',
+            'disponivel_registro_livre' => 'boolean',
         ];
     }
 

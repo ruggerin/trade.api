@@ -85,7 +85,7 @@ class AtividadeController extends Controller
                 // inteiro (tipo, produto/vínculo, observação) — a galeria de fotos do card
                 // mostra essa informação junto de cada imagem, não só a foto pelada.
                 'registros' => fn ($q) => $q->whereNull('cancelado_em')->whereHas('imagens')
-                    ->with(['tipoRegistro', 'produtoAuditoria', 'secao', 'departamento', 'marca', 'imagens']),
+                    ->with(['tipoRegistro.campos', 'produtoAuditoria', 'secao', 'departamento', 'marca', 'imagens']),
             ])
             ->withCount([
                 'registros as registros_count' => fn ($q) => $q->whereNull('cancelado_em'),
@@ -163,7 +163,7 @@ class AtividadeController extends Controller
             ->when($request->filled('data_inicio'), fn ($q) => $q->whereDate('created_at', '>=', $request->string('data_inicio')))
             ->when($request->filled('data_fim'), fn ($q) => $q->whereDate('created_at', '<=', $request->string('data_fim')))
             ->with([
-                'visita.pontoVenda', 'visita.usuario', 'tipoRegistro', 'produtoAuditoria',
+                'visita.pontoVenda', 'visita.usuario', 'tipoRegistro.campos', 'produtoAuditoria',
                 'secao', 'departamento', 'marca', 'resolvidoPor', 'imagens',
             ])
             ->get();

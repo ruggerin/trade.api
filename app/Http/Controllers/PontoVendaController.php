@@ -3,16 +3,21 @@
 namespace App\Http\Controllers;
 
 use App\Enums\UserType;
+use App\Http\Requests\PontoVenda\AtualizarFachadaPontoVendaRequest;
 use App\Http\Requests\PontoVenda\StorePontoVendaRequest;
 use App\Http\Requests\PontoVenda\SyncPromotoresRequest;
 use App\Http\Requests\PontoVenda\UpdatePontoVendaRequest;
 use App\Http\Resources\PontoVendaResource;
 use App\Models\Empresa;
 use App\Models\PontoVenda;
+use App\Models\RamoAtividade;
+use App\Models\RedeLoja;
 use App\Models\Usuario;
 use App\Support\VisibilidadePontosVenda;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class PontoVendaController extends Controller
 {
@@ -68,7 +73,7 @@ class PontoVendaController extends Controller
                 $usuario?->user_type === UserType::PROMOTOR,
                 fn ($query) => VisibilidadePontosVenda::aplicarEscopoPromotor($query, $usuario),
             )
-            ->with(['promotores', 'empresa'])
+            ->with(['promotores', 'empresa', 'redeLoja', 'ramoAtividade'])
             // Ver App\Enums\EscopoAcaoTipoRegistro::CONTRATO — a Ação "exige contrato ativo"
             // precisa saber, pro app mobile, se este PDV tem algum comodato/ponto extra vigente.
             ->withExists(['contratos as tem_contrato_ativo' => fn ($query) => $query->where('ativo', true)])
@@ -90,7 +95,7 @@ class PontoVendaController extends Controller
     {
         // Sortimento carregado só no detalhe, não na listagem (evita inflar a resposta da lista
         // de PDVs) — ver docs/14-SORTIMENTO-PONTO-VENDA.md §4.
-        $pontoVenda->load(['promotores', 'sortimento.produto.secao', 'sortimento.departamento', 'sortimento.secao', 'sortimento.marca', 'sortimento.usuario']);
+        $pontoVenda->load(['promotores', 'redeLoja', 'ramoAtividade', 'sortimento.produto.secao', 'sortimento.departamento', 'sortimento.secao', 'sortimento.marca', 'sortimento.usuario']);
         $pontoVenda->loadExists(['contratos as tem_contrato_ativo' => fn ($query) => $query->where('ativo', true)]);
 
         return response()->json([
@@ -109,8 +114,8 @@ class PontoVendaController extends Controller
             ], 422);
         }
 
-        $pontoVenda = PontoVenda::create($request->validated());
-        $pontoVenda->load('promotores'); // recém-criado, mas mantém a resposta consistente com os outros endpoints
+        $pontoVenda = PontoVenda::create($this->resolverUuidsParaIds($request->validated()));
+        $pontoVenda->load(['promotores', 'redeLoja', 'ramoAtividade']); // recém-criado, mas mantém a resposta consistente com os outros endpoints
 
         return response()->json([
             'ponto_venda' => new PontoVendaResource($pontoVenda),
@@ -119,8 +124,70 @@ class PontoVendaController extends Controller
 
     public function update(UpdatePontoVendaRequest $request, PontoVenda $pontoVenda): JsonResponse
     {
-        $pontoVenda->update($request->validated());
-        $pontoVenda->load('promotores');
+        $pontoVenda->update($this->resolverUuidsParaIds($request->validated()));
+        $pontoVenda->load(['promotores', 'redeLoja', 'ramoAtividade']);
+
+        return response()->json([
+            'ponto_venda' => new PontoVendaResource($pontoVenda),
+        ]);
+    }
+
+    /**
+     * Troca rede_loja_uuid/ramo_atividade_uuid (o que o form envia, ver Store/UpdatePontoVendaRequest)
+     * pelos _id de verdade (o que o Model espera) — mesmo padrão de UsuarioController::store/update
+     * pra perfil_uuid/centro_custo_uuid. `array_key_exists` (não `isset`) porque um PUT pode mandar
+     * a chave com valor null de propósito, pra desvincular a rede/ramo atual.
+     */
+    private function resolverUuidsParaIds(array $dados): array
+    {
+        if (array_key_exists('rede_loja_uuid', $dados)) {
+            $dados['rede_loja_id'] = $dados['rede_loja_uuid']
+                ? RedeLoja::where('uuid', $dados['rede_loja_uuid'])->value('id')
+                : null;
+            unset($dados['rede_loja_uuid']);
+        }
+
+        if (array_key_exists('ramo_atividade_uuid', $dados)) {
+            $dados['ramo_atividade_id'] = $dados['ramo_atividade_uuid']
+                ? RamoAtividade::where('uuid', $dados['ramo_atividade_uuid'])->value('id')
+                : null;
+            unset($dados['ramo_atividade_uuid']);
+        }
+
+        return $dados;
+    }
+
+    public function fachada(PontoVenda $pontoVenda): StreamedResponse
+    {
+        abort_if(! $pontoVenda->fachada_path, 404);
+
+        return Storage::disk(config('filesystems.default'))->response($pontoVenda->fachada_path);
+    }
+
+    /**
+     * Substitui o arquivo anterior em vez de acumular — mesmo raciocínio de
+     * AuthController::atualizarFoto (não deixa lixo órfão no disco).
+     */
+    public function atualizarFachada(AtualizarFachadaPontoVendaRequest $request, PontoVenda $pontoVenda): JsonResponse
+    {
+        if ($pontoVenda->fachada_path) {
+            Storage::disk(config('filesystems.default'))->delete($pontoVenda->fachada_path);
+        }
+
+        $caminho = $request->file('imagem')->store("pontos-venda/{$pontoVenda->id}", config('filesystems.default'));
+        $pontoVenda->update(['fachada_path' => $caminho]);
+
+        return response()->json([
+            'ponto_venda' => new PontoVendaResource($pontoVenda),
+        ]);
+    }
+
+    public function removerFachada(PontoVenda $pontoVenda): JsonResponse
+    {
+        if ($pontoVenda->fachada_path) {
+            Storage::disk(config('filesystems.default'))->delete($pontoVenda->fachada_path);
+            $pontoVenda->update(['fachada_path' => null]);
+        }
 
         return response()->json([
             'ponto_venda' => new PontoVendaResource($pontoVenda),

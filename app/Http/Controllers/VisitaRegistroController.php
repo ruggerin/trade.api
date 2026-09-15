@@ -44,7 +44,7 @@ class VisitaRegistroController extends Controller
 
             if ($existente) {
                 $existente->setRelation('visita', $visita);
-                $existente->load(['produtoAuditoria', 'tipoRegistro', 'secao', 'departamento', 'marca', 'imagens']);
+                $existente->load(['produtoAuditoria', 'tipoRegistro.campos', 'secao', 'departamento', 'marca', 'imagens']);
 
                 return response()->json([
                     'registro' => new VisitaRegistroResource($existente),
@@ -122,7 +122,7 @@ class VisitaRegistroController extends Controller
         $registro->setRelation('visita', $visita);
         // Sem isso, os whenLoaded (produtoAuditoria, tipoRegistro etc.) sempre vêm null na
         // resposta do POST, mesmo quando os campos correspondentes foram enviados.
-        $registro->load(['produtoAuditoria', 'tipoRegistro', 'secao', 'departamento', 'marca', 'imagens']);
+        $registro->load(['produtoAuditoria', 'tipoRegistro.campos', 'secao', 'departamento', 'marca', 'imagens']);
 
         return response()->json([
             'registro' => new VisitaRegistroResource($registro),
@@ -153,7 +153,7 @@ class VisitaRegistroController extends Controller
 
         $registro->update(['cancelado_em' => now()]);
         $registro->setRelation('visita', $visita);
-        $registro->load(['produtoAuditoria', 'tipoRegistro', 'secao', 'departamento', 'marca', 'imagens']);
+        $registro->load(['produtoAuditoria', 'tipoRegistro.campos', 'secao', 'departamento', 'marca', 'imagens']);
 
         return response()->json([
             'registro' => new VisitaRegistroResource($registro),
@@ -181,7 +181,7 @@ class VisitaRegistroController extends Controller
         }
 
         $registro->setRelation('visita', $visita);
-        $registro->load(['produtoAuditoria', 'tipoRegistro', 'secao', 'departamento', 'marca', 'resolvidoPor', 'imagens']);
+        $registro->load(['produtoAuditoria', 'tipoRegistro.campos', 'secao', 'departamento', 'marca', 'resolvidoPor', 'imagens']);
 
         return response()->json([
             'registro' => new VisitaRegistroResource($registro),

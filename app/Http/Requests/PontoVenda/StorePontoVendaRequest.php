@@ -32,6 +32,15 @@ class StorePontoVendaRequest extends FormRequest
             'cep' => ['nullable', 'string', 'max:10'],
             'telefone' => ['nullable', 'string', 'max:50'],
             'email' => ['nullable', 'email', 'max:255'],
+            'rede_loja_uuid' => [
+                'nullable', 'string',
+                Rule::exists('redes_lojas', 'uuid')->where('empresa_id', $this->user()->empresa_id),
+            ],
+            'ramo_atividade_uuid' => [
+                'nullable', 'string',
+                Rule::exists('ramos_atividade', 'uuid')->where('empresa_id', $this->user()->empresa_id),
+            ],
+            'numero_checkouts' => ['nullable', 'integer', 'min:0'],
         ];
     }
 }

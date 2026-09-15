@@ -18,4 +18,8 @@ enum TipoCampoRegistro: string
     // Valor sempre "dd/mm/aaaa" em valores_campos — o mobile nunca manda um formato de data
     // diferente (sem calendário nativo, ver docs/20-FORMULARIO-DINAMICO-CAMPANHA.md §5.4).
     case DATA = 'DATA';
+    // Valor sempre um JSON `{"presentes":[uuid...],"ausentes":[uuid...]}` em valores_campos —
+    // checklist de produtos presente/ausente, ver App\Support\ResolverSortimentoCampo e
+    // docs/20-FORMULARIO-DINAMICO-CAMPANHA.md decisão 3.
+    case SORTIMENTO = 'SORTIMENTO';
 }

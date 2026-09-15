@@ -18,6 +18,8 @@ class PontoVenda extends Model
 
     protected $fillable = [
         'empresa_id',
+        'rede_loja_id',
+        'ramo_atividade_id',
         'codigo_externo',
         'cnpj',
         'razao_social',
@@ -31,6 +33,8 @@ class PontoVenda extends Model
         'cep',
         'telefone',
         'email',
+        'numero_checkouts',
+        'fachada_path',
         'ativo',
     ];
 
@@ -39,6 +43,7 @@ class PontoVenda extends Model
         return [
             'latitude' => 'double',
             'longitude' => 'double',
+            'numero_checkouts' => 'integer',
             'ativo' => 'boolean',
         ];
     }
@@ -46,6 +51,16 @@ class PontoVenda extends Model
     public function empresa(): BelongsTo
     {
         return $this->belongsTo(Empresa::class);
+    }
+
+    public function redeLoja(): BelongsTo
+    {
+        return $this->belongsTo(RedeLoja::class);
+    }
+
+    public function ramoAtividade(): BelongsTo
+    {
+        return $this->belongsTo(RamoAtividade::class);
     }
 
     public function visitas(): HasMany

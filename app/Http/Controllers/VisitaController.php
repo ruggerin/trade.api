@@ -80,7 +80,7 @@ class VisitaController extends Controller
         $visita->load([
             'pontoVenda', 'usuario', 'campanha', 'ordemServico',
             'intervencoes.usuario',
-            'registros.produtoAuditoria', 'registros.tipoRegistro',
+            'registros.produtoAuditoria', 'registros.tipoRegistro.campos',
             'registros.secao', 'registros.departamento', 'registros.marca',
             'registros.imagens',
         ]);

@@ -5,10 +5,13 @@ namespace App\Http\Requests\VisitaRegistro;
 use App\Enums\GranularidadeResposta;
 use App\Enums\TipoCampoRegistro;
 use App\Enums\TipoItemCampanha;
+use App\Models\CampoTipoRegistro;
 use App\Models\ProdutoAuditoria;
 use App\Models\SecaoAuditoria;
 use App\Models\TipoRegistro;
+use App\Models\Visita;
 use App\Support\GranularidadeChecklist;
+use App\Support\ResolverSortimentoCampo;
 use Carbon\Carbon;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Str;
@@ -154,8 +157,53 @@ class StoreVisitaRegistroRequest extends FormRequest
                 if ($campo->tipo_campo === TipoCampoRegistro::DATA && ! $this->ehDataValida($valor)) {
                     $validator->errors()->add("valores_campos.{$campo->chave}", "O campo \"{$campo->rotulo}\" precisa ser uma data válida no formato dd/mm/aaaa.");
                 }
+
+                if ($campo->tipo_campo === TipoCampoRegistro::SORTIMENTO) {
+                    $this->validarSortimento($validator, $campo, $valor);
+                }
             }
         });
+    }
+
+    /**
+     * Valor sempre `{"presentes":[uuid...],"ausentes":[uuid...]}` — cada uuid precisa existir no
+     * checklist resolvido pra este campo + PDV da visita (App\Support\ResolverSortimentoCampo),
+     * mesmo raciocínio de tenant-scoping usado nos outros campos deste request. Ver decisão 3 de
+     * docs/20-FORMULARIO-DINAMICO-CAMPANHA.md.
+     */
+    private function validarSortimento(Validator $validator, CampoTipoRegistro $campo, string $valor): void
+    {
+        $decodificado = json_decode($valor, true);
+        if (
+            ! is_array($decodificado)
+            || ! is_array($decodificado['presentes'] ?? null)
+            || ! is_array($decodificado['ausentes'] ?? null)
+        ) {
+            $validator->errors()->add("valores_campos.{$campo->chave}", "Valor inválido pro campo \"{$campo->rotulo}\".");
+
+            return;
+        }
+
+        $presentes = collect($decodificado['presentes']);
+        $ausentes = collect($decodificado['ausentes']);
+
+        if ($presentes->intersect($ausentes)->isNotEmpty()) {
+            $validator->errors()->add("valores_campos.{$campo->chave}", "Um produto não pode estar marcado como presente e ausente ao mesmo tempo.");
+
+            return;
+        }
+
+        /** @var Visita|null $visita */
+        $visita = $this->route('visita');
+        $pontoVenda = $visita?->pontoVenda;
+
+        $produtosValidos = $pontoVenda
+            ? ResolverSortimentoCampo::resolver($campo, $pontoVenda)->pluck('uuid')
+            : collect();
+
+        if ($presentes->merge($ausentes)->diff($produtosValidos)->isNotEmpty()) {
+            $validator->errors()->add("valores_campos.{$campo->chave}", "Um ou mais produtos não fazem parte do sortimento configurado pra este campo.");
+        }
     }
 
     /** dd/mm/aaaa estrito — Carbon::createFromFormat aceita "31/02/2026" e normaliza pra março, então confere o round-trip pra rejeitar datas inválidas de verdade. */

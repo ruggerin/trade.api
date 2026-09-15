@@ -25,6 +25,23 @@ class CampoTipoRegistroResource extends JsonResource
             // aceita de volta (ver TipoRegistroController::sincronizarCampos).
             'depende_de_chave' => $this->whenLoaded('dependeDe', fn () => $this->dependeDe?->chave),
             'depende_de_valor' => $this->depende_de_valor,
+            // Só preenchido quando tipo_campo = SORTIMENTO — ver App\Support\ResolverSortimentoCampo
+            // e decisão 3 de docs/20-FORMULARIO-DINAMICO-CAMPANHA.md.
+            'sortimento_origem' => $this->sortimento_origem?->value,
+            'sortimento_tipo_vinculo' => $this->sortimento_tipo_vinculo?->value,
+            'sortimento_secao' => $this->whenLoaded('sortimentoSecao', fn () => $this->sortimentoSecao ? [
+                'id' => $this->sortimentoSecao->uuid, 'descricao' => $this->sortimentoSecao->descricao,
+            ] : null),
+            'sortimento_departamento' => $this->whenLoaded('sortimentoDepartamento', fn () => $this->sortimentoDepartamento ? [
+                'id' => $this->sortimentoDepartamento->uuid, 'descricao' => $this->sortimentoDepartamento->descricao,
+            ] : null),
+            'sortimento_marca' => $this->whenLoaded('sortimentoMarca', fn () => $this->sortimentoMarca ? [
+                'id' => $this->sortimentoMarca->uuid, 'descricao' => $this->sortimentoMarca->descricao,
+            ] : null),
+            'sortimento_produtos' => $this->whenLoaded('produtosFixos', fn () => $this->produtosFixos->map(fn ($produto) => [
+                'id' => $produto->uuid, 'descricao' => $produto->descricao,
+            ])),
+            'confirmar_ruptura_ausentes' => $this->confirmar_ruptura_ausentes,
         ];
     }
 }

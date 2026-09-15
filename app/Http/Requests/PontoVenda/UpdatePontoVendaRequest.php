@@ -33,6 +33,15 @@ class UpdatePontoVendaRequest extends FormRequest
             'cep' => ['sometimes', 'nullable', 'string', 'max:10'],
             'telefone' => ['sometimes', 'nullable', 'string', 'max:50'],
             'email' => ['sometimes', 'nullable', 'email', 'max:255'],
+            'rede_loja_uuid' => [
+                'sometimes', 'nullable', 'string',
+                Rule::exists('redes_lojas', 'uuid')->where('empresa_id', $this->route('pontoVenda')?->empresa_id),
+            ],
+            'ramo_atividade_uuid' => [
+                'sometimes', 'nullable', 'string',
+                Rule::exists('ramos_atividade', 'uuid')->where('empresa_id', $this->route('pontoVenda')?->empresa_id),
+            ],
+            'numero_checkouts' => ['sometimes', 'nullable', 'integer', 'min:0'],
             'ativo' => ['sometimes', 'boolean'],
         ];
     }

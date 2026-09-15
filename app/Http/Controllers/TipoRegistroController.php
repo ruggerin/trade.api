@@ -8,7 +8,10 @@ use App\Http\Requests\TipoRegistro\UpdateTipoRegistroRequest;
 use App\Http\Resources\TipoRegistroResource;
 use App\Models\CampanhaAuditoria;
 use App\Models\CampoTipoRegistro;
+use App\Models\DepartamentoAuditoria;
 use App\Models\Empresa;
+use App\Models\MarcaAuditoria;
+use App\Models\ProdutoAuditoria;
 use App\Models\SecaoAuditoria;
 use App\Models\TipoRegistro;
 use App\Models\TipoRegistroSecaoExcecao;
@@ -18,6 +21,14 @@ use Illuminate\Support\Facades\DB;
 
 class TipoRegistroController extends Controller
 {
+    // Relações do campo carregadas em toda resposta com TipoRegistroResource — inclui o
+    // condicional (decisão 7) e o sortimento (decisão 3), ambos de
+    // docs/20-FORMULARIO-DINAMICO-CAMPANHA.md.
+    private const RELACOES_CAMPOS = [
+        'campos.dependeDe', 'campos.sortimentoSecao', 'campos.sortimentoDepartamento',
+        'campos.sortimentoMarca', 'campos.produtosFixos',
+    ];
+
     public function index(Request $request): JsonResponse
     {
         $tipos = TipoRegistro::query()
@@ -27,7 +38,16 @@ class TipoRegistroController extends Controller
                 $request->filled('empresa_uuid'),
                 fn ($query) => $query->where('empresa_id', Empresa::where('uuid', $request->string('empresa_uuid'))->value('id')),
             )
-            ->with(['campos.dependeDe', 'empresa', 'campanhaAuditoria', 'excecoesGranularidade.secao'])
+            // "Formulário desta campanha" (Fase 3, autoria embutida) — a tela de Campanha lista
+            // só os tipos vinculados a ela, ver docs/20-FORMULARIO-DINAMICO-CAMPANHA.md §3.
+            ->when(
+                $request->filled('campanha_auditoria_uuid'),
+                fn ($query) => $query->whereHas(
+                    'campanhaAuditoria',
+                    fn ($q) => $q->where('uuid', $request->string('campanha_auditoria_uuid')),
+                ),
+            )
+            ->with([...self::RELACOES_CAMPOS, 'empresa', 'campanhaAuditoria', 'excecoesGranularidade.secao'])
             // Sequência de exibição escolhida pelo gestor (ver mover() abaixo) — mesma ordem
             // pro admin e pro mobile, que consome este mesmo endpoint. `descricao` só entra
             // como desempate defensivo (na operação normal `ordem` já é único por empresa).
@@ -70,13 +90,15 @@ class TipoRegistroController extends Controller
                 'granularidade_padrao' => $dados['granularidade_padrao'] ?? null,
                 'eh_ruptura' => $dados['eh_ruptura'] ?? false,
                 'eh_alerta' => $dados['eh_alerta'] ?? false,
+                'usa_pontuacao' => $dados['usa_pontuacao'] ?? false,
+                'disponivel_registro_livre' => $dados['disponivel_registro_livre'] ?? true,
             ]);
             $this->sincronizarCampos($tipo, $dados['campos'] ?? []);
             $this->sincronizarExcecoesGranularidade($tipo, $dados['excecoes_granularidade'] ?? []);
 
             return $tipo;
         });
-        $tipo->load(['campos.dependeDe', 'campanhaAuditoria', 'excecoesGranularidade.secao']);
+        $tipo->load([...self::RELACOES_CAMPOS, 'campanhaAuditoria', 'excecoesGranularidade.secao']);
 
         return response()->json([
             'tipo_registro' => new TipoRegistroResource($tipo),
@@ -111,7 +133,7 @@ class TipoRegistroController extends Controller
             }
         });
 
-        $tipoRegistro->load(['campos.dependeDe', 'campanhaAuditoria', 'excecoesGranularidade.secao']);
+        $tipoRegistro->load([...self::RELACOES_CAMPOS, 'campanhaAuditoria', 'excecoesGranularidade.secao']);
 
         return response()->json([
             'tipo_registro' => new TipoRegistroResource($tipoRegistro),
@@ -161,7 +183,7 @@ class TipoRegistroController extends Controller
 
         return response()->json([
             'tipo_registro' => new TipoRegistroResource(
-                $tipoRegistro->fresh()->load(['campos.dependeDe', 'campanhaAuditoria', 'excecoesGranularidade.secao']),
+                $tipoRegistro->fresh()->load([...self::RELACOES_CAMPOS, 'campanhaAuditoria', 'excecoesGranularidade.secao']),
             ),
         ]);
     }
@@ -194,7 +216,28 @@ class TipoRegistroController extends Controller
                 'opcoes' => $campo['opcoes'] ?? null,
                 'obrigatorio' => $campo['obrigatorio'] ?? false,
                 'ordem' => $indice,
+                // Só usado quando tipo_campo = SORTIMENTO (decisão 3 de
+                // docs/20-FORMULARIO-DINAMICO-CAMPANHA.md) — fica tudo NULL/false pros demais tipos.
+                'sortimento_origem' => $campo['sortimento_origem'] ?? null,
+                'sortimento_tipo_vinculo' => $campo['sortimento_tipo_vinculo'] ?? null,
+                'sortimento_secao_id' => isset($campo['sortimento_secao_uuid'])
+                    ? SecaoAuditoria::where('uuid', $campo['sortimento_secao_uuid'])->value('id')
+                    : null,
+                'sortimento_departamento_id' => isset($campo['sortimento_departamento_uuid'])
+                    ? DepartamentoAuditoria::where('uuid', $campo['sortimento_departamento_uuid'])->value('id')
+                    : null,
+                'sortimento_marca_id' => isset($campo['sortimento_marca_uuid'])
+                    ? MarcaAuditoria::where('uuid', $campo['sortimento_marca_uuid'])->value('id')
+                    : null,
+                'confirmar_ruptura_ausentes' => $campo['confirmar_ruptura_ausentes'] ?? false,
             ]);
+
+            // Lista curada (sortimento_origem = FIXO) — mesmo raciocínio de "tipo planograma".
+            if (($campo['sortimento_origem'] ?? null) === 'FIXO' && ! empty($campo['sortimento_produtos_uuids'])) {
+                $produtoIds = ProdutoAuditoria::whereIn('uuid', $campo['sortimento_produtos_uuids'])->pluck('id');
+                $criado->produtosFixos()->sync($produtoIds);
+            }
+
             $idsPorChave[$campo['chave']] = $criado->id;
             $criados[] = [$criado, $campo['depende_de_chave'] ?? null, $campo['depende_de_valor'] ?? null];
         }
@@ -207,6 +250,85 @@ class TipoRegistroController extends Controller
                 ]);
             }
         }
+    }
+
+    /**
+     * Duplicar (decisão 6 de docs/20-FORMULARIO-DINAMICO-CAMPANHA.md) — clona um `TipoRegistro`
+     * existente com todos os campos (inclusive condicional e sortimento) como ponto de partida
+     * de um formulário novo; cada cópia fica independente depois, sem "modelo vivo" sincronizado.
+     * Ação obrigatória/campanha NUNCA são copiadas — a cópia nasce solta, o gestor decide se e
+     * onde vincular (evita uma cópia "roubar" a pendência obrigatória da campanha original).
+     */
+    public function duplicar(TipoRegistro $tipoRegistro): JsonResponse
+    {
+        $tipoRegistro->load(['campos.dependeDe', 'campos.produtosFixos', 'excecoesGranularidade']);
+
+        $copia = DB::transaction(function () use ($tipoRegistro) {
+            $copia = TipoRegistro::create([
+                'descricao' => $tipoRegistro->descricao.' (cópia)',
+                'icone' => $tipoRegistro->icone,
+                'ordem' => (TipoRegistro::max('ordem') ?? -1) + 1,
+                'exige_foto' => $tipoRegistro->exige_foto,
+                'permite_vincular_catalogo' => $tipoRegistro->permite_vincular_catalogo,
+                'acao_obrigatoria' => false,
+                'escopo_acao' => null,
+                'campanha_auditoria_id' => null,
+                'granularidade_padrao' => $tipoRegistro->granularidade_padrao,
+                'eh_ruptura' => $tipoRegistro->eh_ruptura,
+                'eh_alerta' => $tipoRegistro->eh_alerta,
+                'usa_pontuacao' => $tipoRegistro->usa_pontuacao,
+                'disponivel_registro_livre' => $tipoRegistro->disponivel_registro_livre,
+            ]);
+
+            $idsPorChave = [];
+            $criados = [];
+            foreach ($tipoRegistro->campos as $original) {
+                $criado = CampoTipoRegistro::create([
+                    'tipo_registro_id' => $copia->id,
+                    'chave' => $original->chave,
+                    'rotulo' => $original->rotulo,
+                    'tipo_campo' => $original->tipo_campo,
+                    'opcoes' => $original->opcoes,
+                    'obrigatorio' => $original->obrigatorio,
+                    'ordem' => $original->ordem,
+                    'sortimento_origem' => $original->sortimento_origem,
+                    'sortimento_tipo_vinculo' => $original->sortimento_tipo_vinculo,
+                    'sortimento_secao_id' => $original->sortimento_secao_id,
+                    'sortimento_departamento_id' => $original->sortimento_departamento_id,
+                    'sortimento_marca_id' => $original->sortimento_marca_id,
+                    'confirmar_ruptura_ausentes' => $original->confirmar_ruptura_ausentes,
+                ]);
+                $criado->produtosFixos()->sync($original->produtosFixos->pluck('id'));
+
+                $idsPorChave[$original->chave] = $criado->id;
+                $criados[] = [$criado, $original->dependeDe?->chave, $original->depende_de_valor];
+            }
+
+            foreach ($criados as [$criado, $dependeDeChave, $dependeDeValor]) {
+                if ($dependeDeChave !== null) {
+                    $criado->update([
+                        'depende_de_campo_id' => $idsPorChave[$dependeDeChave] ?? null,
+                        'depende_de_valor' => $dependeDeValor,
+                    ]);
+                }
+            }
+
+            foreach ($tipoRegistro->excecoesGranularidade as $excecao) {
+                TipoRegistroSecaoExcecao::create([
+                    'tipo_registro_id' => $copia->id,
+                    'secao_auditoria_id' => $excecao->secao_auditoria_id,
+                    'granularidade' => $excecao->granularidade,
+                ]);
+            }
+
+            return $copia;
+        });
+
+        $copia->load([...self::RELACOES_CAMPOS, 'campanhaAuditoria', 'excecoesGranularidade.secao']);
+
+        return response()->json([
+            'tipo_registro' => new TipoRegistroResource($copia),
+        ], 201);
     }
 
     /**

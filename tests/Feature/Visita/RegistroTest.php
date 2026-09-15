@@ -8,6 +8,7 @@ use App\Models\Empresa;
 use App\Models\PontoVenda;
 use App\Models\ProdutoAuditoria;
 use App\Models\SecaoAuditoria;
+use App\Models\SortimentoPontoVenda;
 use App\Models\TipoRegistro;
 use App\Models\Usuario;
 use App\Models\Visita;
@@ -360,6 +361,132 @@ class RegistroTest extends TestCase
         $response->assertCreated()
             ->assertJsonPath('registro.valores_campos.promocionado', '1')
             ->assertJsonPath('registro.valores_campos.validade', '15/03/2026');
+    }
+
+    public function test_campo_sortimento_aceita_produtos_do_recorte_e_rejeita_fora_dele(): void
+    {
+        $empresa = Empresa::factory()->create();
+        $pdv = PontoVenda::factory()->create(['empresa_id' => $empresa->id]);
+        $promotor = Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]);
+        $departamento = DepartamentoAuditoria::create(['empresa_id' => $empresa->id, 'descricao' => 'Limpeza']);
+        $secao = SecaoAuditoria::create(['empresa_id' => $empresa->id, 'descricao' => 'Amaciantes', 'departamento_id' => $departamento->id]);
+        $produtoDentro = ProdutoAuditoria::factory()->create(['empresa_id' => $empresa->id, 'secao_id' => $secao->id]);
+        $produtoForaDaSecao = ProdutoAuditoria::factory()->create(['empresa_id' => $empresa->id]);
+
+        SortimentoPontoVenda::create([
+            'ponto_venda_id' => $pdv->id, 'tipo_item' => 'PRODUTO', 'produto_id' => $produtoDentro->id,
+        ]);
+        // O PDV também tem esse produto de fora no sortimento, mas ele não faz parte do RECORTE
+        // configurado no campo (seção Amaciantes) — não deveria aparecer como opção válida.
+        SortimentoPontoVenda::create([
+            'ponto_venda_id' => $pdv->id, 'tipo_item' => 'PRODUTO', 'produto_id' => $produtoForaDaSecao->id,
+        ]);
+
+        $tipo = TipoRegistro::create(['empresa_id' => $empresa->id, 'descricao' => 'Loja Perfeita']);
+        CampoTipoRegistro::create([
+            'tipo_registro_id' => $tipo->id, 'chave' => 'mix', 'rotulo' => 'Mix de amaciantes',
+            'tipo_campo' => 'SORTIMENTO', 'ordem' => 0,
+            'sortimento_origem' => 'DINAMICO', 'sortimento_tipo_vinculo' => 'SECAO', 'sortimento_secao_id' => $secao->id,
+        ]);
+        $visitaUuid = $this->abrirVisita($promotor, $pdv);
+
+        $response = $this->postJson("/api/visitas/{$visitaUuid}/registros", [
+            'tipo_registro_uuid' => $tipo->uuid,
+            'valores_campos' => ['mix' => json_encode(['presentes' => [$produtoDentro->uuid], 'ausentes' => []])],
+        ]);
+        $response->assertCreated();
+
+        $this->postJson("/api/visitas/{$visitaUuid}/registros", [
+            'tipo_registro_uuid' => $tipo->uuid,
+            'valores_campos' => ['mix' => json_encode(['presentes' => [], 'ausentes' => [$produtoForaDaSecao->uuid]])],
+        ])->assertStatus(422)->assertJsonValidationErrors('valores_campos.mix');
+    }
+
+    public function test_campo_sortimento_rejeita_produto_em_presentes_e_ausentes_ao_mesmo_tempo(): void
+    {
+        $empresa = Empresa::factory()->create();
+        $pdv = PontoVenda::factory()->create(['empresa_id' => $empresa->id]);
+        $promotor = Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]);
+        $secao = SecaoAuditoria::create(['empresa_id' => $empresa->id, 'descricao' => 'Amaciantes']);
+        $produto = ProdutoAuditoria::factory()->create(['empresa_id' => $empresa->id, 'secao_id' => $secao->id]);
+        SortimentoPontoVenda::create(['ponto_venda_id' => $pdv->id, 'tipo_item' => 'PRODUTO', 'produto_id' => $produto->id]);
+
+        $tipo = TipoRegistro::create(['empresa_id' => $empresa->id, 'descricao' => 'Loja Perfeita']);
+        CampoTipoRegistro::create([
+            'tipo_registro_id' => $tipo->id, 'chave' => 'mix', 'rotulo' => 'Mix', 'tipo_campo' => 'SORTIMENTO', 'ordem' => 0,
+            'sortimento_origem' => 'DINAMICO', 'sortimento_tipo_vinculo' => 'SECAO', 'sortimento_secao_id' => $secao->id,
+        ]);
+        $visitaUuid = $this->abrirVisita($promotor, $pdv);
+
+        $this->postJson("/api/visitas/{$visitaUuid}/registros", [
+            'tipo_registro_uuid' => $tipo->uuid,
+            'valores_campos' => ['mix' => json_encode(['presentes' => [$produto->uuid], 'ausentes' => [$produto->uuid]])],
+        ])->assertStatus(422)->assertJsonValidationErrors('valores_campos.mix');
+    }
+
+    public function test_campo_sortimento_fixo_aceita_so_produtos_da_lista_curada(): void
+    {
+        $empresa = Empresa::factory()->create();
+        $pdv = PontoVenda::factory()->create(['empresa_id' => $empresa->id]);
+        $promotor = Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]);
+        $produtoCurado = ProdutoAuditoria::factory()->create(['empresa_id' => $empresa->id]);
+        $produtoNaoCurado = ProdutoAuditoria::factory()->create(['empresa_id' => $empresa->id]);
+
+        $tipo = TipoRegistro::create(['empresa_id' => $empresa->id, 'descricao' => 'Loja Perfeita']);
+        $campo = CampoTipoRegistro::create([
+            'tipo_registro_id' => $tipo->id, 'chave' => 'mix', 'rotulo' => 'Mix', 'tipo_campo' => 'SORTIMENTO', 'ordem' => 0,
+            'sortimento_origem' => 'FIXO',
+        ]);
+        $campo->produtosFixos()->attach($produtoCurado->id);
+        $visitaUuid = $this->abrirVisita($promotor, $pdv);
+
+        // Fixo ignora o sortimento real do PDV — nem precisa de SortimentoPontoVenda cadastrado.
+        $this->postJson("/api/visitas/{$visitaUuid}/registros", [
+            'tipo_registro_uuid' => $tipo->uuid,
+            'valores_campos' => ['mix' => json_encode(['presentes' => [$produtoCurado->uuid], 'ausentes' => []])],
+        ])->assertCreated();
+
+        $this->postJson("/api/visitas/{$visitaUuid}/registros", [
+            'tipo_registro_uuid' => $tipo->uuid,
+            'valores_campos' => ['mix' => json_encode(['presentes' => [], 'ausentes' => [$produtoNaoCurado->uuid]])],
+        ])->assertStatus(422)->assertJsonValidationErrors('valores_campos.mix');
+    }
+
+    public function test_pontuacao_calcula_percentual_de_campos_booleano_e_sortimento_que_passaram(): void
+    {
+        $empresa = Empresa::factory()->create();
+        $pdv = PontoVenda::factory()->create(['empresa_id' => $empresa->id]);
+        $promotor = Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]);
+        $secao = SecaoAuditoria::create(['empresa_id' => $empresa->id, 'descricao' => 'Amaciantes']);
+        $produto = ProdutoAuditoria::factory()->create(['empresa_id' => $empresa->id, 'secao_id' => $secao->id]);
+        SortimentoPontoVenda::create(['ponto_venda_id' => $pdv->id, 'tipo_item' => 'PRODUTO', 'produto_id' => $produto->id]);
+
+        $tipo = TipoRegistro::create(['empresa_id' => $empresa->id, 'descricao' => 'Loja Perfeita', 'usa_pontuacao' => true]);
+        CampoTipoRegistro::create([
+            'tipo_registro_id' => $tipo->id, 'chave' => 'promocionado', 'rotulo' => 'Promocionado?',
+            'tipo_campo' => 'BOOLEANO', 'ordem' => 0,
+        ]);
+        CampoTipoRegistro::create([
+            'tipo_registro_id' => $tipo->id, 'chave' => 'precificado', 'rotulo' => 'Precificado?',
+            'tipo_campo' => 'BOOLEANO', 'ordem' => 1,
+        ]);
+        CampoTipoRegistro::create([
+            'tipo_registro_id' => $tipo->id, 'chave' => 'mix', 'rotulo' => 'Mix', 'tipo_campo' => 'SORTIMENTO', 'ordem' => 2,
+            'sortimento_origem' => 'DINAMICO', 'sortimento_tipo_vinculo' => 'SECAO', 'sortimento_secao_id' => $secao->id,
+        ]);
+        $visitaUuid = $this->abrirVisita($promotor, $pdv);
+
+        // 2 de 3 campos scoreáveis "passaram": promocionado=Sim, mix 100% presente; precificado=Não.
+        $response = $this->postJson("/api/visitas/{$visitaUuid}/registros", [
+            'tipo_registro_uuid' => $tipo->uuid,
+            'valores_campos' => [
+                'promocionado' => '1',
+                'precificado' => '0',
+                'mix' => json_encode(['presentes' => [$produto->uuid], 'ausentes' => []]),
+            ],
+        ]);
+
+        $response->assertCreated()->assertJsonPath('registro.pontuacao', 67);
     }
 
     public function test_campo_condicional_so_e_obrigatorio_quando_condicao_e_satisfeita(): void

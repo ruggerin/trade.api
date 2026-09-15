@@ -27,6 +27,18 @@ class PontoVendaResource extends JsonResource
             'cep' => $this->cep,
             'telefone' => $this->telefone,
             'email' => $this->email,
+            'numero_checkouts' => $this->numero_checkouts,
+            // Rota autenticada, mesmo padrão de UsuarioResource::foto_url — nunca a URL direta
+            // do disco (privado nos dois casos, local ou s3, ver config('filesystems.default')).
+            'fachada_url' => $this->fachada_path ? url("/api/pontos-venda/{$this->uuid}/fachada") : null,
+            'rede_loja' => $this->whenLoaded(
+                'redeLoja',
+                fn () => $this->redeLoja ? ['id' => $this->redeLoja->uuid, 'descricao' => $this->redeLoja->descricao] : null,
+            ),
+            'ramo_atividade' => $this->whenLoaded(
+                'ramoAtividade',
+                fn () => $this->ramoAtividade ? ['id' => $this->ramoAtividade->uuid, 'descricao' => $this->ramoAtividade->descricao] : null,
+            ),
             // Promotores que atendem esta loja — ver App\Models\PontoVenda::promotores e
             // docs/02-API-BACKEND.md, regra de negócio 6.
             'promotores' => $this->whenLoaded(

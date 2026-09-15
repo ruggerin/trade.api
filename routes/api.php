@@ -5,12 +5,14 @@ use App\Http\Controllers\AtividadeController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CampanhaAuditoriaController;
 use App\Http\Controllers\CampanhaItemController;
+use App\Http\Controllers\CampoSortimentoController;
 use App\Http\Controllers\CentroCustoController;
 use App\Http\Controllers\ContratoController;
 use App\Http\Controllers\ContratoMetaController;
 use App\Http\Controllers\DepartamentoAuditoriaController;
 use App\Http\Controllers\EmpresaController;
 use App\Http\Controllers\FaturaController;
+use App\Http\Controllers\GaleriaFotosController;
 use App\Http\Controllers\ImagemRegistroController;
 use App\Http\Controllers\MarcaAuditoriaController;
 use App\Http\Controllers\NivelExibicaoController;
@@ -23,6 +25,8 @@ use App\Http\Controllers\PlanogramaController;
 use App\Http\Controllers\PlanogramaPrateleiraController;
 use App\Http\Controllers\PontoVendaController;
 use App\Http\Controllers\ProdutoAuditoriaController;
+use App\Http\Controllers\RamoAtividadeController;
+use App\Http\Controllers\RedeLojaController;
 use App\Http\Controllers\SecaoAuditoriaController;
 use App\Http\Controllers\SortimentoPontoVendaController;
 use App\Http\Controllers\TipoRegistroController;
@@ -57,7 +61,15 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::get('/marcas-auditoria', [MarcaAuditoriaController::class, 'index']);
     Route::get('/produtos-auditoria', [ProdutoAuditoriaController::class, 'index']);
     Route::get('/niveis-exibicao', [NivelExibicaoController::class, 'index']);
+    // Classificação de PontoVenda (selects no cadastro da loja, ver PontoVendaController) —
+    // mesmo padrão de leitura aberta/escrita por permissão do resto do catálogo.
+    Route::get('/redes-lojas', [RedeLojaController::class, 'index']);
+    Route::get('/ramos-atividade', [RamoAtividadeController::class, 'index']);
     Route::get('/tipos-registro', [TipoRegistroController::class, 'index']);
+    // Checklist resolvido de um campo SORTIMENTO pra um PDV — ver docs/20-FORMULARIO-DINAMICO-CAMPANHA.md
+    // decisão 3. Precisa vir antes de qualquer /tipos-registro/{tipoRegistro} se um dia existir
+    // (mesma nota de /campanhas-auditoria/disponiveis), mas hoje não há conflito de rota.
+    Route::get('/tipos-registro/campos/{campo}/sortimento', [CampoSortimentoController::class, 'index']);
     Route::get('/tipos-visita', [TipoVisitaController::class, 'index']);
     Route::get('/objetivos-visita', [ObjetivoVisitaController::class, 'index']);
 
@@ -89,6 +101,9 @@ Route::middleware('auth:sanctum')->group(function (): void {
     // Pontos de venda: leitura aberta, escrita por permissão (bloco abaixo).
     Route::get('/pontos-venda', [PontoVendaController::class, 'index']);
     Route::get('/pontos-venda/{pontoVenda}', [PontoVendaController::class, 'show']);
+    // Foto da fachada — leitura aberta (mesmo padrão de UsuarioController::foto), escrita por
+    // pontos_venda.gerenciar (bloco abaixo, ver PontoVendaController::atualizarFachada).
+    Route::get('/pontos-venda/{pontoVenda}/fachada', [PontoVendaController::class, 'fachada']);
 
     // Visitas (check-in/checkout/registros): qualquer user_type autenticado, sem restrição de
     // permissão — ver docs/02-API-BACKEND.md#autorização-de-escrita. Ownership (um PROMOTOR
@@ -118,6 +133,11 @@ Route::middleware('auth:sanctum')->group(function (): void {
     // acompanhar tudo que rolou nas visitas do dia, todo mundo junto — ver
     // AtividadeController::index e docs/17-PAINEL-ATIVIDADES.md.
     Route::get('/atividades', [AtividadeController::class, 'index']);
+
+    // Galeria de Fotos: grade só de fotos (não timeline), filtrável por período/tipo de
+    // registro/catálogo/loja/rede/ramo/promotor/ruptura — ver GaleriaFotosController::index e
+    // docs/23-GALERIA-DE-FOTOS.md.
+    Route::get('/galeria-fotos', [GaleriaFotosController::class, 'index']);
 
     // Intervenção administrativa em visita (cancelar / forçar checkout com horário real /
     // corrigir horários) — exige a permissão dedicada visitas.intervir (ADMIN sempre; GESTOR só
@@ -181,6 +201,10 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::post('/pontos-venda', [PontoVendaController::class, 'store'])->middleware('permissao:pontos_venda.gerenciar');
     Route::put('/pontos-venda/{pontoVenda}', [PontoVendaController::class, 'update'])->middleware('permissao:pontos_venda.gerenciar');
     Route::delete('/pontos-venda/{pontoVenda}', [PontoVendaController::class, 'destroy'])->middleware('permissao:pontos_venda.gerenciar');
+    // Foto da fachada da loja — mesmo padrão de AuthController::atualizarFoto/removerFoto, só
+    // que aqui não é self-service (é a loja, não o usuário), por isso exige a permissão.
+    Route::post('/pontos-venda/{pontoVenda}/fachada', [PontoVendaController::class, 'atualizarFachada'])->middleware('permissao:pontos_venda.gerenciar');
+    Route::delete('/pontos-venda/{pontoVenda}/fachada', [PontoVendaController::class, 'removerFachada'])->middleware('permissao:pontos_venda.gerenciar');
     // Atribuição de promotores à loja (regra de negócio 6) — mesma permissão de gerenciar PDV.
     Route::put('/pontos-venda/{pontoVenda}/promotores', [PontoVendaController::class, 'syncPromotores'])->middleware('permissao:pontos_venda.gerenciar');
     // Atribuir/remover um promotor de cada vez — preferível ao sync acima quando só uma
@@ -222,12 +246,23 @@ Route::middleware('auth:sanctum')->group(function (): void {
         Route::put('/niveis-exibicao/{nivelExibicao}', [NivelExibicaoController::class, 'update']);
         Route::delete('/niveis-exibicao/{nivelExibicao}', [NivelExibicaoController::class, 'destroy']);
 
+        Route::post('/redes-lojas', [RedeLojaController::class, 'store']);
+        Route::put('/redes-lojas/{redeLoja}', [RedeLojaController::class, 'update']);
+        Route::delete('/redes-lojas/{redeLoja}', [RedeLojaController::class, 'destroy']);
+
+        Route::post('/ramos-atividade', [RamoAtividadeController::class, 'store']);
+        Route::put('/ramos-atividade/{ramoAtividade}', [RamoAtividadeController::class, 'update']);
+        Route::delete('/ramos-atividade/{ramoAtividade}', [RamoAtividadeController::class, 'destroy']);
+
         Route::post('/tipos-registro', [TipoRegistroController::class, 'store']);
         Route::put('/tipos-registro/{tipoRegistro}', [TipoRegistroController::class, 'update']);
         Route::delete('/tipos-registro/{tipoRegistro}', [TipoRegistroController::class, 'destroy']);
         // Sequência de exibição (admin e mobile, ver TipoRegistroController::index) — troca a
         // `ordem` deste tipo com a do vizinho (anterior/seguinte), em vez de expor o número cru.
         Route::post('/tipos-registro/{tipoRegistro}/mover', [TipoRegistroController::class, 'mover']);
+        // Duplicar (decisão 6 de docs/20-FORMULARIO-DINAMICO-CAMPANHA.md) — clona um tipo
+        // existente (com todos os campos) como ponto de partida de um formulário novo.
+        Route::post('/tipos-registro/{tipoRegistro}/duplicar', [TipoRegistroController::class, 'duplicar']);
 
         Route::post('/planogramas', [PlanogramaController::class, 'store']);
         Route::put('/planogramas/{planograma}', [PlanogramaController::class, 'update']);
