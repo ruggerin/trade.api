@@ -8,6 +8,7 @@ use App\Enums\TipoItemCampanha;
 use App\Http\Requests\VisitaRegistro\StoreVisitaRegistroRequest;
 use App\Http\Resources\VisitaRegistroResource;
 use App\Models\DepartamentoAuditoria;
+use App\Models\ImagemRegistro;
 use App\Models\MarcaAuditoria;
 use App\Models\ProdutoAuditoria;
 use App\Models\SecaoAuditoria;
@@ -17,8 +18,7 @@ use App\Models\VisitaRegistro;
 use App\Support\CancelamentoRegistro;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
-use Symfony\Component\HttpFoundation\StreamedResponse;
+use Illuminate\Support\Str;
 
 class VisitaRegistroController extends Controller
 {
@@ -44,7 +44,7 @@ class VisitaRegistroController extends Controller
 
             if ($existente) {
                 $existente->setRelation('visita', $visita);
-                $existente->load(['produtoAuditoria', 'tipoRegistro', 'secao', 'departamento', 'marca']);
+                $existente->load(['produtoAuditoria', 'tipoRegistro', 'secao', 'departamento', 'marca', 'imagens']);
 
                 return response()->json([
                     'registro' => new VisitaRegistroResource($existente),
@@ -86,34 +86,47 @@ class VisitaRegistroController extends Controller
             'valores_campos' => $dados['valores_campos'] ?? null,
         ]);
 
-        if ($request->hasFile('imagem')) {
-            $arquivo = $request->file('imagem');
-            $nomeArquivo = "{$registro->uuid}.".($arquivo->extension() ?: 'jpg');
-            $arquivo->storeAs("visitas/{$visita->id}", $nomeArquivo, config('filesystems.default'));
-            $registro->update(['imagem_path' => "visitas/{$visita->id}/{$nomeArquivo}"]);
+        // Duas formas de anexar foto, combináveis — ver docs/21-EVIDENCIA-EM-FOTOS.md. `ordem`
+        // segue a ordem em que cada uma aparece no envio: arquivos novos primeiro, depois as
+        // já existentes vinculadas.
+        $ordem = 0;
+
+        if ($request->hasFile('imagens')) {
+            foreach ($request->file('imagens') as $arquivo) {
+                $nomeArquivo = Str::uuid()->toString().'.'.($arquivo->extension() ?: 'jpg');
+                $arquivo->storeAs("visitas/{$visita->id}", $nomeArquivo, config('filesystems.default'));
+                $imagem = ImagemRegistro::create([
+                    'visita_id' => $visita->id,
+                    'caminho' => "visitas/{$visita->id}/{$nomeArquivo}",
+                ]);
+                $registro->imagens()->attach($imagem->id, ['ordem' => $ordem++]);
+            }
         }
 
-        // Evita 1 query extra só pra montar imagem_url (ver VisitaRegistroResource).
+        if (! empty($dados['imagens_existentes_uuids'])) {
+            // Preserva a ordem submetida (não a ordem arbitrária da query) — busca tudo de uma
+            // vez, depois percorre na ordem do array validado.
+            $porUuid = ImagemRegistro::where('visita_id', $visita->id)
+                ->whereIn('uuid', $dados['imagens_existentes_uuids'])
+                ->get()
+                ->keyBy('uuid');
+
+            foreach ($dados['imagens_existentes_uuids'] as $uuid) {
+                if ($imagem = $porUuid->get($uuid)) {
+                    $registro->imagens()->attach($imagem->id, ['ordem' => $ordem++]);
+                }
+            }
+        }
+
+        // Evita 1 query extra só pra montar a url de cada imagem (ver VisitaRegistroResource).
         $registro->setRelation('visita', $visita);
         // Sem isso, os whenLoaded (produtoAuditoria, tipoRegistro etc.) sempre vêm null na
         // resposta do POST, mesmo quando os campos correspondentes foram enviados.
-        $registro->load(['produtoAuditoria', 'tipoRegistro', 'secao', 'departamento', 'marca']);
+        $registro->load(['produtoAuditoria', 'tipoRegistro', 'secao', 'departamento', 'marca', 'imagens']);
 
         return response()->json([
             'registro' => new VisitaRegistroResource($registro),
         ], 201);
-    }
-
-    public function imagem(Request $request, Visita $visita, VisitaRegistro $registro): StreamedResponse
-    {
-        $this->autorizarAcesso($request, $visita);
-
-        // VisitaRegistro não é tenant-aware por conta própria (herda de Visita) — confirma
-        // manualmente que o registro pertence mesmo à visita da rota antes de servir o arquivo.
-        abort_if($registro->visita_id !== $visita->id, 404);
-        abort_if(! $registro->imagem_path, 404);
-
-        return Storage::disk(config('filesystems.default'))->response($registro->imagem_path);
     }
 
     /**
@@ -140,7 +153,7 @@ class VisitaRegistroController extends Controller
 
         $registro->update(['cancelado_em' => now()]);
         $registro->setRelation('visita', $visita);
-        $registro->load(['produtoAuditoria', 'tipoRegistro', 'secao', 'departamento', 'marca']);
+        $registro->load(['produtoAuditoria', 'tipoRegistro', 'secao', 'departamento', 'marca', 'imagens']);
 
         return response()->json([
             'registro' => new VisitaRegistroResource($registro),
@@ -168,7 +181,7 @@ class VisitaRegistroController extends Controller
         }
 
         $registro->setRelation('visita', $visita);
-        $registro->load(['produtoAuditoria', 'tipoRegistro', 'secao', 'departamento', 'marca', 'resolvidoPor']);
+        $registro->load(['produtoAuditoria', 'tipoRegistro', 'secao', 'departamento', 'marca', 'resolvidoPor', 'imagens']);
 
         return response()->json([
             'registro' => new VisitaRegistroResource($registro),

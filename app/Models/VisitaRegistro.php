@@ -7,6 +7,7 @@ use App\Models\Concerns\HasUuid;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 /**
  * Tem uuid (usado na rota de imagem) mas não BelongsToEmpresa — herda o isolamento de Visita
@@ -29,7 +30,6 @@ class VisitaRegistro extends Model
         'marca_id',
         'ruptura',
         'observacao',
-        'imagem_path',
         'valores_campos',
         // Só o próprio VisitaRegistroController::cancelar escreve aqui — soft, nunca hard
         // delete (mantém o registro e a foto como rastro histórico do que foi cancelado).
@@ -85,5 +85,16 @@ class VisitaRegistro extends Model
     public function marca(): BelongsTo
     {
         return $this->belongsTo(MarcaAuditoria::class);
+    }
+
+    /**
+     * N:N — mesma foto pode evidenciar vários registros, um registro pode ter várias fotos. Ver
+     * docs/21-EVIDENCIA-EM-FOTOS.md. Substitui o antigo campo imagem_path.
+     */
+    public function imagens(): BelongsToMany
+    {
+        return $this->belongsToMany(ImagemRegistro::class, 'visita_registro_imagem')
+            ->withPivot('ordem')
+            ->orderByPivot('ordem');
     }
 }

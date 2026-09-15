@@ -11,12 +11,16 @@ use App\Http\Controllers\ContratoMetaController;
 use App\Http\Controllers\DepartamentoAuditoriaController;
 use App\Http\Controllers\EmpresaController;
 use App\Http\Controllers\FaturaController;
+use App\Http\Controllers\ImagemRegistroController;
 use App\Http\Controllers\MarcaAuditoriaController;
 use App\Http\Controllers\NivelExibicaoController;
 use App\Http\Controllers\ObjetivoVisitaController;
 use App\Http\Controllers\OrdemServicoController;
 use App\Http\Controllers\ParametroController;
 use App\Http\Controllers\PerfilController;
+use App\Http\Controllers\PlanogramaBlocoController;
+use App\Http\Controllers\PlanogramaController;
+use App\Http\Controllers\PlanogramaPrateleiraController;
 use App\Http\Controllers\PontoVendaController;
 use App\Http\Controllers\ProdutoAuditoriaController;
 use App\Http\Controllers\SecaoAuditoriaController;
@@ -57,6 +61,21 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::get('/tipos-visita', [TipoVisitaController::class, 'index']);
     Route::get('/objetivos-visita', [ObjetivoVisitaController::class, 'index']);
 
+    // Planograma — referência visual de layout de prateleira/expositor, ver
+    // docs/22-PLANOGRAMA.md. Leitura aberta, escrita por permissao:catalogo.gerenciar (bloco
+    // abaixo) — dado satélite do catálogo, mesmo raciocínio de reaproveitar a permissão do
+    // domínio pai em vez de criar uma nova (ver App\Enums\Permissao).
+    Route::get('/planogramas', [PlanogramaController::class, 'index']);
+    // /proxy-imagem precisa vir ANTES de /{planograma}, senão o Laravel tenta casar
+    // "proxy-imagem" como se fosse um uuid — mesma nota de /campanhas-auditoria/disponiveis.
+    // Aberta a qualquer autenticado (não exige catalogo.gerenciar) — só busca imagem, mesmo
+    // raciocínio de leitura livre do index/show.
+    Route::get('/planogramas/proxy-imagem', [PlanogramaController::class, 'proxyImagem']);
+    Route::get('/planogramas/{planograma}', [PlanogramaController::class, 'show']);
+    // Aberta a qualquer autenticado (não exige catalogo.gerenciar) — o promotor no mobile só
+    // consome a capa, nunca escreve.
+    Route::get('/planogramas/{planograma}/foto-capa', [PlanogramaController::class, 'fotoCapa']);
+
     // Campanhas de auditoria — nota de ordem: /disponiveis precisa vir ANTES de
     // /{campanhaAuditoria}, senão o Laravel tenta casar "disponiveis" como se fosse um uuid.
     Route::get('/campanhas-auditoria/disponiveis', [CampanhaAuditoriaController::class, 'disponiveis']);
@@ -84,7 +103,9 @@ Route::middleware('auth:sanctum')->group(function (): void {
     // VisitaController::cancelarPropria.
     Route::post('/visitas/{visita}/cancelar-propria', [VisitaController::class, 'cancelarPropria']);
     Route::post('/visitas/{visita}/registros', [VisitaRegistroController::class, 'store']);
-    Route::get('/visitas/{visita}/registros/{registro}/imagem', [VisitaRegistroController::class, 'imagem']);
+    // Serve o arquivo de uma foto de evidência — não depende mais de um registro específico
+    // (uma foto pode evidenciar N registros), ver docs/21-EVIDENCIA-EM-FOTOS.md.
+    Route::get('/visitas/{visita}/imagens/{imagem}', [ImagemRegistroController::class, 'show']);
     // Cancelamento (soft) de um registro já feito — parametrizável por empresa pra PROMOTOR
     // (REGISTRO_CANCELAMENTO_PERMITIDO), ADMIN/GESTOR sempre podem. Ver
     // VisitaRegistroController::cancelar.
@@ -207,6 +228,19 @@ Route::middleware('auth:sanctum')->group(function (): void {
         // Sequência de exibição (admin e mobile, ver TipoRegistroController::index) — troca a
         // `ordem` deste tipo com a do vizinho (anterior/seguinte), em vez de expor o número cru.
         Route::post('/tipos-registro/{tipoRegistro}/mover', [TipoRegistroController::class, 'mover']);
+
+        Route::post('/planogramas', [PlanogramaController::class, 'store']);
+        Route::put('/planogramas/{planograma}', [PlanogramaController::class, 'update']);
+        Route::delete('/planogramas/{planograma}', [PlanogramaController::class, 'destroy']);
+        Route::post('/planogramas/{planograma}/foto-capa', [PlanogramaController::class, 'uploadFotoCapa']);
+
+        Route::post('/planogramas/{planograma}/prateleiras', [PlanogramaPrateleiraController::class, 'store']);
+        Route::put('/planogramas/{planograma}/prateleiras/{prateleira}', [PlanogramaPrateleiraController::class, 'update']);
+        Route::delete('/planogramas/{planograma}/prateleiras/{prateleira}', [PlanogramaPrateleiraController::class, 'destroy']);
+
+        Route::post('/planogramas/{planograma}/prateleiras/{prateleira}/blocos', [PlanogramaBlocoController::class, 'store']);
+        Route::put('/planogramas/{planograma}/prateleiras/{prateleira}/blocos/{bloco}', [PlanogramaBlocoController::class, 'update']);
+        Route::delete('/planogramas/{planograma}/prateleiras/{prateleira}/blocos/{bloco}', [PlanogramaBlocoController::class, 'destroy']);
     });
 
     // Campanhas: permissão própria, separada do catálogo — definir "o que auditar" é uma

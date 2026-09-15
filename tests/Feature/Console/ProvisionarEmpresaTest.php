@@ -45,8 +45,11 @@ class ProvisionarEmpresaTest extends TestCase
         $this->assertSame(UserType::ADMIN, $admin->user_type);
         $this->assertTrue(Hash::check('senhaSegura123', $admin->senha_hash));
 
-        $this->assertSame(3, TipoRegistro::where('empresa_id', $empresa->id)->count());
+        $this->assertSame(8, TipoRegistro::where('empresa_id', $empresa->id)->count());
         $this->assertSame(11, Parametro::where('empresa_id', $empresa->id)->count());
+
+        $alertas = TipoRegistro::where('empresa_id', $empresa->id)->where('eh_alerta', true)->pluck('descricao')->sort()->values();
+        $this->assertSame(['Avaria', 'Proximo Vencimento'], $alertas->all());
     }
 
     public function test_senha_gerada_automaticamente_quando_omitida(): void

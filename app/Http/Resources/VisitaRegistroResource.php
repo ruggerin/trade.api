@@ -47,9 +47,13 @@ class VisitaRegistroResource extends JsonResource
             'ruptura' => $this->ruptura,
             'observacao' => $this->observacao,
             'valores_campos' => $this->valores_campos,
-            'imagem_url' => $this->imagem_path
-                ? url("/api/visitas/{$this->visita->uuid}/registros/{$this->uuid}/imagem")
-                : null,
+            // N:N — mesma foto pode evidenciar vários registros, um registro pode ter várias
+            // fotos. Ver docs/21-EVIDENCIA-EM-FOTOS.md. Substitui o antigo imagem_url (string
+            // única) — quem só precisa de uma foto usa imagens[0].
+            'imagens' => $this->whenLoaded('imagens', fn () => $this->imagens->map(fn ($img) => [
+                'id' => $img->uuid,
+                'url' => url("/api/visitas/{$this->visita->uuid}/imagens/{$img->uuid}"),
+            ])),
             // Soft — a linha continua existindo mesmo cancelada (rastro histórico). Ver
             // App\Support\CancelamentoRegistro.
             'cancelado_em' => $this->cancelado_em,

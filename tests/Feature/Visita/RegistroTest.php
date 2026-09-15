@@ -72,7 +72,7 @@ class RegistroTest extends TestCase
 
         $this->postJson("/api/visitas/{$visitaUuid}/registros", [
             'tipo_registro_uuid' => $this->tipoRegistroUuid($empresa, 'Foto'),
-        ])->assertStatus(422)->assertJsonValidationErrors('imagem');
+        ])->assertStatus(422)->assertJsonValidationErrors('imagens');
     }
 
     public function test_registro_geral_do_tipo_foto_sem_produto_vinculado(): void
@@ -86,17 +86,74 @@ class RegistroTest extends TestCase
 
         $response = $this->postJson("/api/visitas/{$visitaUuid}/registros", [
             'tipo_registro_uuid' => $this->tipoRegistroUuid($empresa, 'Foto'),
-            'imagem' => $this->imagemFake(),
+            'imagens' => [$this->imagemFake()],
         ]);
 
         $response->assertCreated()
             ->assertJsonPath('registro.produto_auditoria', null)
             ->assertJsonPath('registro.tipo_registro.descricao', 'Foto');
 
-        $this->assertNotNull($response->json('registro.imagem_url'));
+        $this->assertNotNull($response->json('registro.imagens.0.url'));
 
         $visita = Visita::where('uuid', $visitaUuid)->first();
-        Storage::disk('local')->assertExists($visita->registros()->first()->imagem_path);
+        $imagem = $visita->registros()->first()->imagens()->first();
+        $this->assertNotNull($imagem);
+        Storage::disk('local')->assertExists($imagem->caminho);
+    }
+
+    public function test_registro_aceita_varias_imagens_e_foto_ja_existente_da_mesma_visita(): void
+    {
+        Storage::fake('local');
+
+        $empresa = Empresa::factory()->create();
+        $pdv = PontoVenda::factory()->create(['empresa_id' => $empresa->id]);
+        $promotor = Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]);
+        $visitaUuid = $this->abrirVisita($promotor, $pdv);
+
+        // Primeiro registro sobe 2 fotos novas (ex.: expositor instalado em 2 lugares).
+        $primeiro = $this->postJson("/api/visitas/{$visitaUuid}/registros", [
+            'tipo_registro_uuid' => $this->tipoRegistroUuid($empresa, 'Foto'),
+            'imagens' => [$this->imagemFake(), $this->imagemFake()],
+        ]);
+        $primeiro->assertCreated()->assertJsonCount(2, 'registro.imagens');
+
+        // Segundo registro reaproveita a primeira foto do primeiro (evidência compartilhada
+        // entre respostas) sem reenviar arquivo.
+        $imagemExistenteUuid = $primeiro->json('registro.imagens.0.id');
+        $segundo = $this->postJson("/api/visitas/{$visitaUuid}/registros", [
+            'tipo_registro_uuid' => $this->tipoRegistroUuid($empresa, 'Observação'),
+            'observacao' => 'Mesma prateleira',
+            'imagens_existentes_uuids' => [$imagemExistenteUuid],
+        ]);
+        $segundo->assertCreated()
+            ->assertJsonCount(1, 'registro.imagens')
+            ->assertJsonPath('registro.imagens.0.id', $imagemExistenteUuid);
+
+        $this->assertDatabaseCount('imagens_registro', 2);
+    }
+
+    public function test_imagem_existente_de_outra_visita_retorna_422(): void
+    {
+        Storage::fake('local');
+
+        $empresa = Empresa::factory()->create();
+        $pdv = PontoVenda::factory()->create(['empresa_id' => $empresa->id]);
+        $promotor = Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]);
+
+        $visitaUuidA = $this->abrirVisita($promotor, $pdv);
+        $imagemDeOutraVisita = $this->postJson("/api/visitas/{$visitaUuidA}/registros", [
+            'tipo_registro_uuid' => $this->tipoRegistroUuid($empresa, 'Foto'),
+            'imagens' => [$this->imagemFake()],
+        ])->json('registro.imagens.0.id');
+
+        $this->patchJson("/api/visitas/{$visitaUuidA}/checkout", ['latitude' => $pdv->latitude, 'longitude' => $pdv->longitude]);
+        $visitaUuidB = $this->abrirVisita($promotor, $pdv);
+
+        $this->postJson("/api/visitas/{$visitaUuidB}/registros", [
+            'tipo_registro_uuid' => $this->tipoRegistroUuid($empresa, 'Observação'),
+            'observacao' => 'x',
+            'imagens_existentes_uuids' => [$imagemDeOutraVisita],
+        ])->assertStatus(422)->assertJsonValidationErrors('imagens_existentes_uuids.0');
     }
 
     public function test_mesmo_produto_aceita_varios_registros_livremente(): void
@@ -198,21 +255,21 @@ class RegistroTest extends TestCase
         $promotor = Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]);
         $visitaUuid = $this->abrirVisita($promotor, $pdv);
 
-        $registroUuid = $this->postJson("/api/visitas/{$visitaUuid}/registros", [
+        $imagemUuid = $this->postJson("/api/visitas/{$visitaUuid}/registros", [
             'tipo_registro_uuid' => $this->tipoRegistroUuid($empresa, 'Foto'),
-            'imagem' => $this->imagemFake(),
-        ])->json('registro.id');
+            'imagens' => [$this->imagemFake()],
+        ])->json('registro.imagens.0.id');
 
         // Sanctum::actingAs() injeta o usuário direto no guard (não depende de header) — sem
         // resetar, a próxima chamada "sem token" continuaria autenticada como $promotor.
         $this->app['auth']->forgetGuards();
 
         // Sem token.
-        $this->getJson("/api/visitas/{$visitaUuid}/registros/{$registroUuid}/imagem")->assertUnauthorized();
+        $this->getJson("/api/visitas/{$visitaUuid}/imagens/{$imagemUuid}")->assertUnauthorized();
 
         // Com token do dono, funciona.
         Sanctum::actingAs($promotor);
-        $this->get("/api/visitas/{$visitaUuid}/registros/{$registroUuid}/imagem")->assertOk();
+        $this->get("/api/visitas/{$visitaUuid}/imagens/{$imagemUuid}")->assertOk();
     }
 
     public function test_campo_customizado_obrigatorio_e_validado(): void
@@ -272,6 +329,103 @@ class RegistroTest extends TestCase
             'tipo_registro_uuid' => $tipo->uuid,
             'valores_campos' => ['estado' => 'Regular'],
         ])->assertCreated();
+    }
+
+    public function test_campo_booleano_e_data_validam_formato(): void
+    {
+        $empresa = Empresa::factory()->create();
+        $pdv = PontoVenda::factory()->create(['empresa_id' => $empresa->id]);
+        $promotor = Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]);
+        $tipo = TipoRegistro::create(['empresa_id' => $empresa->id, 'descricao' => 'Loja Perfeita']);
+        CampoTipoRegistro::create([
+            'tipo_registro_id' => $tipo->id, 'chave' => 'promocionado', 'rotulo' => 'Promocionado?',
+            'tipo_campo' => 'BOOLEANO', 'ordem' => 0,
+        ]);
+        CampoTipoRegistro::create([
+            'tipo_registro_id' => $tipo->id, 'chave' => 'validade', 'rotulo' => 'Validade',
+            'tipo_campo' => 'DATA', 'ordem' => 1,
+        ]);
+        $visitaUuid = $this->abrirVisita($promotor, $pdv);
+
+        $this->postJson("/api/visitas/{$visitaUuid}/registros", [
+            'tipo_registro_uuid' => $tipo->uuid,
+            'valores_campos' => ['promocionado' => 'sim', 'validade' => '31/02/2026'],
+        ])->assertStatus(422)
+            ->assertJsonValidationErrors(['valores_campos.promocionado', 'valores_campos.validade']);
+
+        $response = $this->postJson("/api/visitas/{$visitaUuid}/registros", [
+            'tipo_registro_uuid' => $tipo->uuid,
+            'valores_campos' => ['promocionado' => '1', 'validade' => '15/03/2026'],
+        ]);
+        $response->assertCreated()
+            ->assertJsonPath('registro.valores_campos.promocionado', '1')
+            ->assertJsonPath('registro.valores_campos.validade', '15/03/2026');
+    }
+
+    public function test_campo_condicional_so_e_obrigatorio_quando_condicao_e_satisfeita(): void
+    {
+        $empresa = Empresa::factory()->create();
+        $pdv = PontoVenda::factory()->create(['empresa_id' => $empresa->id]);
+        $promotor = Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]);
+        $tipo = TipoRegistro::create(['empresa_id' => $empresa->id, 'descricao' => 'Cartaz promocional']);
+        $instalou = CampoTipoRegistro::create([
+            'tipo_registro_id' => $tipo->id, 'chave' => 'instalou', 'rotulo' => 'Instalou o cartaz?',
+            'tipo_campo' => 'BOOLEANO', 'ordem' => 0,
+        ]);
+        CampoTipoRegistro::create([
+            'tipo_registro_id' => $tipo->id, 'chave' => 'motivo', 'rotulo' => 'Por que não instalou?',
+            'tipo_campo' => 'TEXTO', 'obrigatorio' => true, 'ordem' => 1,
+            'depende_de_campo_id' => $instalou->id, 'depende_de_valor' => '0',
+        ]);
+        $visitaUuid = $this->abrirVisita($promotor, $pdv);
+
+        // instalou=1 (Sim) — a condição de "motivo" (instalou=0) não é satisfeita, então "motivo"
+        // não é obrigatório mesmo estando vazio.
+        $response = $this->postJson("/api/visitas/{$visitaUuid}/registros", [
+            'tipo_registro_uuid' => $tipo->uuid,
+            'valores_campos' => ['instalou' => '1'],
+        ]);
+        $response->assertCreated();
+        $this->assertArrayNotHasKey('motivo', $response->json('registro.valores_campos') ?? []);
+
+        // instalou=0 (Não) — agora "motivo" é obrigatório.
+        $this->postJson("/api/visitas/{$visitaUuid}/registros", [
+            'tipo_registro_uuid' => $tipo->uuid,
+            'valores_campos' => ['instalou' => '0'],
+        ])->assertStatus(422)->assertJsonValidationErrors('valores_campos.motivo');
+
+        $response = $this->postJson("/api/visitas/{$visitaUuid}/registros", [
+            'tipo_registro_uuid' => $tipo->uuid,
+            'valores_campos' => ['instalou' => '0', 'motivo' => 'Cliente não deixou'],
+        ]);
+        $response->assertCreated()->assertJsonPath('registro.valores_campos.motivo', 'Cliente não deixou');
+    }
+
+    public function test_valor_de_campo_condicional_e_descartado_quando_condicao_nao_satisfeita(): void
+    {
+        $empresa = Empresa::factory()->create();
+        $pdv = PontoVenda::factory()->create(['empresa_id' => $empresa->id]);
+        $promotor = Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]);
+        $tipo = TipoRegistro::create(['empresa_id' => $empresa->id, 'descricao' => 'Cartaz promocional']);
+        $instalou = CampoTipoRegistro::create([
+            'tipo_registro_id' => $tipo->id, 'chave' => 'instalou', 'rotulo' => 'Instalou o cartaz?',
+            'tipo_campo' => 'BOOLEANO', 'ordem' => 0,
+        ]);
+        CampoTipoRegistro::create([
+            'tipo_registro_id' => $tipo->id, 'chave' => 'motivo', 'rotulo' => 'Por que não instalou?',
+            'tipo_campo' => 'TEXTO', 'ordem' => 1,
+            'depende_de_campo_id' => $instalou->id, 'depende_de_valor' => '0',
+        ]);
+        $visitaUuid = $this->abrirVisita($promotor, $pdv);
+
+        // instalou=1 — "motivo" não deveria nem ter aparecido no mobile; um valor enviado mesmo
+        // assim (ex.: sobra de uma resposta anterior no formulário) é descartado, não gravado.
+        $response = $this->postJson("/api/visitas/{$visitaUuid}/registros", [
+            'tipo_registro_uuid' => $tipo->uuid,
+            'valores_campos' => ['instalou' => '1', 'motivo' => 'Não deveria estar aqui'],
+        ]);
+        $response->assertCreated();
+        $this->assertArrayNotHasKey('motivo', $response->json('registro.valores_campos') ?? []);
     }
 
     public function test_registro_vinculado_a_secao_inteira(): void

@@ -18,9 +18,11 @@ use Illuminate\Validation\Rule;
 /**
  * Provisiona uma empresa "pronta pra usar" — mesmo fluxo de `EmpresaController::signup`
  * (empresa + primeiro ADMIN + os 3 `TipoRegistro` de fábrica, ver `TipoRegistro::seedPadrao`),
- * mais uma coisa que o signup não faz: grava explicitamente na tabela `Parametro` o valor
- * *default* de cada configuração que o sistema já usa via fallback (ver classes em
- * `App\Support\*` — RaioCheckin, AvisoVencimentoContrato, VisibilidadePontosVenda etc.).
+ * mais duas coisas que o signup não faz: (1) replica os `TipoRegistro` extras que uma empresa
+ * de verdade já usa hoje (Antes/Depois/Avaria/Ponto extra/Vencimento Próximo — ver
+ * `TIPOS_REGISTRO_EXTRAS`), e (2) grava explicitamente na tabela `Parametro` o valor *default*
+ * de cada configuração que o sistema já usa via fallback (ver classes em `App\Support\*` —
+ * RaioCheckin, AvisoVencimentoContrato, VisibilidadePontosVenda etc.).
  *
  * Importante: **nenhum desses parâmetros é obrigatório pro sistema funcionar** — toda
  * `App\Support\*Config`-like class já cai num default sensato quando a linha não existe. Rodar
@@ -42,7 +44,7 @@ class ProvisionarEmpresa extends Command
         {--admin-email= : E-mail de login do ADMIN}
         {--admin-senha= : Senha em texto puro; se omitida, uma senha aleatória é gerada}';
 
-    protected $description = 'Cria uma empresa + primeiro ADMIN + parâmetros default explícitos (tipos de registro de fábrica já nascem sozinhos)';
+    protected $description = 'Cria uma empresa + primeiro ADMIN + tipos de registro (fábrica + extras) + parâmetros default explícitos';
 
     /**
      * Default de cada Parametro conhecido pelo sistema hoje — mesmo valor que
@@ -62,6 +64,26 @@ class ProvisionarEmpresa extends Command
         'CATALOGO_AUTONOMIA_PROMOTOR' => ['valor' => 'REQUER_APROVACAO', 'descricao' => 'Autonomia pra cadastrar produto novo no catálogo (App\Support\AutonomiaSortimento)'],
         'CODIGO_BARRAS_OBRIGATORIO' => ['valor' => 'false', 'descricao' => 'Exige código de barras ao cadastrar produto (App\Support\CodigoBarrasProduto)'],
         'CODIGO_BARRAS_UNICO' => ['valor' => 'false', 'descricao' => 'Código de barras precisa ser único no catálogo da empresa (App\Support\CodigoBarrasProduto)'],
+    ];
+
+    /**
+     * Além dos 3 "de fábrica" (`TipoRegistro::seedPadrao`), replica os tipos que uma empresa
+     * de verdade já usa hoje (ver empresa "Dist Mobile" nos dados de teste) — sem isso, uma
+     * empresa provisionada por aqui nasceria mais pobre que uma que já roda há um tempo, dando
+     * uma primeira impressão capenga de "cadê os outros tipos".
+     *
+     * `eh_alerta` só liga em Avaria e Vencimento Próximo — os 2 exemplos que o próprio
+     * "Dist Mobile" já usa e que batem com os exemplos canônicos de
+     * docs/19-PAINEL-ATIVIDADES.md §2.1 ("Ruptura, Avaria, Vencimento próximo, Ação da
+     * concorrência"). Antes/Depois/Ponto extra não pedem ação imediata, ficam de fora do painel
+     * de alertas por padrão — a empresa liga na mão se quiser (mesmo switch usado pra Ruptura).
+     */
+    private const TIPOS_REGISTRO_EXTRAS = [
+        ['descricao' => 'Antes', 'icone' => 'image-outline', 'exige_foto' => true, 'permite_vincular_catalogo' => true, 'eh_alerta' => false],
+        ['descricao' => 'Depois', 'icone' => 'check-circle-outline', 'exige_foto' => true, 'permite_vincular_catalogo' => true, 'eh_alerta' => false],
+        ['descricao' => 'Avaria', 'icone' => 'alert-octagon-outline', 'exige_foto' => true, 'permite_vincular_catalogo' => true, 'eh_alerta' => true],
+        ['descricao' => 'Ponto extra', 'icone' => 'star-outline', 'exige_foto' => true, 'permite_vincular_catalogo' => false, 'eh_alerta' => false],
+        ['descricao' => 'Proximo Vencimento', 'icone' => 'alert-circle-outline', 'exige_foto' => true, 'permite_vincular_catalogo' => true, 'eh_alerta' => true],
     ];
 
     public function handle(): int
@@ -120,6 +142,8 @@ class ProvisionarEmpresa extends Command
             // registro pra escolher no app até alguém cadastrar um no admin.
             TipoRegistro::seedPadrao($empresa->id);
 
+            $this->seedTiposRegistroExtras($empresa->id);
+
             foreach (self::PARAMETROS_DEFAULT as $chave => $config) {
                 Parametro::firstOrCreate(
                     ['empresa_id' => $empresa->id, 'chave' => $chave],
@@ -134,11 +158,30 @@ class ProvisionarEmpresa extends Command
         $this->info("ADMIN criado: {$admin->email} (uuid {$admin->uuid})");
         $this->info(sprintf('%d parâmetros gravados com o valor default de cada um.', count(self::PARAMETROS_DEFAULT)));
 
+        $this->info(sprintf('%d tipos de registro extras gravados (além dos 3 de fábrica).', count(self::TIPOS_REGISTRO_EXTRAS)));
+
         if ($senhaGerada) {
             $this->warn("Senha gerada: {$dados['admin_senha']}");
             $this->warn('Guarde em local seguro agora — não fica salva em nenhum log.');
         }
 
         return self::SUCCESS;
+    }
+
+    private function seedTiposRegistroExtras(int $empresaId): void
+    {
+        foreach (self::TIPOS_REGISTRO_EXTRAS as $indice => $tipo) {
+            TipoRegistro::create([
+                'empresa_id' => $empresaId,
+                'descricao' => $tipo['descricao'],
+                'icone' => $tipo['icone'],
+                // seedPadrao já usou 0, 1 e 2 (Foto, Ruptura, Observação) — continua a sequência.
+                'ordem' => 3 + $indice,
+                'exige_foto' => $tipo['exige_foto'],
+                'permite_vincular_catalogo' => $tipo['permite_vincular_catalogo'],
+                'eh_ruptura' => false,
+                'eh_alerta' => $tipo['eh_alerta'],
+            ]);
+        }
     }
 }

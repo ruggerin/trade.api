@@ -20,12 +20,14 @@ use Illuminate\Support\Collection;
  *
  * Não existe um "evento" unificado no banco — este endpoint junta duas fontes (Visita e
  * VisitaRegistro marcado como alerta) e mescla em memória, já que o volume esperado (uma
- * empresa, normalmente filtrado por "hoje") é pequeno; sem paginação por página, só um limite
- * defensivo (ver LIMITE_EVENTOS).
+ * empresa, normalmente filtrado por "hoje") é pequeno. Paginado por página (não cursor de
+ * verdade — mais simples numa fonte que já é uma mescla de duas tabelas diferentes), mesmo
+ * `meta` de `GET /api/visitas`, consumido pelo admin via infinite scroll (ver
+ * docs/19-PAINEL-ATIVIDADES.md).
  */
 class AtividadeController extends Controller
 {
-    private const LIMITE_EVENTOS = 300;
+    private const POR_PAGINA = 20;
 
     public function index(Request $request): JsonResponse
     {
@@ -55,9 +57,21 @@ class AtividadeController extends Controller
             $eventos = $eventos->concat($this->eventosDeVisita($request, $usuarioId, $pontoVendaId));
         }
 
-        $eventos = $eventos->sortByDesc('ocorrido_em')->values()->take(self::LIMITE_EVENTOS);
+        $eventos = $eventos->sortByDesc('ocorrido_em')->values();
 
-        return response()->json(['eventos' => $eventos]);
+        $pagina = max(1, $request->integer('page', 1));
+        $total = $eventos->count();
+        $ultimaPagina = max(1, (int) ceil($total / self::POR_PAGINA));
+
+        return response()->json([
+            'eventos' => $eventos->forPage($pagina, self::POR_PAGINA)->values(),
+            'meta' => [
+                'current_page' => $pagina,
+                'last_page' => $ultimaPagina,
+                'per_page' => self::POR_PAGINA,
+                'total' => $total,
+            ],
+        ]);
     }
 
     private function eventosDeVisita(Request $request, ?int $usuarioId, ?int $pontoVendaId): Collection
@@ -70,8 +84,8 @@ class AtividadeController extends Controller
                 // mesmas relações de eventosDeAlerta() pra reaproveitar o VisitaRegistroResource
                 // inteiro (tipo, produto/vínculo, observação) — a galeria de fotos do card
                 // mostra essa informação junto de cada imagem, não só a foto pelada.
-                'registros' => fn ($q) => $q->whereNull('cancelado_em')->whereNotNull('imagem_path')
-                    ->with(['tipoRegistro', 'produtoAuditoria', 'secao', 'departamento', 'marca']),
+                'registros' => fn ($q) => $q->whereNull('cancelado_em')->whereHas('imagens')
+                    ->with(['tipoRegistro', 'produtoAuditoria', 'secao', 'departamento', 'marca', 'imagens']),
             ])
             ->withCount([
                 'registros as registros_count' => fn ($q) => $q->whereNull('cancelado_em'),
@@ -150,7 +164,7 @@ class AtividadeController extends Controller
             ->when($request->filled('data_fim'), fn ($q) => $q->whereDate('created_at', '<=', $request->string('data_fim')))
             ->with([
                 'visita.pontoVenda', 'visita.usuario', 'tipoRegistro', 'produtoAuditoria',
-                'secao', 'departamento', 'marca', 'resolvidoPor',
+                'secao', 'departamento', 'marca', 'resolvidoPor', 'imagens',
             ])
             ->get();
 

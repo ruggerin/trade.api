@@ -76,4 +76,41 @@ class ParametroTest extends TestCase
         $this->getJson('/api/parametros')->assertOk();
         $this->postJson('/api/parametros', ['chave' => 'OUTRA_CHAVE', 'valor' => '1'])->assertForbidden();
     }
+
+    /**
+     * Suporte: SUPERADMIN não pertence a empresa nenhuma, então BelongsToEmpresa não filtra a
+     * query pra ele — sem o filtro `empresa_uuid`, ele veria o parâmetro de toda empresa
+     * cliente misturado. Ver ParametroController::index.
+     */
+    public function test_superadmin_filtra_parametros_por_empresa(): void
+    {
+        $empresaA = Empresa::factory()->create();
+        $empresaB = Empresa::factory()->create();
+        Parametro::create(['empresa_id' => $empresaA->id, 'chave' => 'CHECKIN_RAIO_METROS', 'valor' => '150']);
+        Parametro::create(['empresa_id' => $empresaB->id, 'chave' => 'CHECKIN_RAIO_METROS', 'valor' => '999']);
+
+        $superadmin = Usuario::factory()->superadmin()->create();
+        Sanctum::actingAs($superadmin);
+
+        $response = $this->getJson("/api/parametros?empresa_uuid={$empresaA->uuid}")->assertOk();
+        $parametros = $response->json('parametros');
+
+        $this->assertCount(1, $parametros);
+        $this->assertSame('150', $parametros[0]['valor']);
+        $this->assertSame($empresaA->uuid, $parametros[0]['empresa']['id']);
+    }
+
+    public function test_superadmin_sem_filtro_ve_parametros_de_todas_as_empresas(): void
+    {
+        $empresaA = Empresa::factory()->create();
+        $empresaB = Empresa::factory()->create();
+        Parametro::create(['empresa_id' => $empresaA->id, 'chave' => 'CHECKIN_RAIO_METROS', 'valor' => '150']);
+        Parametro::create(['empresa_id' => $empresaB->id, 'chave' => 'CHECKIN_RAIO_METROS', 'valor' => '999']);
+
+        $superadmin = Usuario::factory()->superadmin()->create();
+        Sanctum::actingAs($superadmin);
+
+        $response = $this->getJson('/api/parametros')->assertOk();
+        $this->assertCount(2, $response->json('parametros'));
+    }
 }
