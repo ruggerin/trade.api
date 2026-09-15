@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Support\CalculadoraPontuacao;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -47,6 +48,12 @@ class VisitaRegistroResource extends JsonResource
             'ruptura' => $this->ruptura,
             'observacao' => $this->observacao,
             'valores_campos' => $this->valores_campos,
+            // % de compliance do formulário — só quando tipo_registro.usa_pontuacao = true, ver
+            // App\Support\CalculadoraPontuacao e decisão 5 de docs/20-FORMULARIO-DINAMICO-CAMPANHA.md.
+            'pontuacao' => $this->whenLoaded(
+                'tipoRegistro',
+                fn () => $this->tipoRegistro ? CalculadoraPontuacao::calcular($this->tipoRegistro, $this->valores_campos) : null,
+            ),
             // N:N — mesma foto pode evidenciar vários registros, um registro pode ter várias
             // fotos. Ver docs/21-EVIDENCIA-EM-FOTOS.md. Substitui o antigo imagem_url (string
             // única) — quem só precisa de uma foto usa imagens[0].

@@ -9,6 +9,8 @@ use App\Models\MarcaAuditoria;
 use App\Models\NivelExibicao;
 use App\Models\Perfil;
 use App\Models\ProdutoAuditoria;
+use App\Models\RamoAtividade;
+use App\Models\RedeLoja;
 use App\Models\SecaoAuditoria;
 use App\Models\Usuario;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -145,5 +147,69 @@ class CatalogoTest extends TestCase
         $response = $this->getJson('/api/niveis-exibicao')->assertOk();
         $this->assertCount(1, $response->json('niveis_exibicao'));
         $this->assertEquals('Prateleira', $response->json('niveis_exibicao.0.descricao'));
+    }
+
+    /**
+     * Rede de Lojas e Ramo de Atividade (classificação de PontoVenda, ver
+     * PontoVendaController) seguem exatamente o mesmo padrão de Departamento/Nível de
+     * Exibição — cobertos aqui em vez de arquivos próprios, mesmo raciocínio do docblock desta
+     * classe.
+     */
+    public function test_admin_cria_rede_de_loja_e_ramo_de_atividade(): void
+    {
+        $empresa = Empresa::factory()->create();
+        $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
+        Sanctum::actingAs($admin);
+
+        $this->postJson('/api/redes-lojas', ['descricao' => 'Grupo Pão de Açúcar'])
+            ->assertCreated()
+            ->assertJsonPath('rede_loja.descricao', 'Grupo Pão de Açúcar');
+
+        $this->postJson('/api/ramos-atividade', ['descricao' => 'Supermercado'])
+            ->assertCreated()
+            ->assertJsonPath('ramo_atividade.descricao', 'Supermercado');
+    }
+
+    public function test_promotor_le_rede_de_loja_e_ramo_de_atividade_mas_nao_escreve(): void
+    {
+        $empresa = Empresa::factory()->create();
+        RedeLoja::factory()->create(['empresa_id' => $empresa->id]);
+        RamoAtividade::factory()->create(['empresa_id' => $empresa->id]);
+        $promotor = Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]);
+        Sanctum::actingAs($promotor);
+
+        $this->getJson('/api/redes-lojas')->assertOk();
+        $this->getJson('/api/ramos-atividade')->assertOk();
+        $this->postJson('/api/redes-lojas', ['descricao' => 'Tentativa'])->assertForbidden();
+        $this->postJson('/api/ramos-atividade', ['descricao' => 'Tentativa'])->assertForbidden();
+    }
+
+    public function test_destroy_de_rede_de_loja_e_ramo_de_atividade_e_soft_delete(): void
+    {
+        $empresa = Empresa::factory()->create();
+        $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
+        $rede = RedeLoja::factory()->create(['empresa_id' => $empresa->id]);
+        $ramo = RamoAtividade::factory()->create(['empresa_id' => $empresa->id]);
+        Sanctum::actingAs($admin);
+
+        $this->deleteJson("/api/redes-lojas/{$rede->uuid}")->assertNoContent();
+        $this->deleteJson("/api/ramos-atividade/{$ramo->uuid}")->assertNoContent();
+        $this->assertDatabaseHas('redes_lojas', ['id' => $rede->id, 'ativo' => false]);
+        $this->assertDatabaseHas('ramos_atividade', ['id' => $ramo->id, 'ativo' => false]);
+    }
+
+    public function test_rede_de_loja_e_ramo_de_atividade_sao_isolados_por_empresa(): void
+    {
+        $empresaA = Empresa::factory()->create();
+        $empresaB = Empresa::factory()->create();
+        RedeLoja::factory()->create(['empresa_id' => $empresaA->id, 'descricao' => 'Rede A']);
+        RedeLoja::factory()->create(['empresa_id' => $empresaB->id, 'descricao' => 'Rede B']);
+
+        $adminA = Usuario::factory()->admin()->create(['empresa_id' => $empresaA->id]);
+        Sanctum::actingAs($adminA);
+
+        $response = $this->getJson('/api/redes-lojas')->assertOk();
+        $this->assertCount(1, $response->json('redes_lojas'));
+        $this->assertEquals('Rede A', $response->json('redes_lojas.0.descricao'));
     }
 }

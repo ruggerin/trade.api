@@ -4,6 +4,7 @@ namespace App\Http\Requests\TipoRegistro;
 
 use App\Enums\EscopoAcaoTipoRegistro;
 use App\Enums\GranularidadeResposta;
+use App\Enums\SortimentoOrigemCampo;
 use App\Enums\TipoCampoRegistro;
 use App\Support\IconeTipoRegistro;
 use Illuminate\Foundation\Http\FormRequest;
@@ -62,6 +63,35 @@ class StoreTipoRegistroRequest extends FormRequest
             // abaixo (precisa existir e vir antes na ordem).
             'campos.*.depende_de_chave' => ['nullable', 'string', 'max:50'],
             'campos.*.depende_de_valor' => ['required_with:campos.*.depende_de_chave', 'nullable', 'string'],
+            // Campo SORTIMENTO (decisão 3 de docs/20-FORMULARIO-DINAMICO-CAMPANHA.md) — só faz
+            // sentido quando campos.*.tipo_campo = SORTIMENTO, mas isso não é reforçado aqui (o
+            // cliente que não deveria mandar esses campos fora desse tipo); validação de
+            // presença condicional roda em withValidator abaixo, igual ao resto do request.
+            'campos.*.sortimento_origem' => [
+                'required_if:campos.*.tipo_campo,SORTIMENTO', 'nullable',
+                Rule::in(array_column(SortimentoOrigemCampo::cases(), 'value')),
+            ],
+            'campos.*.sortimento_tipo_vinculo' => [
+                'required_if:campos.*.sortimento_origem,DINAMICO', 'nullable',
+                Rule::in(['SECAO', 'DEPARTAMENTO', 'MARCA']),
+            ],
+            'campos.*.sortimento_secao_uuid' => [
+                'required_if:campos.*.sortimento_tipo_vinculo,SECAO', 'nullable', 'string',
+                Rule::exists('secoes_auditoria', 'uuid')->where('empresa_id', $this->user()->empresa_id),
+            ],
+            'campos.*.sortimento_departamento_uuid' => [
+                'required_if:campos.*.sortimento_tipo_vinculo,DEPARTAMENTO', 'nullable', 'string',
+                Rule::exists('departamentos_auditoria', 'uuid')->where('empresa_id', $this->user()->empresa_id),
+            ],
+            'campos.*.sortimento_marca_uuid' => [
+                'required_if:campos.*.sortimento_tipo_vinculo,MARCA', 'nullable', 'string',
+                Rule::exists('marcas_auditoria', 'uuid')->where('empresa_id', $this->user()->empresa_id),
+            ],
+            'campos.*.sortimento_produtos_uuids' => ['required_if:campos.*.sortimento_origem,FIXO', 'array', 'min:1'],
+            'campos.*.sortimento_produtos_uuids.*' => [
+                'string', Rule::exists('produtos_auditoria', 'uuid')->where('empresa_id', $this->user()->empresa_id),
+            ],
+            'campos.*.confirmar_ruptura_ausentes' => ['nullable', 'boolean'],
             // Granularidade padrão da pergunta (LINHA/PRODUTO) — ver
             // App\Support\GranularidadeChecklist. `null` = sem regra, comportamento livre atual.
             'granularidade_padrao' => ['nullable', Rule::in(array_column(GranularidadeResposta::cases(), 'value'))],
@@ -81,6 +111,12 @@ class StoreTipoRegistroRequest extends FormRequest
             // Dispara evento de alerta no Painel de Atividades — ver
             // docs/17-PAINEL-ATIVIDADES.md.
             'eh_alerta' => ['nullable', 'boolean'],
+            // % de campos BOOLEANO/SORTIMENTO que "passaram" — ver
+            // VisitaRegistroResource::pontuacao e decisão 5 de docs/20-FORMULARIO-DINAMICO-CAMPANHA.md.
+            'usa_pontuacao' => ['nullable', 'boolean'],
+            // Controla se o tipo aparece solto no dropdown de "criar registro" do promotor,
+            // além de Ação/formulário de campanha — decisão 8 do mesmo documento.
+            'disponivel_registro_livre' => ['nullable', 'boolean'],
         ];
     }
 

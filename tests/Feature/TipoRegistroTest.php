@@ -4,7 +4,10 @@ namespace Tests\Feature;
 
 use App\Models\CampanhaAuditoria;
 use App\Models\CampoTipoRegistro;
+use App\Models\DepartamentoAuditoria;
 use App\Models\Empresa;
+use App\Models\ProdutoAuditoria;
+use App\Models\SecaoAuditoria;
 use App\Models\TipoRegistro;
 use App\Models\Usuario;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -176,6 +179,116 @@ class TipoRegistroTest extends TestCase
                 ['chave' => 'instalou', 'rotulo' => 'Instalou o cartaz?', 'tipo_campo' => 'BOOLEANO'],
             ],
         ])->assertStatus(422)->assertJsonValidationErrors('campos.0.depende_de_chave');
+    }
+
+    public function test_cria_campo_sortimento_dinamico(): void
+    {
+        $empresa = Empresa::factory()->create();
+        $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
+        $departamento = DepartamentoAuditoria::create(['empresa_id' => $empresa->id, 'descricao' => 'Limpeza']);
+        $secao = SecaoAuditoria::create(['empresa_id' => $empresa->id, 'descricao' => 'Amaciantes', 'departamento_id' => $departamento->id]);
+        Sanctum::actingAs($admin);
+
+        $response = $this->postJson('/api/tipos-registro', [
+            'descricao' => 'Loja Perfeita',
+            'campos' => [
+                [
+                    'chave' => 'mix', 'rotulo' => 'Mix de amaciantes', 'tipo_campo' => 'SORTIMENTO',
+                    'sortimento_origem' => 'DINAMICO', 'sortimento_tipo_vinculo' => 'SECAO',
+                    'sortimento_secao_uuid' => $secao->uuid, 'confirmar_ruptura_ausentes' => true,
+                ],
+            ],
+        ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('tipo_registro.campos.0.sortimento_origem', 'DINAMICO')
+            ->assertJsonPath('tipo_registro.campos.0.sortimento_tipo_vinculo', 'SECAO')
+            ->assertJsonPath('tipo_registro.campos.0.sortimento_secao.id', $secao->uuid)
+            ->assertJsonPath('tipo_registro.campos.0.confirmar_ruptura_ausentes', true);
+    }
+
+    public function test_sortimento_dinamico_sem_tipo_vinculo_retorna_422(): void
+    {
+        $empresa = Empresa::factory()->create();
+        $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
+        Sanctum::actingAs($admin);
+
+        $this->postJson('/api/tipos-registro', [
+            'descricao' => 'Loja Perfeita',
+            'campos' => [
+                ['chave' => 'mix', 'rotulo' => 'Mix', 'tipo_campo' => 'SORTIMENTO', 'sortimento_origem' => 'DINAMICO'],
+            ],
+        ])->assertStatus(422)->assertJsonValidationErrors('campos.0.sortimento_tipo_vinculo');
+    }
+
+    public function test_cria_campo_sortimento_fixo_com_lista_curada(): void
+    {
+        $empresa = Empresa::factory()->create();
+        $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
+        $produto = ProdutoAuditoria::factory()->create(['empresa_id' => $empresa->id]);
+        Sanctum::actingAs($admin);
+
+        $response = $this->postJson('/api/tipos-registro', [
+            'descricao' => 'Loja Perfeita',
+            'campos' => [
+                [
+                    'chave' => 'mix', 'rotulo' => 'Mix', 'tipo_campo' => 'SORTIMENTO',
+                    'sortimento_origem' => 'FIXO', 'sortimento_produtos_uuids' => [$produto->uuid],
+                ],
+            ],
+        ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('tipo_registro.campos.0.sortimento_origem', 'FIXO')
+            ->assertJsonCount(1, 'tipo_registro.campos.0.sortimento_produtos')
+            ->assertJsonPath('tipo_registro.campos.0.sortimento_produtos.0.id', $produto->uuid);
+    }
+
+    public function test_sortimento_fixo_sem_produtos_retorna_422(): void
+    {
+        $empresa = Empresa::factory()->create();
+        $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
+        Sanctum::actingAs($admin);
+
+        $this->postJson('/api/tipos-registro', [
+            'descricao' => 'Loja Perfeita',
+            'campos' => [
+                ['chave' => 'mix', 'rotulo' => 'Mix', 'tipo_campo' => 'SORTIMENTO', 'sortimento_origem' => 'FIXO'],
+            ],
+        ])->assertStatus(422)->assertJsonValidationErrors('campos.0.sortimento_produtos_uuids');
+    }
+
+    public function test_duplicar_clona_tipo_com_campos_e_condicional(): void
+    {
+        $empresa = Empresa::factory()->create();
+        $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
+        $tipo = TipoRegistro::create([
+            'empresa_id' => $empresa->id, 'descricao' => 'Cartaz promocional',
+            'acao_obrigatoria' => true, 'escopo_acao' => 'SEMPRE',
+        ]);
+        $instalou = CampoTipoRegistro::create([
+            'tipo_registro_id' => $tipo->id, 'chave' => 'instalou', 'rotulo' => 'Instalou?', 'tipo_campo' => 'BOOLEANO', 'ordem' => 0,
+        ]);
+        CampoTipoRegistro::create([
+            'tipo_registro_id' => $tipo->id, 'chave' => 'motivo', 'rotulo' => 'Motivo', 'tipo_campo' => 'TEXTO', 'ordem' => 1,
+            'depende_de_campo_id' => $instalou->id, 'depende_de_valor' => '0',
+        ]);
+        Sanctum::actingAs($admin);
+
+        $response = $this->postJson("/api/tipos-registro/{$tipo->uuid}/duplicar");
+
+        $response->assertCreated()
+            ->assertJsonPath('tipo_registro.descricao', 'Cartaz promocional (cópia)')
+            // Ação obrigatória NUNCA é copiada — decisão 6 de docs/20-FORMULARIO-DINAMICO-CAMPANHA.md.
+            ->assertJsonPath('tipo_registro.acao_obrigatoria', false)
+            ->assertJsonCount(2, 'tipo_registro.campos')
+            ->assertJsonPath('tipo_registro.campos.1.depende_de_chave', 'instalou')
+            ->assertJsonPath('tipo_registro.campos.1.depende_de_valor', '0');
+
+        // A cópia é de verdade independente — mexer numa não deveria mexer na outra depois.
+        $this->assertDatabaseHas('tipos_registro', ['descricao' => 'Cartaz promocional', 'id' => $tipo->id]);
+        $novoUuid = $response->json('tipo_registro.id');
+        $this->assertNotEquals($tipo->uuid, $novoUuid);
     }
 
     public function test_update_substitui_a_lista_de_campos_inteira(): void
@@ -406,6 +519,23 @@ class TipoRegistroTest extends TestCase
         $response = $this->getJson('/api/tipos-registro')->assertOk();
 
         $this->assertSame(['Zebra', 'Abacate'], collect($response->json('tipos_registro'))->pluck('descricao')->all());
+    }
+
+    public function test_filtro_por_campanha_auditoria_uuid_lista_so_o_formulario_daquela_campanha(): void
+    {
+        $empresa = Empresa::factory()->create();
+        $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
+        $campanha = CampanhaAuditoria::factory()->create(['empresa_id' => $empresa->id]);
+        $formularioDaCampanha = TipoRegistro::create([
+            'empresa_id' => $empresa->id, 'descricao' => 'Loja Perfeita', 'acao_obrigatoria' => true,
+            'escopo_acao' => 'CAMPANHA', 'campanha_auditoria_id' => $campanha->id,
+        ]);
+        Sanctum::actingAs($admin);
+
+        $response = $this->getJson("/api/tipos-registro?campanha_auditoria_uuid={$campanha->uuid}")->assertOk();
+
+        $descricoes = collect($response->json('tipos_registro'))->pluck('descricao')->all();
+        $this->assertSame([$formularioDaCampanha->descricao], $descricoes);
     }
 
     public function test_tipo_novo_nasce_no_fim_da_lista(): void

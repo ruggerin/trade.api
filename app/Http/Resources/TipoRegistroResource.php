@@ -33,6 +33,9 @@ class TipoRegistroResource extends JsonResource
             // Dispara evento de alerta no Painel de Atividades — ver
             // docs/17-PAINEL-ATIVIDADES.md.
             'eh_alerta' => $this->eh_alerta,
+            // Fase 3 de docs/20-FORMULARIO-DINAMICO-CAMPANHA.md (decisões 5 e 8).
+            'usa_pontuacao' => $this->usa_pontuacao,
+            'disponivel_registro_livre' => $this->disponivel_registro_livre,
             'excecoes_granularidade' => $this->whenLoaded(
                 'excecoesGranularidade',
                 fn () => $this->excecoesGranularidade->map(fn ($excecao) => [
