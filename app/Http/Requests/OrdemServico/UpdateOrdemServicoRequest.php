@@ -46,6 +46,14 @@ class UpdateOrdemServicoRequest extends FormRequest
             // pelo próprio fluxo de check-in/checkout (ver VisitaController), nunca por edição
             // direta.
             'status' => ['sometimes', Rule::in([StatusOrdemServico::CANCELADA->value])],
+            // Vínculo direto de formulário numa OS avulsa — ver docs/25 §7.2.
+            'formularios' => ['sometimes', 'nullable', 'array'],
+            'formularios.*.tipo_registro_uuid' => [
+                'required', 'string', 'distinct',
+                Rule::exists('tipos_registro', 'uuid')->where('empresa_id', $empresaId),
+            ],
+            'formularios.*.obrigatorio' => ['nullable', 'boolean'],
+            'formularios.*.calcula_percentual_compliance' => ['nullable', 'boolean'],
         ];
     }
 }

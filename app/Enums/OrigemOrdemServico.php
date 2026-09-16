@@ -14,4 +14,7 @@ enum OrigemOrdemServico: string
     case CAMPANHA = 'CAMPANHA';
     case AGENDA = 'AGENDA';
     case CONTRATO = 'CONTRATO';
+    // Gerada em massa por App\Console\Commands\GerarOrdensServicoPorDirecionamento — uma por PDV
+    // elegível pelos filtros do Direcionamento, ver docs/25-DIRECIONAMENTO-ORDEM-SERVICO.md.
+    case DIRECIONAMENTO = 'DIRECIONAMENTO';
 }

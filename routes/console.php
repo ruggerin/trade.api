@@ -22,3 +22,10 @@ Schedule::command('ordens-servico:gerar-por-agenda')->dailyAt('05:00');
 // App\Console\Commands\GerarOrdensServicoPorContrato e docs/07-ORDEM-DE-SERVICO.md §5. Diária
 // basta, a janela de aviso é medida em dias (CONTRATO_AVISO_DIAS), não em horas.
 Schedule::command('ordens-servico:gerar-por-contrato')->dailyAt('05:00');
+
+// Reforço diário de Direcionamento — a primeira leva já é gerada síncrona ao salvar
+// (DirecionamentoController::store/update), isso aqui só cobre PDV/promotor que virou elegível
+// durante a vigência (ex.: promotor novo atribuído a uma loja da rede-alvo). Ver
+// App\Console\Commands\GerarOrdensServicoPorDirecionamento e
+// docs/25-DIRECIONAMENTO-ORDEM-SERVICO.md §4.
+Schedule::command('ordens-servico:gerar-por-direcionamento')->daily();

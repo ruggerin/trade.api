@@ -17,6 +17,7 @@ use App\Http\Controllers\ImagemRegistroController;
 use App\Http\Controllers\MarcaAuditoriaController;
 use App\Http\Controllers\NivelExibicaoController;
 use App\Http\Controllers\ObjetivoVisitaController;
+use App\Http\Controllers\DirecionamentoController;
 use App\Http\Controllers\OrdemServicoController;
 use App\Http\Controllers\ParametroController;
 use App\Http\Controllers\PerfilController;
@@ -153,6 +154,9 @@ Route::middleware('auth:sanctum')->group(function (): void {
     // qualquer autenticado, com ownership igual a visitas (PROMOTOR só vê as suas + fila
     // aberta); escrita por permissão (bloco abaixo). Ver docs/07-ORDEM-DE-SERVICO.md.
     Route::get('/ordens-servico', [OrdemServicoController::class, 'index']);
+    // Busca individual — o mobile usa isso pra ler os formulários pendentes da OS vinculada à
+    // visita, ver docs/25-DIRECIONAMENTO-ORDEM-SERVICO.md §6.
+    Route::get('/ordens-servico/{ordemServico}', [OrdemServicoController::class, 'show']);
 
     // Self-service: o próprio promotor cria/reagenda/cancela a própria OS ("+ Compromisso" no
     // mobile) — ownership em vez de RBAC, sem exigir ordens_servico.gerenciar. Autônomo ou vira
@@ -336,6 +340,17 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::middleware('permissao:ordens_servico.gerenciar')->group(function (): void {
         Route::post('/ordens-servico', [OrdemServicoController::class, 'store']);
         Route::put('/ordens-servico/{ordemServico}', [OrdemServicoController::class, 'update']);
+        // Cancelamento em lote, independente de Direcionamento — ver docs/25 §2 decisão 7.
+        Route::post('/ordens-servico/cancelar-em-lote', [OrdemServicoController::class, 'cancelarEmLote']);
+
+        // Direcionamento (molde que gera Ordem de Serviço em massa) — leitura e escrita atrás da
+        // mesma permissão, diferente de /ordens-servico (index é aberto): não há caso de uso pro
+        // promotor ler um Direcionamento direto, só as OS que ele gerou. Ver
+        // docs/25-DIRECIONAMENTO-ORDEM-SERVICO.md.
+        Route::get('/direcionamentos', [DirecionamentoController::class, 'index']);
+        Route::get('/direcionamentos/{direcionamento}', [DirecionamentoController::class, 'show']);
+        Route::post('/direcionamentos', [DirecionamentoController::class, 'store']);
+        Route::put('/direcionamentos/{direcionamento}', [DirecionamentoController::class, 'update']);
         // Painel de aprovação (docs/13-AGENDA-MOBILE-E-AUTONOMIA.md §6.2) — decide uma
         // solicitação pendente (AGUARDANDO_APROVACAO/REAGENDAMENTO_SOLICITADO/
         // CANCELAMENTO_SOLICITADO), criada por um promotor quando a empresa exige aprovação.

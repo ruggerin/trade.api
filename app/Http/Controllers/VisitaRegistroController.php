@@ -18,6 +18,7 @@ use App\Models\VisitaRegistro;
 use App\Support\CancelamentoRegistro;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class VisitaRegistroController extends Controller
@@ -86,6 +87,18 @@ class VisitaRegistroController extends Controller
             'valores_campos' => $dados['valores_campos'] ?? null,
         ]);
 
+        // Marca o formulário como respondido na Ordem de Serviço desta visita, se houver uma —
+        // é a peça que dá o controle de progresso "N expedidos, M preenchidos", ver
+        // docs/25-DIRECIONAMENTO-ORDEM-SERVICO.md §3. `whereNull` evita sobrescrever um
+        // respondido_em já preenchido por uma resposta anterior do mesmo formulário.
+        if ($visita->ordem_servico_id) {
+            DB::table('ordem_servico_formularios')
+                ->where('ordem_servico_id', $visita->ordem_servico_id)
+                ->where('tipo_registro_id', $tipoRegistroId)
+                ->whereNull('respondido_em')
+                ->update(['respondido_em' => now(), 'updated_at' => now()]);
+        }
+
         // Duas formas de anexar foto, combináveis — ver docs/21-EVIDENCIA-EM-FOTOS.md. `ordem`
         // segue a ordem em que cada uma aparece no envio: arquivos novos primeiro, depois as
         // já existentes vinculadas.
@@ -152,6 +165,25 @@ class VisitaRegistroController extends Controller
         }
 
         $registro->update(['cancelado_em' => now()]);
+
+        // Reabre o formulário na Ordem de Serviço se esse cancelamento tirou a única resposta
+        // válida — sem isso a OS ficava marcada como respondida (respondido_em) mesmo sem
+        // nenhum registro válido. Só reabre se não sobrar outro registro não cancelado do mesmo
+        // tipo nesta visita (ex.: reenvio). Ver docs/25-DIRECIONAMENTO-ORDEM-SERVICO.md §3.
+        if ($visita->ordem_servico_id) {
+            $aindaRespondido = VisitaRegistro::where('visita_id', $visita->id)
+                ->where('tipo_registro_id', $registro->tipo_registro_id)
+                ->whereNull('cancelado_em')
+                ->exists();
+
+            if (! $aindaRespondido) {
+                DB::table('ordem_servico_formularios')
+                    ->where('ordem_servico_id', $visita->ordem_servico_id)
+                    ->where('tipo_registro_id', $registro->tipo_registro_id)
+                    ->update(['respondido_em' => null, 'updated_at' => now()]);
+            }
+        }
+
         $registro->setRelation('visita', $visita);
         $registro->load(['produtoAuditoria', 'tipoRegistro.campos', 'secao', 'departamento', 'marca', 'imagens']);
 
