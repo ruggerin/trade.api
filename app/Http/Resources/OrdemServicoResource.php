@@ -56,6 +56,23 @@ class OrdemServicoResource extends JsonResource
                 'contrato',
                 fn () => $this->contrato ? ['id' => $this->contrato->uuid, 'tipo' => $this->contrato->tipo] : null,
             ),
+            // Presente só em origem DIRECIONAMENTO — ver docs/25-DIRECIONAMENTO-ORDEM-SERVICO.md.
+            'direcionamento' => $this->whenLoaded(
+                'direcionamento',
+                fn () => $this->direcionamento ? ['id' => $this->direcionamento->uuid, 'descricao' => $this->direcionamento->descricao] : null,
+            ),
+            // Formulários exigidos por esta OS específica — obrigatorio/calcula_percentual_compliance
+            // vêm do pivot (docs/25 §2 decisão 9), respondido_em marca quando o promotor já
+            // respondeu (ver VisitaRegistroController::store).
+            'formularios' => $this->whenLoaded(
+                'formularios',
+                fn () => $this->formularios->map(fn ($f) => [
+                    'tipo_registro' => ['id' => $f->uuid, 'descricao' => $f->descricao],
+                    'obrigatorio' => (bool) $f->pivot->obrigatorio,
+                    'calcula_percentual_compliance' => (bool) $f->pivot->calcula_percentual_compliance,
+                    'respondido_em' => $f->pivot->respondido_em,
+                ])->values(),
+            ),
             'prioridade' => $this->prioridade,
             // Postgres devolve TIME com segundos ("14:30:00") — corta pra "HH:mm", mesmo formato
             // aceito na validação de entrada (date_format:H:i).

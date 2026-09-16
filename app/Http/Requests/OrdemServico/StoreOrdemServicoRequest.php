@@ -41,6 +41,15 @@ class StoreOrdemServicoRequest extends FormRequest
             'prazo_inicio' => ['required', 'date'],
             'prazo_fim' => ['required', 'date', 'after_or_equal:prazo_inicio'],
             'observacao' => ['nullable', 'string'],
+            // Vínculo direto de formulário numa OS avulsa, sem Direcionamento nenhum por trás —
+            // ver docs/25-DIRECIONAMENTO-ORDEM-SERVICO.md §7.2.
+            'formularios' => ['nullable', 'array'],
+            'formularios.*.tipo_registro_uuid' => [
+                'required', 'string', 'distinct',
+                Rule::exists('tipos_registro', 'uuid')->where('empresa_id', $empresaId),
+            ],
+            'formularios.*.obrigatorio' => ['nullable', 'boolean'],
+            'formularios.*.calcula_percentual_compliance' => ['nullable', 'boolean'],
         ];
     }
 }

@@ -13,6 +13,7 @@ use App\Http\Resources\OrdemServicoResource;
 use App\Models\ObjetivoVisita;
 use App\Models\OrdemServico;
 use App\Models\PontoVenda;
+use App\Models\TipoRegistro;
 use App\Models\TipoVisita;
 use App\Models\Usuario;
 use App\Support\AutonomiaAgenda;
@@ -21,7 +22,7 @@ use Illuminate\Http\Request;
 
 class OrdemServicoController extends Controller
 {
-    private const RELACOES = ['pontoVenda', 'usuario', 'campanha', 'tipoVisita', 'objetivoVisita', 'agendaVisita', 'contrato', 'visita'];
+    private const RELACOES = ['pontoVenda', 'usuario', 'campanha', 'direcionamento', 'tipoVisita', 'objetivoVisita', 'agendaVisita', 'contrato', 'visita', 'formularios'];
 
     public function index(Request $request): JsonResponse
     {
@@ -75,6 +76,25 @@ class OrdemServicoController extends Controller
         ]);
     }
 
+    /**
+     * Busca individual — o mobile usa isso pra saber os formulários pendentes (§ "Ações" da
+     * visita, ver docs/25-DIRECIONAMENTO-ORDEM-SERVICO.md §6) da OS vinculada, sem precisar
+     * filtrar a listagem inteira. Mesma ownership do index: PROMOTOR só acessa a própria ou
+     * fila aberta.
+     */
+    public function show(Request $request, OrdemServico $ordemServico): JsonResponse
+    {
+        $usuario = $request->user();
+
+        if ($usuario->user_type === UserType::PROMOTOR && $ordemServico->usuario_id !== null && $ordemServico->usuario_id !== $usuario->id) {
+            abort(403, 'Você não tem acesso a esta ordem de serviço.');
+        }
+
+        $ordemServico->load(self::RELACOES);
+
+        return response()->json(['ordem_servico' => new OrdemServicoResource($ordemServico)]);
+    }
+
     public function store(StoreOrdemServicoRequest $request): JsonResponse
     {
         $dados = $request->validated();
@@ -92,6 +112,11 @@ class OrdemServicoController extends Controller
             'prazo_fim' => $dados['prazo_fim'],
             'observacao' => $dados['observacao'] ?? null,
         ]);
+
+        if (! empty($dados['formularios'])) {
+            $this->sincronizarFormularios($ordemServico, $dados['formularios']);
+        }
+
         $ordemServico->load(self::RELACOES);
 
         return response()->json([
@@ -102,6 +127,11 @@ class OrdemServicoController extends Controller
     public function update(UpdateOrdemServicoRequest $request, OrdemServico $ordemServico): JsonResponse
     {
         $dados = $request->validated();
+
+        if (array_key_exists('formularios', $dados)) {
+            $this->sincronizarFormularios($ordemServico, $dados['formularios'] ?? []);
+            unset($dados['formularios']);
+        }
 
         if (array_key_exists('ponto_venda_uuid', $dados)) {
             $dados['ponto_venda_id'] = $this->resolverPontoVendaId($dados['ponto_venda_uuid']);
@@ -284,6 +314,43 @@ class OrdemServicoController extends Controller
         $ordemServico->load(self::RELACOES);
 
         return response()->json(['ordem_servico' => new OrdemServicoResource($ordemServico)]);
+    }
+
+    /**
+     * Cancelamento em lote, independente de Direcionamento — checkbox na listagem do admin +
+     * "cancelar selecionadas" (docs/25 §2 decisão 7). Só cancela as que ainda estão PENDENTE;
+     * ignora silenciosamente as outras (já em andamento/concluída/cancelada), mesmo espírito
+     * idempotente do resto da API.
+     */
+    public function cancelarEmLote(Request $request): JsonResponse
+    {
+        $request->validate([
+            'uuids' => ['required', 'array', 'min:1'],
+            'uuids.*' => ['string'],
+        ]);
+
+        $canceladas = OrdemServico::whereIn('uuid', $request->input('uuids'))
+            ->where('status', StatusOrdemServico::PENDENTE)
+            ->update(['status' => StatusOrdemServico::CANCELADA]);
+
+        return response()->json(['canceladas' => $canceladas]);
+    }
+
+    /**
+     * Sempre substitui a lista inteira — mesmo padrão de
+     * DirecionamentoController::sincronizarFormularios.
+     */
+    private function sincronizarFormularios(OrdemServico $ordemServico, array $formularios): void
+    {
+        $sync = [];
+        foreach ($formularios as $formulario) {
+            $id = TipoRegistro::where('uuid', $formulario['tipo_registro_uuid'])->value('id');
+            $sync[$id] = [
+                'obrigatorio' => $formulario['obrigatorio'] ?? true,
+                'calcula_percentual_compliance' => $formulario['calcula_percentual_compliance'] ?? false,
+            ];
+        }
+        $ordemServico->formularios()->sync($sync);
     }
 
     private function autorizarPropria(Usuario $usuario, OrdemServico $ordemServico): void

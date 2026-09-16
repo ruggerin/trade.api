@@ -20,6 +20,7 @@ use App\Models\Usuario;
 use App\Models\Visita;
 use App\Models\VisitaIntervencao;
 use App\Support\CancelamentoVisita;
+use App\Support\DirecionamentoParametros;
 use App\Support\Haversine;
 use App\Support\RaioCheckin;
 use Illuminate\Http\JsonResponse;
@@ -174,6 +175,23 @@ class VisitaController extends Controller
         }
 
         $dados = $request->validated();
+
+        // Formulário de Direcionamento obrigatório ainda pendente — parametrizável por empresa
+        // (avisa por padrão, bloqueia se DIRECIONAMENTO_BLOQUEIA_CHECKOUT estiver ligado). Ver
+        // docs/25-DIRECIONAMENTO-ORDEM-SERVICO.md §2 decisão 5 / §8.
+        if ($visita->ordem_servico_id && DirecionamentoParametros::bloqueiaCheckout($request->user()->empresa)) {
+            $pendente = DB::table('ordem_servico_formularios')
+                ->where('ordem_servico_id', $visita->ordem_servico_id)
+                ->where('obrigatorio', true)
+                ->whereNull('respondido_em')
+                ->exists();
+
+            if ($pendente) {
+                return response()->json([
+                    'message' => 'Existe formulário obrigatório pendente desta ordem de serviço — responda antes de finalizar a visita.',
+                ], 422);
+            }
+        }
 
         $visita->loadMissing('pontoVenda');
 

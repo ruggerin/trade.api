@@ -10,6 +10,7 @@ use App\Models\Concerns\HasUuid;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 /**
  * Compromisso de visita que um GESTOR/ADMIN direciona a um promotor (ou deixa em fila aberta,
@@ -28,6 +29,7 @@ class OrdemServico extends Model
         'usuario_id',
         'origem',
         'campanha_id',
+        'direcionamento_id',
         'tipo_visita_id',
         'objetivo_visita_id',
         'agenda_visita_id',
@@ -77,6 +79,24 @@ class OrdemServico extends Model
     public function campanha(): BelongsTo
     {
         return $this->belongsTo(CampanhaAuditoria::class, 'campanha_id');
+    }
+
+    public function direcionamento(): BelongsTo
+    {
+        return $this->belongsTo(Direcionamento::class);
+    }
+
+    /**
+     * Formulários exigidos por esta OS específica — copiados de
+     * `direcionamento_formularios` na hora da geração (origem DIRECIONAMENTO) ou preenchidos
+     * direto pelo gestor numa OS manual avulsa (§7.2). `respondido_em` marca quando o promotor
+     * criou o VisitaRegistro correspondente, ver VisitaRegistroController::store.
+     */
+    public function formularios(): BelongsToMany
+    {
+        return $this->belongsToMany(TipoRegistro::class, 'ordem_servico_formularios')
+            ->withPivot(['obrigatorio', 'calcula_percentual_compliance', 'respondido_em'])
+            ->withTimestamps();
     }
 
     public function tipoVisita(): BelongsTo
