@@ -66,6 +66,20 @@ class TipoRegistroController extends Controller
         ]);
     }
 
+    /**
+     * Busca individual — usada pela página dedicada de edição no admin (não é mais modal, ver
+     * docs/25-DIRECIONAMENTO-ORDEM-SERVICO.md e a TipoRegistroFormPage). Leitura aberta, mesmo
+     * padrão de index().
+     */
+    public function show(TipoRegistro $tipoRegistro): JsonResponse
+    {
+        $tipoRegistro->load([...self::RELACOES_CAMPOS, 'campanhaAuditoria', 'excecoesGranularidade.secao']);
+
+        return response()->json([
+            'tipo_registro' => new TipoRegistroResource($tipoRegistro),
+        ]);
+    }
+
     public function store(StoreTipoRegistroRequest $request): JsonResponse
     {
         $dados = $request->validated();

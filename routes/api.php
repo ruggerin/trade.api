@@ -71,6 +71,7 @@ Route::middleware('auth:sanctum')->group(function (): void {
     // decisão 3. Precisa vir antes de qualquer /tipos-registro/{tipoRegistro} se um dia existir
     // (mesma nota de /campanhas-auditoria/disponiveis), mas hoje não há conflito de rota.
     Route::get('/tipos-registro/campos/{campo}/sortimento', [CampoSortimentoController::class, 'index']);
+    Route::get('/tipos-registro/{tipoRegistro}', [TipoRegistroController::class, 'show']);
     Route::get('/tipos-visita', [TipoVisitaController::class, 'index']);
     Route::get('/objetivos-visita', [ObjetivoVisitaController::class, 'index']);
 
