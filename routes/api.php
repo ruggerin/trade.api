@@ -370,6 +370,7 @@ Route::middleware('auth:sanctum')->group(function (): void {
         Route::delete('/objetivos-visita/{objetivoVisita}', [ObjetivoVisitaController::class, 'destroy']);
 
         Route::get('/agendas-visita', [AgendaVisitaController::class, 'index']);
+        Route::get('/agendas-visita/relatorio-rota', [AgendaVisitaController::class, 'relatorioRota']);
         Route::post('/agendas-visita', [AgendaVisitaController::class, 'store']);
         Route::put('/agendas-visita/{agendaVisita}', [AgendaVisitaController::class, 'update']);
         Route::delete('/agendas-visita/{agendaVisita}', [AgendaVisitaController::class, 'destroy']);

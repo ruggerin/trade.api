@@ -27,6 +27,10 @@ class SortimentoPontoVendaResource extends JsonResource
                 // docs/16-GRANULARIDADE-CHECKLIST-AUDITORIA.md §9.
                 'secao_uuid' => $this->produto->secao?->uuid,
                 'secao_descricao' => $this->produto->secao?->descricao,
+                // Usado pra agrupar a aba Mix por departamento no app — ver
+                // docs/27-BUSCA-MULTIPLA-DE-PRODUTOS.md.
+                'departamento_uuid' => $this->produto->departamento?->uuid,
+                'departamento_descricao' => $this->produto->departamento?->descricao,
             ] : null),
             'departamento' => $this->whenLoaded('departamento', fn () => $this->departamento ? ['id' => $this->departamento->uuid, 'descricao' => $this->departamento->descricao] : null),
             'secao' => $this->whenLoaded('secao', fn () => $this->secao ? ['id' => $this->secao->uuid, 'descricao' => $this->secao->descricao] : null),
