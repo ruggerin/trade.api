@@ -77,8 +77,13 @@ class PontoVendaController extends Controller
             // Ver App\Enums\EscopoAcaoTipoRegistro::CONTRATO — a Ação "exige contrato ativo"
             // precisa saber, pro app mobile, se este PDV tem algum comodato/ponto extra vigente.
             ->withExists(['contratos as tem_contrato_ativo' => fn ($query) => $query->where('ativo', true)])
+            // Contagem rápida do mix — usada pelo Planejador de Visitas (mapa/relatório de
+            // impressão), sem custo relevante (é só um COUNT por PDV na mesma query).
+            ->withCount('sortimento')
             ->orderBy('fantasia')
-            ->paginate();
+            // `por_pagina` é opt-in (ninguém manda por padrão) — usado pelo Planejador de Visitas
+            // pra listar a carteira inteira de um promotor de uma vez, sem paginação real.
+            ->paginate($request->filled('por_pagina') ? min($request->integer('por_pagina'), 200) : null);
 
         return response()->json([
             'pontos_venda' => PontoVendaResource::collection($pontosVenda->items()),
@@ -95,7 +100,7 @@ class PontoVendaController extends Controller
     {
         // Sortimento carregado só no detalhe, não na listagem (evita inflar a resposta da lista
         // de PDVs) — ver docs/14-SORTIMENTO-PONTO-VENDA.md §4.
-        $pontoVenda->load(['promotores', 'redeLoja', 'ramoAtividade', 'sortimento.produto.secao', 'sortimento.departamento', 'sortimento.secao', 'sortimento.marca', 'sortimento.usuario']);
+        $pontoVenda->load(['promotores', 'redeLoja', 'ramoAtividade', 'sortimento.produto.secao', 'sortimento.produto.departamento', 'sortimento.departamento', 'sortimento.secao', 'sortimento.marca', 'sortimento.usuario']);
         $pontoVenda->loadExists(['contratos as tem_contrato_ativo' => fn ($query) => $query->where('ativo', true)]);
 
         return response()->json([

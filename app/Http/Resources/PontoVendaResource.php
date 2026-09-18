@@ -56,6 +56,10 @@ class PontoVendaResource extends JsonResource
             // contrato em si (isso continua só no admin web), só esse booleano pro app mobile
             // saber se deve mostrar a Ação correspondente.
             'tem_contrato_ativo' => (bool) $this->tem_contrato_ativo,
+            // Contagem rápida do mix — só presente quando o controller pediu com
+            // withCount('sortimento') (ver PontoVendaController::index); null em show() e afins,
+            // que já carregam o sortimento inteiro (ver 'sortimento' acima) e não precisam dela.
+            'sortimento_count' => $this->sortimento_count ?? null,
             'ativo' => $this->ativo,
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,

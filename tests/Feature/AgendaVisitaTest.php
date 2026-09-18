@@ -157,4 +157,48 @@ class AgendaVisitaTest extends TestCase
 
         $this->assertFalse($agenda->fresh()->ativo);
     }
+
+    // docs/10-AGENDA-VISITA.md §9 — Relatório de Rota impresso (PDF gerado no backend).
+    public function test_admin_gera_relatorio_rota_pdf(): void
+    {
+        $empresa = Empresa::factory()->create();
+        $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
+        $promotor = Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]);
+        $pdv = PontoVenda::factory()->create(['empresa_id' => $empresa->id]);
+        $pdv->promotores()->attach($promotor->id);
+        AgendaVisita::factory()->semanal(2)->create([
+            'empresa_id' => $empresa->id,
+            'ponto_venda_id' => $pdv->id,
+            'usuario_id' => $promotor->id,
+        ]);
+        Sanctum::actingAs($admin);
+
+        $response = $this->get("/api/agendas-visita/relatorio-rota?usuario_uuid={$promotor->uuid}");
+
+        $response->assertOk();
+        $this->assertStringContainsString('application/pdf', $response->headers->get('Content-Type'));
+        $this->assertStringStartsWith('%PDF', $response->getContent());
+    }
+
+    public function test_relatorio_rota_gestor_sem_permissao_e_bloqueado(): void
+    {
+        $empresa = Empresa::factory()->create();
+        $gestor = Usuario::factory()->gestor()->create(['empresa_id' => $empresa->id]);
+        $promotor = Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]);
+        Sanctum::actingAs($gestor);
+
+        $this->get("/api/agendas-visita/relatorio-rota?usuario_uuid={$promotor->uuid}")->assertForbidden();
+    }
+
+    public function test_relatorio_rota_isolado_por_empresa(): void
+    {
+        $empresaA = Empresa::factory()->create();
+        $empresaB = Empresa::factory()->create();
+        $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresaA->id]);
+        $promotorDeOutraEmpresa = Usuario::factory()->promotor()->create(['empresa_id' => $empresaB->id]);
+        Sanctum::actingAs($admin);
+
+        $this->get("/api/agendas-visita/relatorio-rota?usuario_uuid={$promotorDeOutraEmpresa->uuid}")
+            ->assertNotFound();
+    }
 }

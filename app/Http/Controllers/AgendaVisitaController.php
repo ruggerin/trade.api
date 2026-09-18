@@ -10,11 +10,16 @@ use App\Models\ObjetivoVisita;
 use App\Models\PontoVenda;
 use App\Models\TipoVisita;
 use App\Models\Usuario;
+use App\Support\DiasSemanaVisiveis;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 
 class AgendaVisitaController extends Controller
 {
+    private const NOMES_DIA = [0 => 'Domingo', 1 => 'Segunda', 2 => 'Terça', 3 => 'Quarta', 4 => 'Quinta', 5 => 'Sexta', 6 => 'Sábado'];
+
     public function index(Request $request): JsonResponse
     {
         $query = AgendaVisita::query()->with(['pontoVenda', 'usuario', 'tipoVisita', 'objetivoVisita']);
@@ -34,7 +39,10 @@ class AgendaVisitaController extends Controller
             )
             ->when($request->filled('dia_semana'), fn ($q) => $q->where('dia_semana', $request->integer('dia_semana')));
 
-        $agendasVisita = $query->orderBy('dia_semana')->orderBy('data')->paginate();
+        // `por_pagina` é opt-in (ninguém manda por padrão) — usado pelo Planejador de Visitas pra
+        // listar a agenda inteira de um promotor de uma vez, sem paginação real.
+        $agendasVisita = $query->orderBy('dia_semana')->orderBy('data')
+            ->paginate($request->filled('por_pagina') ? min($request->integer('por_pagina'), 200) : null);
 
         return response()->json([
             'agendas_visita' => AgendaVisitaResource::collection($agendasVisita->items()),
@@ -122,5 +130,56 @@ class AgendaVisitaController extends Controller
         $agendaVisita->update(['ativo' => false]);
 
         return response()->json(status: 204);
+    }
+
+    /**
+     * Relatório de Rota impresso (PDF) — ver docs/10-AGENDA-VISITA.md §9. Mesma carteira que o
+     * Planejador de Visitas mostra (regras SEMANAL ativas de um promotor), agrupada por dia da
+     * semana igual o quadro já faz no front — só que a lógica de agrupamento se repete aqui
+     * porque quem desenha o PDF é o backend.
+     */
+    public function relatorioRota(Request $request): Response
+    {
+        $request->validate(['usuario_uuid' => 'required|string']);
+
+        $empresa = $request->user()->empresa;
+        $usuario = Usuario::where('uuid', $request->string('usuario_uuid'))->firstOrFail();
+
+        $agendasVisita = AgendaVisita::query()
+            ->where('usuario_id', $usuario->id)
+            ->where('recorrencia', 'SEMANAL')
+            ->where('ativo', true)
+            ->with([
+                'pontoVenda' => fn ($q) => $q->withCount('sortimento'),
+                'tipoVisita',
+            ])
+            ->get();
+
+        $porDia = $agendasVisita->groupBy('dia_semana');
+
+        $grupos = collect(DiasSemanaVisiveis::paraEmpresa($empresa))
+            ->map(fn (int $dia) => [
+                'dia_semana' => $dia,
+                'nome' => self::NOMES_DIA[$dia],
+                'itens' => ($porDia->get($dia) ?? collect())
+                    ->sortBy(fn (AgendaVisita $a) => $a->pontoVenda->fantasia)
+                    ->values(),
+            ])
+            ->filter(fn (array $grupo) => $grupo['itens']->isNotEmpty())
+            ->values();
+
+        $pdf = Pdf::loadView('pdf.rota-visita', [
+            'usuario' => $usuario,
+            'empresa' => $empresa,
+            'grupos' => $grupos,
+            'geradoEm' => now(),
+        ]);
+
+        $nomeArquivo = 'rota-visita-'.str($usuario->nome)->slug().'.pdf';
+
+        return new Response($pdf->output(), 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => "attachment; filename=\"{$nomeArquivo}\"",
+        ]);
     }
 }

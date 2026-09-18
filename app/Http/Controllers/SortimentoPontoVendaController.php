@@ -17,7 +17,7 @@ use Illuminate\Http\JsonResponse;
 
 class SortimentoPontoVendaController extends Controller
 {
-    private const RELACOES = ['produto.secao', 'departamento', 'secao', 'marca', 'usuario'];
+    private const RELACOES = ['produto.secao', 'produto.departamento', 'departamento', 'secao', 'marca', 'usuario'];
 
     /**
      * Admin web (`pontos_venda.gerenciar`) — nasce sempre válido (usuario_id/status_aprovacao

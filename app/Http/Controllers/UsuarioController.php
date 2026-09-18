@@ -49,7 +49,9 @@ class UsuarioController extends Controller
             )
             ->with(['perfil', 'centroCusto', 'dispositivo', 'empresa'])
             ->orderBy('nome')
-            ->paginate();
+            // `por_pagina` é opt-in (ninguém manda por padrão) — usado pelo Planejador de
+            // Visitas pra listar todos os promotores de uma vez no seletor, sem paginação real.
+            ->paginate($request->filled('por_pagina') ? min($request->integer('por_pagina'), 200) : null);
 
         return response()->json([
             'usuarios' => UsuarioResource::collection($usuarios->items()),
