@@ -5,9 +5,12 @@ namespace App\Models;
 use App\Enums\TipoItemCampanha;
 use App\Models\Concerns\HasUuid;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * Tem uuid (usado na rota de imagem) mas não BelongsToEmpresa — herda o isolamento de Visita
@@ -55,6 +58,31 @@ class VisitaRegistro extends Model
     public function visita(): BelongsTo
     {
         return $this->belongsTo(Visita::class);
+    }
+
+    public function comentarios(): HasMany
+    {
+        return $this->hasMany(VisitaRegistroComentario::class)->orderBy('created_at')->orderBy('id');
+    }
+
+    /**
+     * Contagem de comentários do registro (`comentarios_count`) e quantos são novos pra quem está
+     * olhando (`comentarios_novos`: de outra pessoa, mais recentes que a última leitura desse
+     * usuário — mesma regra do badge de ComentarioRegistroController::naoLidos). É o que deixa o
+     * botão "3 comentários · 1 novo" aparecer sem abrir o feed, estilo Facebook.
+     */
+    public function scopeComContagemComentarios(Builder $query, int $usuarioId): Builder
+    {
+        return $query->withCount([
+            'comentarios',
+            'comentarios as comentarios_novos' => fn ($c) => $c
+                ->where('usuario_id', '!=', $usuarioId)
+                ->whereNotExists(fn ($l) => $l->select(DB::raw(1))
+                    ->from('visita_registro_comentario_leituras as l')
+                    ->whereColumn('l.visita_registro_id', 'visita_registro_comentarios.visita_registro_id')
+                    ->where('l.usuario_id', $usuarioId)
+                    ->whereColumn('l.lido_em', '>=', 'visita_registro_comentarios.created_at')),
+        ]);
     }
 
     public function resolvidoPor(): BelongsTo

@@ -37,6 +37,7 @@ class StoreProdutoAuditoriaRequest extends FormRequest
         return [
             'descricao' => ['required', 'string', 'max:255'],
             'codigo_barras' => $codigoBarras,
+            'codigo_externo' => ['nullable', 'string', 'max:64'],
             'imagem_url' => ['nullable', 'string', 'max:2048'],
             'departamento_uuid' => [
                 'nullable', 'string',
@@ -45,6 +46,10 @@ class StoreProdutoAuditoriaRequest extends FormRequest
             'secao_uuid' => [
                 'nullable', 'string',
                 Rule::exists('secoes_auditoria', 'uuid')->where('empresa_id', $this->user()->empresa_id),
+            ],
+            'marca_uuid' => [
+                'nullable', 'string',
+                Rule::exists('marcas_auditoria', 'uuid')->where('empresa_id', $this->user()->empresa_id),
             ],
             'nivel_exibicao_uuid' => [
                 'nullable', 'string',

@@ -32,6 +32,7 @@ class UpdateProdutoAuditoriaRequest extends FormRequest
         return [
             'descricao' => ['sometimes', 'required', 'string', 'max:255'],
             'codigo_barras' => $codigoBarras,
+            'codigo_externo' => ['sometimes', 'nullable', 'string', 'max:64'],
             'imagem_url' => ['sometimes', 'nullable', 'string', 'max:2048'],
             'departamento_uuid' => [
                 'sometimes', 'nullable', 'string',
@@ -40,6 +41,10 @@ class UpdateProdutoAuditoriaRequest extends FormRequest
             'secao_uuid' => [
                 'sometimes', 'nullable', 'string',
                 Rule::exists('secoes_auditoria', 'uuid')->where('empresa_id', $this->user()->empresa_id),
+            ],
+            'marca_uuid' => [
+                'sometimes', 'nullable', 'string',
+                Rule::exists('marcas_auditoria', 'uuid')->where('empresa_id', $this->user()->empresa_id),
             ],
             'nivel_exibicao_uuid' => [
                 'sometimes', 'nullable', 'string',

@@ -73,7 +73,7 @@ class PontoVendaController extends Controller
                 $usuario?->user_type === UserType::PROMOTOR,
                 fn ($query) => VisibilidadePontosVenda::aplicarEscopoPromotor($query, $usuario),
             )
-            ->with(['promotores', 'empresa', 'redeLoja', 'ramoAtividade'])
+            ->with(['promotores', 'empresa', 'redeLoja', 'ramoAtividade', 'contratosAtivos'])
             // Ver App\Enums\EscopoAcaoTipoRegistro::CONTRATO — a Ação "exige contrato ativo"
             // precisa saber, pro app mobile, se este PDV tem algum comodato/ponto extra vigente.
             ->withExists(['contratos as tem_contrato_ativo' => fn ($query) => $query->where('ativo', true)])
@@ -100,7 +100,7 @@ class PontoVendaController extends Controller
     {
         // Sortimento carregado só no detalhe, não na listagem (evita inflar a resposta da lista
         // de PDVs) — ver docs/14-SORTIMENTO-PONTO-VENDA.md §4.
-        $pontoVenda->load(['promotores', 'redeLoja', 'ramoAtividade', 'sortimento.produto.secao', 'sortimento.produto.departamento', 'sortimento.departamento', 'sortimento.secao', 'sortimento.marca', 'sortimento.usuario']);
+        $pontoVenda->load(['promotores', 'redeLoja', 'ramoAtividade', 'contratosAtivos', 'sortimento.produto.secao', 'sortimento.produto.departamento', 'sortimento.departamento', 'sortimento.secao', 'sortimento.marca', 'sortimento.usuario']);
         $pontoVenda->loadExists(['contratos as tem_contrato_ativo' => fn ($query) => $query->where('ativo', true)]);
 
         return response()->json([
@@ -185,6 +185,29 @@ class PontoVendaController extends Controller
         return response()->json([
             'ponto_venda' => new PontoVendaResource($pontoVenda),
         ]);
+    }
+
+    /**
+     * O promotor manda a foto da fachada quando a loja ainda NÃO tem uma — ajuda quem vier depois a
+     * reconhecer o lugar. Só preenche o vazio: nunca troca nem apaga a foto que o admin colocou (isso
+     * continua sendo `pontos_venda.gerenciar`), e só de uma loja que o promotor enxerga.
+     */
+    public function enviarFachadaPromotor(AtualizarFachadaPontoVendaRequest $request, PontoVenda $pontoVenda): JsonResponse
+    {
+        $usuario = $request->user();
+
+        abort_if($usuario->user_type !== UserType::PROMOTOR, 403, 'Esta ação é só para o promotor.');
+
+        abort_if(! VisibilidadePontosVenda::visivelParaPromotor($pontoVenda->id, $usuario), 403, 'Você não tem acesso a esta loja.');
+
+        if ($pontoVenda->fachada_path) {
+            return response()->json(['message' => 'Esta loja já tem foto da fachada.'], 422);
+        }
+
+        $caminho = $request->file('imagem')->store("pontos-venda/{$pontoVenda->id}", config('filesystems.default'));
+        $pontoVenda->update(['fachada_path' => $caminho]);
+
+        return response()->json(['ponto_venda' => new PontoVendaResource($pontoVenda)]);
     }
 
     public function removerFachada(PontoVenda $pontoVenda): JsonResponse

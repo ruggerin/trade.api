@@ -63,7 +63,14 @@ class OrdemServicoController extends Controller
                 }
             });
 
-        $ordensServico = $query->orderBy('prazo_fim')->paginate();
+        // `por_pagina` é opt-in (ninguém manda por padrão, então o resto do admin/app continua
+        // com os 15 de sempre) — usado pelo app mobile pra buscar TODAS as pendências do
+        // promotor de uma vez (status=PENDENTE, sem janela de data), mesmo raciocínio de
+        // AgendaVisitaController/PontoVendaController/UsuarioController::index. Sem isso, um
+        // Direcionamento gerando muitas OS de uma vez truncava silenciosamente na 1ª página, e
+        // lojas fora dela nunca ganhavam o badge de pendência nem a OS anexada no check-in.
+        $ordensServico = $query->orderBy('prazo_fim')
+            ->paginate($request->filled('por_pagina') ? min($request->integer('por_pagina'), 200) : null);
 
         return response()->json([
             'ordens_servico' => OrdemServicoResource::collection($ordensServico->items()),

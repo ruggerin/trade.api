@@ -268,14 +268,16 @@ class CheckinTest extends TestCase
             'longitude' => $pdv->longitude,
         ])->json('visita.id');
 
+        // Outra loja: no mesmo PDV o check-in retomaria a visita aberta em vez de criar outra.
+        $pdvB = PontoVenda::factory()->create(['empresa_id' => $empresa->id]);
         $finalizadaUuid = $this->postJson('/api/visitas', [
-            'ponto_venda_uuid' => $pdv->uuid,
-            'latitude' => $pdv->latitude,
-            'longitude' => $pdv->longitude,
+            'ponto_venda_uuid' => $pdvB->uuid,
+            'latitude' => $pdvB->latitude,
+            'longitude' => $pdvB->longitude,
         ])->json('visita.id');
         $this->patchJson("/api/visitas/{$finalizadaUuid}/checkout", [
-            'latitude' => $pdv->latitude,
-            'longitude' => $pdv->longitude,
+            'latitude' => $pdvB->latitude,
+            'longitude' => $pdvB->longitude,
         ])->assertOk();
 
         Sanctum::actingAs($admin);
@@ -322,6 +324,7 @@ class CheckinTest extends TestCase
         $empresa = Empresa::factory()->create();
         $promotor = Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]);
         $pdv = PontoVenda::factory()->create(['empresa_id' => $empresa->id]);
+        $outroPdv = PontoVenda::factory()->create(['empresa_id' => $empresa->id]);
 
         Sanctum::actingAs($promotor);
 
@@ -332,10 +335,11 @@ class CheckinTest extends TestCase
             'idempotency_key' => (string) Str::uuid(),
         ])->assertCreated();
 
+        // Loja diferente (na mesma loja o check-in retoma a visita aberta — RetomadaEAutorizacaoTest).
         $this->postJson('/api/visitas', [
-            'ponto_venda_uuid' => $pdv->uuid,
-            'latitude' => $pdv->latitude,
-            'longitude' => $pdv->longitude,
+            'ponto_venda_uuid' => $outroPdv->uuid,
+            'latitude' => $outroPdv->latitude,
+            'longitude' => $outroPdv->longitude,
             'idempotency_key' => (string) Str::uuid(),
         ])->assertCreated();
 
@@ -374,6 +378,7 @@ class CheckinTest extends TestCase
         $empresa = Empresa::factory()->create();
         $promotor = Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]);
         $pdv = PontoVenda::factory()->create(['empresa_id' => $empresa->id]);
+        $outroPdv = PontoVenda::factory()->create(['empresa_id' => $empresa->id]);
 
         Sanctum::actingAs($promotor);
 
@@ -384,9 +389,9 @@ class CheckinTest extends TestCase
         ])->assertCreated();
 
         $this->postJson('/api/visitas', [
-            'ponto_venda_uuid' => $pdv->uuid,
-            'latitude' => $pdv->latitude,
-            'longitude' => $pdv->longitude,
+            'ponto_venda_uuid' => $outroPdv->uuid,
+            'latitude' => $outroPdv->latitude,
+            'longitude' => $outroPdv->longitude,
         ])->assertCreated();
 
         $this->assertDatabaseCount('visitas', 2);

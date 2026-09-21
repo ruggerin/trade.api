@@ -98,4 +98,10 @@ class PontoVenda extends Model
     {
         return $this->hasMany(Contrato::class);
     }
+
+    /** Só os vigentes — o app do promotor lista esses (título e vigência) na aba Dados cadastrais. */
+    public function contratosAtivos(): HasMany
+    {
+        return $this->hasMany(Contrato::class)->where('ativo', true)->orderBy('vigencia_fim');
+    }
 }

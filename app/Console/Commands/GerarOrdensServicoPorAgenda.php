@@ -19,7 +19,7 @@ use Illuminate\Support\Carbon;
  */
 class GerarOrdensServicoPorAgenda extends Command
 {
-    protected $signature = 'ordens-servico:gerar-por-agenda';
+    protected $signature = 'ordens-servico:gerar-por-agenda {agenda? : uuid de UMA agenda — usado ao salvar, pra não esperar o agendador do dia seguinte}';
 
     protected $description = 'Gera OrdemServico pendente para as agendas de visita ativas que batem com o dia de hoje';
 
@@ -32,6 +32,7 @@ class GerarOrdensServicoPorAgenda extends Command
             $agendas = AgendaVisita::withoutGlobalScopes()
                 ->where('empresa_id', $empresa->id)
                 ->where('ativo', true)
+                ->when($this->argument('agenda'), fn ($q, $uuid) => $q->where('uuid', $uuid))
                 ->where(function ($query) use ($hoje) {
                     $query
                         ->where(fn ($q) => $q->where('recorrencia', RecorrenciaAgendaVisita::SEMANAL)->where('dia_semana', $hoje->dayOfWeek))

@@ -28,6 +28,9 @@ class Usuario extends Authenticatable
         'ativo',
         'avatar_url',
         'foto_path',
+        'ultima_localizacao_latitude',
+        'ultima_localizacao_longitude',
+        'ultima_localizacao_em',
     ];
 
     protected $hidden = [
@@ -39,6 +42,9 @@ class Usuario extends Authenticatable
         return [
             'user_type' => UserType::class,
             'ativo' => 'boolean',
+            'ultima_localizacao_latitude' => 'double',
+            'ultima_localizacao_longitude' => 'double',
+            'ultima_localizacao_em' => 'datetime',
         ];
     }
 
