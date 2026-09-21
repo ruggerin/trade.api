@@ -61,6 +61,13 @@ class VisitaRegistroResource extends JsonResource
                 'id' => $img->uuid,
                 'url' => url("/api/visitas/{$this->visita->uuid}/imagens/{$img->uuid}"),
             ])),
+            // Uuid da visita dona — o lightbox de fotos do admin precisa dele pra abrir o feed de
+            // comentários do registro (rota aninhada em /visitas/{visita}/registros/{registro}).
+            'visita_id' => $this->whenLoaded('visita', fn () => $this->visita->uuid),
+            // Só presentes quando quem carregou o registro usou scopeComContagemComentarios —
+            // docs/28 §3, o "3 comentários · 1 novo" do botão de feedback.
+            'comentarios_count' => $this->when($this->comentarios_count !== null, fn () => (int) $this->comentarios_count),
+            'comentarios_novos' => $this->when($this->comentarios_novos !== null, fn () => (int) $this->comentarios_novos),
             // Soft — a linha continua existindo mesmo cancelada (rastro histórico). Ver
             // App\Support\CancelamentoRegistro.
             'cancelado_em' => $this->cancelado_em,

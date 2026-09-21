@@ -31,6 +31,15 @@ enum Permissao: string
     // supervisão — o EnsurePermissao só a consulta pra GESTOR, nunca pra PROMOTOR. Ver
     // docs/15-INTERVENCAO-ADMINISTRATIVA-VISITA.md.
     case VISITAS_INTERVIR = 'visitas.intervir';
+
+    // Ver o mapa ao vivo com a posição dos promotores (docs/11-RASTREAMENTO-TEMPO-REAL.md) —
+    // verbo "visualizar" porque não há nada pra gerenciar, só ler. Localização de colega é dado
+    // pessoal, por isso permissão própria em vez de carona em outra.
+    case RASTREAMENTO_VISUALIZAR = 'rastreamento.visualizar';
+
+    // Gravar pedidos do ERP (docs/28 §4.2) — pensada pro integrador externo (um usuário ADMIN de
+    // serviço, ou um perfil de GESTOR dedicado), não pra digitação manual no admin.
+    case PEDIDOS_GERENCIAR = 'pedidos.gerenciar';
 }
 
 // Tipo de visita (tag colorida) e agenda de visita reaproveitam ORDENS_SERVICO_GERENCIAR — são

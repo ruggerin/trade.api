@@ -16,6 +16,7 @@ class ProdutoAuditoriaResource extends JsonResource
             'id' => $this->uuid,
             'descricao' => $this->descricao,
             'codigo_barras' => $this->codigo_barras,
+            'codigo_externo' => $this->codigo_externo,
             'imagem_url' => $this->imagem_url,
             'departamento' => $this->whenLoaded(
                 'departamento',
@@ -24,6 +25,10 @@ class ProdutoAuditoriaResource extends JsonResource
             'secao' => $this->whenLoaded(
                 'secao',
                 fn () => $this->secao ? ['id' => $this->secao->uuid, 'descricao' => $this->secao->descricao] : null,
+            ),
+            'marca' => $this->whenLoaded(
+                'marca',
+                fn () => $this->marca ? ['id' => $this->marca->uuid, 'descricao' => $this->marca->descricao] : null,
             ),
             'nivel_exibicao' => $this->whenLoaded(
                 'nivelExibicao',

@@ -46,7 +46,7 @@ class ProvisionarEmpresaTest extends TestCase
         $this->assertTrue(Hash::check('senhaSegura123', $admin->senha_hash));
 
         $this->assertSame(8, TipoRegistro::where('empresa_id', $empresa->id)->count());
-        $this->assertSame(11, Parametro::where('empresa_id', $empresa->id)->count());
+        $this->assertSame(12, Parametro::where('empresa_id', $empresa->id)->count());
 
         $alertas = TipoRegistro::where('empresa_id', $empresa->id)->where('eh_alerta', true)->pluck('descricao')->sort()->values();
         $this->assertSame(['Avaria', 'Proximo Vencimento'], $alertas->all());

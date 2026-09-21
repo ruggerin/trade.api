@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Enums\AcaoIntervencaoVisita;
 use App\Enums\CheckoutTipo;
+use App\Enums\Permissao;
 use App\Enums\UserType;
 use App\Enums\StatusOrdemServico;
 use App\Enums\StatusVisita;
@@ -27,6 +28,8 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\RateLimiter;
 
 class VisitaController extends Controller
 {
@@ -81,6 +84,7 @@ class VisitaController extends Controller
         $visita->load([
             'pontoVenda', 'usuario', 'campanha', 'ordemServico',
             'intervencoes.usuario',
+            'registros' => fn ($q) => $q->comContagemComentarios($request->user()->id),
             'registros.produtoAuditoria', 'registros.tipoRegistro.campos',
             'registros.secao', 'registros.departamento', 'registros.marca',
             'registros.imagens',
@@ -141,6 +145,29 @@ class VisitaController extends Controller
         $ordemServico = ! empty($dados['ordem_servico_uuid'])
             ? OrdemServico::withoutGlobalScopes()->where('uuid', $dados['ordem_servico_uuid'])->first()
             : null;
+
+        // Já existe uma visita ABERTA deste promotor NESTA loja? Retoma ela em vez de criar outra. Duas
+        // visitas abertas na mesma loja travavam a ordem de serviço na primeira (a segunda nascia sem
+        // vínculo e o formulário do Direcionamento não aparecia) e deixavam lixo aberto no servidor
+        // quando o app perdia a visita local. A distância já foi validada acima — retomar não burla o raio.
+        $aberta = Visita::where('usuario_id', $request->user()->id)
+            ->where('ponto_venda_id', $pontoVenda->id)
+            ->where('status', StatusVisita::ABERTA)
+            ->orderByDesc('id')
+            ->first();
+
+        if ($aberta) {
+            // Se a retomada chegou com uma OS pendente e a visita aberta ainda não tem nenhuma, vincula.
+            if ($ordemServico && ! $aberta->ordem_servico_id) {
+                $aberta->update(['ordem_servico_id' => $ordemServico->id]);
+                $ordemServico->update(['status' => StatusOrdemServico::EM_ANDAMENTO, 'visita_id' => $aberta->id]);
+            }
+
+            return response()->json([
+                'visita' => new VisitaResource($aberta->load(['pontoVenda', 'campanha', 'ordemServico'])),
+                'retomada' => true,
+            ], 200);
+        }
 
         $visita = Visita::create([
             'ponto_venda_id' => $pontoVenda->id,
@@ -463,6 +490,86 @@ class VisitaController extends Controller
     private function recarregarComIntervencoes(Visita $visita): Visita
     {
         return $visita->load(['pontoVenda', 'usuario', 'campanha', 'ordemServico', 'intervencoes.usuario']);
+    }
+
+    /**
+     * Saída de segurança pra visita travada quando o promotor NÃO pode cancelar sozinho (parâmetro
+     * desligado, ou o app em estado inconsistente): um ADMIN — ou GESTOR com `visitas.intervir` — digita
+     * o e-mail e a senha dele no aparelho do promotor e a visita é cancelada com a autoria DELE na
+     * trilha de auditoria (`visita_intervencoes`). Limitado a 5 tentativas por promotor a cada 15 min,
+     * pra não virar adivinhação de senha. Ver docs/15-INTERVENCAO-ADMINISTRATIVA-VISITA.md.
+     */
+    public function cancelarAutorizado(Request $request, Visita $visita): JsonResponse
+    {
+        $this->autorizarAcesso($request, $visita);
+        $promotor = $request->user();
+        abort_if($promotor->user_type !== UserType::PROMOTOR, 403, 'Esta ação é só para o promotor.');
+
+        $dados = $request->validate([
+            'email' => ['required', 'string', 'email'],
+            'senha' => ['required', 'string'],
+            'motivo' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $chave = 'cancelar-autorizado:'.$promotor->id;
+        if (RateLimiter::tooManyAttempts($chave, 5)) {
+            return response()->json([
+                'message' => 'Muitas tentativas. Aguarde alguns minutos antes de tentar de novo.',
+            ], 429);
+        }
+
+        $supervisor = Usuario::withoutGlobalScopes()
+            ->where('email', $dados['email'])
+            ->where('empresa_id', $promotor->empresa_id)
+            ->where('ativo', true)
+            ->whereIn('user_type', [UserType::ADMIN->value, UserType::GESTOR->value])
+            ->first();
+
+        $autorizado = $supervisor
+            && Hash::check($dados['senha'], $supervisor->senha_hash)
+            && ($supervisor->user_type === UserType::ADMIN || ($supervisor->perfil?->tem(Permissao::VISITAS_INTERVIR) ?? false));
+
+        if (! $autorizado) {
+            RateLimiter::hit($chave, 15 * 60);
+
+            // Mensagem única de propósito: não diz se o e-mail existe nem se faltou permissão.
+            return response()->json(['message' => 'Autorização negada. Confira o e-mail e a senha do gestor.'], 403);
+        }
+
+        RateLimiter::clear($chave);
+
+        // Já cancelada (ex.: a chamada anterior chegou e a resposta se perdeu) — idempotente: o app pode seguir.
+        if ($visita->status === StatusVisita::CANCELADA) {
+            return response()->json(['visita' => new VisitaResource($visita)]);
+        }
+
+        if ($visita->status !== StatusVisita::ABERTA) {
+            return response()->json(['message' => 'Só é possível cancelar uma visita em andamento.'], 422);
+        }
+
+        $antes = $this->snapshotVisita($visita);
+
+        DB::transaction(function () use ($visita, $supervisor, $promotor, $dados, $antes): void {
+            $visita->update(['status' => StatusVisita::CANCELADA]);
+
+            if ($visita->ordem_servico_id) {
+                OrdemServico::withoutGlobalScopes()
+                    ->where('id', $visita->ordem_servico_id)
+                    ->update(['status' => StatusOrdemServico::PENDENTE, 'visita_id' => null]);
+            }
+
+            VisitaIntervencao::create([
+                'visita_id' => $visita->id,
+                'usuario_id' => $supervisor->id,
+                'acao' => AcaoIntervencaoVisita::CANCELAMENTO,
+                'motivo' => $dados['motivo'] ?? 'Cancelamento autorizado no aparelho do promotor (visita travada).',
+                'descricao' => "Visita cancelada com a autorização de {$supervisor->nome} no aparelho de {$promotor->nome}",
+                'valores_anteriores' => $antes,
+                'valores_novos' => $this->snapshotVisita($visita),
+            ]);
+        });
+
+        return response()->json(['visita' => new VisitaResource($visita)]);
     }
 
     public function autorizarAcesso(Request $request, Visita $visita): void

@@ -38,6 +38,46 @@ class GerarOrdensServicoPorAgendaTest extends TestCase
         ]);
     }
 
+    public function test_salvar_agenda_de_hoje_gera_a_os_na_hora_sem_esperar_o_agendador(): void
+    {
+        $empresa = Empresa::factory()->create();
+        $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
+        $pdv = PontoVenda::factory()->create(['empresa_id' => $empresa->id]);
+        $promotor = Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]);
+        $pdv->promotores()->attach($promotor->id);
+        \Laravel\Sanctum\Sanctum::actingAs($admin);
+
+        $this->postJson('/api/agendas-visita', [
+            'ponto_venda_uuid' => $pdv->uuid, 'usuario_uuid' => $promotor->uuid,
+            'recorrencia' => 'SEMANAL', 'dia_semana' => now()->dayOfWeek,
+        ])->assertCreated();
+
+        $this->assertDatabaseHas('ordens_servico', [
+            'ponto_venda_id' => $pdv->id, 'usuario_id' => $promotor->id, 'origem' => 'AGENDA', 'status' => 'PENDENTE',
+        ]);
+
+        // Rodar o agendador em seguida não duplica a de hoje.
+        $this->artisan('ordens-servico:gerar-por-agenda')->assertSuccessful();
+        $this->assertSame(1, OrdemServico::withoutGlobalScopes()->where('ponto_venda_id', $pdv->id)->count());
+    }
+
+    public function test_salvar_agenda_de_outro_dia_nao_gera_os_agora(): void
+    {
+        $empresa = Empresa::factory()->create();
+        $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
+        $pdv = PontoVenda::factory()->create(['empresa_id' => $empresa->id]);
+        $promotor = Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]);
+        $pdv->promotores()->attach($promotor->id);
+        \Laravel\Sanctum\Sanctum::actingAs($admin);
+
+        $this->postJson('/api/agendas-visita', [
+            'ponto_venda_uuid' => $pdv->uuid, 'usuario_uuid' => $promotor->uuid,
+            'recorrencia' => 'SEMANAL', 'dia_semana' => (now()->dayOfWeek + 1) % 7,
+        ])->assertCreated();
+
+        $this->assertSame(0, OrdemServico::withoutGlobalScopes()->count());
+    }
+
     public function test_ignora_agenda_semanal_que_nao_bate_com_hoje(): void
     {
         $empresa = Empresa::factory()->create();

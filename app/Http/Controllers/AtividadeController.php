@@ -9,6 +9,7 @@ use App\Models\TipoRegistro;
 use App\Models\Usuario;
 use App\Models\Visita;
 use App\Models\VisitaRegistro;
+use App\Models\VisitaRegistroComentario;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -55,6 +56,8 @@ class AtividadeController extends Controller
 
         if (! $somenteAlertas) {
             $eventos = $eventos->concat($this->eventosDeVisita($request, $usuarioId, $pontoVendaId));
+            // Resposta do promotor num feedback (docs/28 §3) — o admin descobre pelo feed.
+            $eventos = $eventos->concat($this->eventosDeComentario($request, $usuarioId, $pontoVendaId));
         }
 
         $eventos = $eventos->sortByDesc('ocorrido_em')->values();
@@ -85,6 +88,7 @@ class AtividadeController extends Controller
                 // inteiro (tipo, produto/vínculo, observação) — a galeria de fotos do card
                 // mostra essa informação junto de cada imagem, não só a foto pelada.
                 'registros' => fn ($q) => $q->whereNull('cancelado_em')->whereHas('imagens')
+                    ->comContagemComentarios($request->user()->id)
                     ->with(['tipoRegistro.campos', 'produtoAuditoria', 'secao', 'departamento', 'marca', 'imagens']),
             ])
             ->withCount([
@@ -144,6 +148,44 @@ class AtividadeController extends Controller
         return $eventos;
     }
 
+    /** Comentários escritos por PROMOTOR em registros — o que o admin precisa ver sem procurar. */
+    private function eventosDeComentario(Request $request, ?int $usuarioId, ?int $pontoVendaId): Collection
+    {
+        $comentarios = VisitaRegistroComentario::query()
+            ->whereHas('usuario', fn ($q) => $q->where('user_type', UserType::PROMOTOR->value))
+            ->whereHas('registro.visita', function ($q) use ($request, $usuarioId, $pontoVendaId) {
+                $q->when($request->filled('usuario_uuid'), fn ($q) => $q->where('usuario_id', $usuarioId))
+                    ->when($request->filled('ponto_venda_uuid'), fn ($q) => $q->where('ponto_venda_id', $pontoVendaId));
+            })
+            ->when($request->filled('data_inicio'), fn ($q) => $q->whereDate('created_at', '>=', $request->string('data_inicio')))
+            ->when($request->filled('data_fim'), fn ($q) => $q->whereDate('created_at', '<=', $request->string('data_fim')))
+            ->with([
+                'usuario',
+                'registro' => fn ($q) => $q->comContagemComentarios($request->user()->id),
+                'registro.visita.pontoVenda', 'registro.tipoRegistro', 'registro.produtoAuditoria',
+            ])
+            ->get();
+
+        return $comentarios->map(fn (VisitaRegistroComentario $c) => [
+            'tipo_evento' => 'COMENTARIO',
+            'ocorrido_em' => $c->created_at,
+            'visita' => ['id' => $c->registro->visita->uuid],
+            'ponto_venda' => $c->registro->visita->pontoVenda
+                ? ['id' => $c->registro->visita->pontoVenda->uuid, 'fantasia' => $c->registro->visita->pontoVenda->fantasia]
+                : null,
+            'usuario' => $this->usuarioParaEvento($c->usuario),
+            'comentario' => [
+                'id' => $c->uuid,
+                'texto' => $c->texto,
+                'registro_id' => $c->registro->uuid,
+                'tipo_registro' => $c->registro->tipoRegistro?->descricao,
+                'produto' => $c->registro->produtoAuditoria?->descricao,
+                'comentarios_count' => (int) $c->registro->comentarios_count,
+                'comentarios_novos' => (int) $c->registro->comentarios_novos,
+            ],
+        ]);
+    }
+
     private function eventosDeAlerta(
         Request $request,
         ?int $usuarioId,
@@ -162,6 +204,7 @@ class AtividadeController extends Controller
             ->when($apenasPendentes, fn ($q) => $q->whereNull('alerta_resolvido_em'))
             ->when($request->filled('data_inicio'), fn ($q) => $q->whereDate('created_at', '>=', $request->string('data_inicio')))
             ->when($request->filled('data_fim'), fn ($q) => $q->whereDate('created_at', '<=', $request->string('data_fim')))
+            ->comContagemComentarios($request->user()->id)
             ->with([
                 'visita.pontoVenda', 'visita.usuario', 'tipoRegistro.campos', 'produtoAuditoria',
                 'secao', 'departamento', 'marca', 'resolvidoPor', 'imagens',

@@ -12,6 +12,7 @@ use App\Models\TipoVisita;
 use App\Models\Usuario;
 use App\Support\DiasSemanaVisiveis;
 use Barryvdh\DomPDF\Facade\Pdf;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -55,6 +56,19 @@ class AgendaVisitaController extends Controller
         ]);
     }
 
+    /**
+     * Agenda salva cujo dia é HOJE gera a ordem de serviço na hora — sem isso o promotor só via a
+     * visita no dia seguinte (o agendador roda às 05:00 e "hoje" já passou), e num ambiente sem o
+     * agendador ligado nunca. Mesmo raciocínio do Direcionamento (docs/25 §2 decisão 3); o
+     * agendador diário continua cobrindo os dias seguintes. Idempotente: nunca duplica a de hoje.
+     */
+    private function gerarOrdemDeHoje(AgendaVisita $agendaVisita): void
+    {
+        if ($agendaVisita->ativo) {
+            Artisan::call('ordens-servico:gerar-por-agenda', ['agenda' => $agendaVisita->uuid]);
+        }
+    }
+
     public function store(StoreAgendaVisitaRequest $request): JsonResponse
     {
         $dados = $request->validated();
@@ -77,6 +91,8 @@ class AgendaVisitaController extends Controller
             'observacao' => $dados['observacao'] ?? null,
         ]);
         $agendaVisita->load(['pontoVenda', 'usuario', 'tipoVisita', 'objetivoVisita']);
+
+        $this->gerarOrdemDeHoje($agendaVisita);
 
         return response()->json(['agenda_visita' => new AgendaVisitaResource($agendaVisita)], 201);
     }
@@ -119,6 +135,8 @@ class AgendaVisitaController extends Controller
 
         $agendaVisita->update($dados);
         $agendaVisita->load(['pontoVenda', 'usuario', 'tipoVisita', 'objetivoVisita']);
+
+        $this->gerarOrdemDeHoje($agendaVisita);
 
         return response()->json(['agenda_visita' => new AgendaVisitaResource($agendaVisita)]);
     }

@@ -14,6 +14,11 @@ use App\Http\Controllers\EmpresaController;
 use App\Http\Controllers\FaturaController;
 use App\Http\Controllers\GaleriaFotosController;
 use App\Http\Controllers\ImagemRegistroController;
+use App\Http\Controllers\ComentarioRegistroController;
+use App\Http\Controllers\HistoricoLojaController;
+use App\Http\Controllers\LocalizacaoController;
+use App\Http\Controllers\PedidoController;
+use App\Http\Controllers\RelatorioController;
 use App\Http\Controllers\MarcaAuditoriaController;
 use App\Http\Controllers\NivelExibicaoController;
 use App\Http\Controllers\ObjetivoVisitaController;
@@ -106,6 +111,17 @@ Route::middleware('auth:sanctum')->group(function (): void {
     // Foto da fachada — leitura aberta (mesmo padrão de UsuarioController::foto), escrita por
     // pontos_venda.gerenciar (bloco abaixo, ver PontoVendaController::atualizarFachada).
     Route::get('/pontos-venda/{pontoVenda}/fachada', [PontoVendaController::class, 'fachada']);
+    // Promotor envia a fachada só quando a loja ainda não tem (não substitui a do admin).
+    Route::post('/pontos-venda/{pontoVenda}/fachada-promotor', [PontoVendaController::class, 'enviarFachadaPromotor']);
+    // Histórico da loja e pedidos do ERP — só leitura, qualquer autenticado (é o que o promotor vê
+    // ao entrar na loja). Ver docs/28-RELATORIOS-FEEDBACK-HISTORICO.md §4.
+    Route::get('/pontos-venda/{pontoVenda}/historico', [HistoricoLojaController::class, 'show']);
+    Route::get('/pontos-venda/{pontoVenda}/pedidos', [PedidoController::class, 'porPontoVenda']);
+    // Escrita do integrador de ERP (§4.2.2) — idempotente por número de pedido.
+    Route::middleware('permissao:pedidos.gerenciar')->group(function (): void {
+        Route::post('/pedidos', [PedidoController::class, 'store']);
+        Route::post('/pedidos/{pedido}/entregas', [PedidoController::class, 'entregar']);
+    });
 
     // Visitas (check-in/checkout/registros): qualquer user_type autenticado, sem restrição de
     // permissão — ver docs/02-API-BACKEND.md#autorização-de-escrita. Ownership (um PROMOTOR
@@ -119,6 +135,8 @@ Route::middleware('auth:sanctum')->group(function (): void {
     // confunde com a intervenção administrativa (bloco visitas.intervir abaixo). Ver
     // VisitaController::cancelarPropria.
     Route::post('/visitas/{visita}/cancelar-propria', [VisitaController::class, 'cancelarPropria']);
+    // Saída de segurança: gestor/admin autoriza o cancelamento com e-mail e senha no aparelho do promotor.
+    Route::post('/visitas/{visita}/cancelar-autorizado', [VisitaController::class, 'cancelarAutorizado']);
     Route::post('/visitas/{visita}/registros', [VisitaRegistroController::class, 'store']);
     // Serve o arquivo de uma foto de evidência — não depende mais de um registro específico
     // (uma foto pode evidenciar N registros), ver docs/21-EVIDENCIA-EM-FOTOS.md.
@@ -129,6 +147,11 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::post('/visitas/{visita}/registros/{registro}/cancelar', [VisitaRegistroController::class, 'cancelar']);
     // Painel de Atividades: ADMIN/GESTOR marca um alerta como resolvido — ver
     // VisitaRegistroController::resolverAlerta e docs/17-PAINEL-ATIVIDADES.md.
+    // Feedback em registro (docs/28 §3): feed de comentários promotor <-> admin/gestor + badge de
+    // não lidos por polling. Ownership igual ao do registro, checado no controller.
+    Route::get('/comentarios/nao-lidos', [ComentarioRegistroController::class, 'naoLidos']);
+    Route::get('/visitas/{visita}/registros/{registro}/comentarios', [ComentarioRegistroController::class, 'index']);
+    Route::post('/visitas/{visita}/registros/{registro}/comentarios', [ComentarioRegistroController::class, 'store']);
     Route::post('/visitas/{visita}/registros/{registro}/resolver-alerta', [VisitaRegistroController::class, 'resolverAlerta']);
 
     // Painel de Atividades: feed agregado (check-in/checkout/alertas) pra ADMIN/GESTOR
@@ -140,6 +163,18 @@ Route::middleware('auth:sanctum')->group(function (): void {
     // registro/catálogo/loja/rede/ramo/promotor/ruptura — ver GaleriaFotosController::index e
     // docs/23-GALERIA-DE-FOTOS.md.
     Route::get('/galeria-fotos', [GaleriaFotosController::class, 'index']);
+
+    // Relatórios agregados (docs/28-RELATORIOS-FEEDBACK-HISTORICO.md §2) — ADMIN/GESTOR, checado
+    // no controller (mesmo padrão do Painel de Atividades).
+    Route::get('/relatorios/visitas-planejadas-x-executadas', [RelatorioController::class, 'visitasPlanejadasXExecutadas']);
+    Route::get('/relatorios/respostas-formulario', [RelatorioController::class, 'respostasFormulario']);
+    Route::get('/relatorios/visitas-planejadas-x-executadas/pdf', [RelatorioController::class, 'visitasPlanejadasXExecutadasPdf']);
+    Route::get('/relatorios/respostas-formulario/pdf', [RelatorioController::class, 'respostasFormularioPdf']);
+
+    // Rastreamento em tempo real (docs/11-RASTREAMENTO-TEMPO-REAL.md): o promotor manda a própria
+    // posição; o mapa ao vivo do admin lê a lista, sob permissão dedicada.
+    Route::patch('/localizacao', [LocalizacaoController::class, 'atualizar']);
+    Route::get('/localizacoes', [LocalizacaoController::class, 'index'])->middleware('permissao:rastreamento.visualizar');
 
     // Intervenção administrativa em visita (cancelar / forçar checkout com horário real /
     // corrigir horários) — exige a permissão dedicada visitas.intervir (ADMIN sempre; GESTOR só

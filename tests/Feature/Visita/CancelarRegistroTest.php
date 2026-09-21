@@ -123,7 +123,8 @@ class CancelarRegistroTest extends TestCase
         $promotor = Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]);
         $visitaUuidA = $this->abrirVisita($promotor, $pdv);
         $registroUuidA = $this->criarRegistro($empresa, $visitaUuidA);
-        $visitaUuidB = $this->abrirVisita($promotor, $pdv);
+        // Outra loja: no MESMO PDV o check-in retomaria a visita aberta (ver RetomadaEAutorizacaoTest).
+        $visitaUuidB = $this->abrirVisita($promotor, PontoVenda::factory()->create(['empresa_id' => $empresa->id]));
 
         Sanctum::actingAs($promotor);
         $this->postJson("/api/visitas/{$visitaUuidB}/registros/{$registroUuidA}/cancelar")->assertNotFound();

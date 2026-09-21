@@ -10,6 +10,7 @@ use App\Http\Requests\ProdutoAuditoria\UpdateProdutoAuditoriaRequest;
 use App\Http\Resources\ProdutoAuditoriaResource;
 use App\Models\DepartamentoAuditoria;
 use App\Models\Empresa;
+use App\Models\MarcaAuditoria;
 use App\Models\NivelExibicao;
 use App\Models\ProdutoAuditoria;
 use App\Models\SecaoAuditoria;
@@ -28,7 +29,16 @@ class ProdutoAuditoriaController extends Controller
             // centenas de produtos do catálogo.
             ->when(
                 $request->filled('busca'),
-                fn ($query) => $query->where('descricao', 'ilike', '%'.$request->string('busca').'%'),
+                function ($query) use ($request) {
+                    // Nome, código de barras OU código externo na mesma caixa — ver
+                    // docs/27-BUSCA-MULTIPLA-DE-PRODUTOS.md decisão 4. Agrupado pra não vazar o OR
+                    // pros demais filtros.
+                    $termo = '%'.addcslashes($request->string('busca'), '%_\\').'%';
+                    $query->where(fn ($q) => $q
+                        ->where('descricao', 'ilike', $termo)
+                        ->orWhere('codigo_barras', 'ilike', $termo)
+                        ->orWhere('codigo_externo', 'ilike', $termo));
+                },
             )
             ->when($request->filled('departamento_uuid'), function ($query) use ($request) {
                 $query->where('departamento_id', DepartamentoAuditoria::where('uuid', $request->string('departamento_uuid'))->value('id'));
@@ -36,12 +46,15 @@ class ProdutoAuditoriaController extends Controller
             ->when($request->filled('secao_uuid'), function ($query) use ($request) {
                 $query->where('secao_id', SecaoAuditoria::where('uuid', $request->string('secao_uuid'))->value('id'));
             })
+            ->when($request->filled('marca_uuid'), function ($query) use ($request) {
+                $query->where('marca_id', MarcaAuditoria::where('uuid', $request->string('marca_uuid'))->value('id'));
+            })
             // Só tem efeito prático pro SUPERADMIN — ver DepartamentoAuditoriaController::index.
             ->when(
                 $request->filled('empresa_uuid'),
                 fn ($query) => $query->where('empresa_id', Empresa::where('uuid', $request->string('empresa_uuid'))->value('id')),
             )
-            ->with(['departamento', 'secao', 'nivelExibicao', 'empresa'])
+            ->with(['departamento', 'secao', 'marca', 'nivelExibicao', 'empresa'])
             ->orderBy('descricao')
             ->paginate();
 
@@ -68,11 +81,14 @@ class ProdutoAuditoriaController extends Controller
             'secao_id' => isset($dados['secao_uuid'])
                 ? SecaoAuditoria::where('uuid', $dados['secao_uuid'])->value('id')
                 : null,
+            'marca_id' => isset($dados['marca_uuid'])
+                ? MarcaAuditoria::where('uuid', $dados['marca_uuid'])->value('id')
+                : null,
             'nivel_exibicao_id' => isset($dados['nivel_exibicao_uuid'])
                 ? NivelExibicao::where('uuid', $dados['nivel_exibicao_uuid'])->value('id')
                 : null,
         ]);
-        $produto->load(['departamento', 'secao', 'nivelExibicao']);
+        $produto->load(['departamento', 'secao', 'marca', 'nivelExibicao']);
 
         return response()->json([
             'produto' => new ProdutoAuditoriaResource($produto),
@@ -97,6 +113,13 @@ class ProdutoAuditoriaController extends Controller
             unset($dados['secao_uuid']);
         }
 
+        if (array_key_exists('marca_uuid', $dados)) {
+            $dados['marca_id'] = $dados['marca_uuid']
+                ? MarcaAuditoria::where('uuid', $dados['marca_uuid'])->value('id')
+                : null;
+            unset($dados['marca_uuid']);
+        }
+
         if (array_key_exists('nivel_exibicao_uuid', $dados)) {
             $dados['nivel_exibicao_id'] = $dados['nivel_exibicao_uuid']
                 ? NivelExibicao::where('uuid', $dados['nivel_exibicao_uuid'])->value('id')
@@ -105,7 +128,7 @@ class ProdutoAuditoriaController extends Controller
         }
 
         $produtoAuditoria->update($dados);
-        $produtoAuditoria->load(['departamento', 'secao', 'nivelExibicao']);
+        $produtoAuditoria->load(['departamento', 'secao', 'marca', 'nivelExibicao']);
 
         return response()->json([
             'produto' => new ProdutoAuditoriaResource($produtoAuditoria),

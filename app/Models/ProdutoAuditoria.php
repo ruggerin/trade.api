@@ -22,9 +22,12 @@ class ProdutoAuditoria extends Model
         // Opcional por padrão; pode virar obrigatório/único no cadastro via os parâmetros
         // CODIGO_BARRAS_OBRIGATORIO/CODIGO_BARRAS_UNICO — ver App\Support\CodigoBarrasProduto.
         'codigo_barras',
+        // Código do ERP/sistema de origem — ver docs/27-BUSCA-MULTIPLA-DE-PRODUTOS.md.
+        'codigo_externo',
         'imagem_url',
         'departamento_id',
         'secao_id',
+        'marca_id',
         'nivel_exibicao_id',
         'produto_final',
         // Sem efeito hoje no algoritmo de disponiveis (ver CampanhaAuditoriaController) — no
@@ -79,6 +82,11 @@ class ProdutoAuditoria extends Model
     public function secao(): BelongsTo
     {
         return $this->belongsTo(SecaoAuditoria::class, 'secao_id');
+    }
+
+    public function marca(): BelongsTo
+    {
+        return $this->belongsTo(MarcaAuditoria::class, 'marca_id');
     }
 
     public function nivelExibicao(): BelongsTo
