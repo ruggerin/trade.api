@@ -7,6 +7,8 @@ use App\Models\Empresa;
 use App\Models\Perfil;
 use App\Models\Usuario;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -163,5 +165,82 @@ class UsuarioGerenciamentoTest extends TestCase
         $this->putJson("/api/usuarios/{$promotor->uuid}", ['centro_custo_uuid' => $centroCustoDeOutraEmpresa->uuid])
             ->assertStatus(422)
             ->assertJsonValidationErrors('centro_custo_uuid');
+    }
+
+    // GD não está habilitado neste ambiente (UploadedFile::fake()->image() precisa dela) — sobe
+    // um PNG 1x1 real e mínimo, mesma técnica de Tests\Feature\Auth\FotoPerfilTest.
+    private function imagemFake(string $nome = 'foto.png'): UploadedFile
+    {
+        $conteudo = base64_decode(
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+        );
+        $caminho = tempnam(sys_get_temp_dir(), 'foto').'.png';
+        file_put_contents($caminho, $conteudo);
+
+        return new UploadedFile($caminho, $nome, 'image/png', null, true);
+    }
+
+    public function test_admin_envia_a_foto_de_outro_usuario(): void
+    {
+        Storage::fake('local');
+        $empresa = Empresa::factory()->create();
+        $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
+        $promotor = Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]);
+        Sanctum::actingAs($admin);
+
+        $response = $this->postJson("/api/usuarios/{$promotor->uuid}/foto", ['imagem' => $this->imagemFake()]);
+
+        $response->assertOk();
+        $this->assertNotNull($response->json('usuario.foto_url'));
+        $promotor->refresh();
+        $this->assertNotNull($promotor->foto_path);
+        Storage::disk('local')->assertExists($promotor->foto_path);
+    }
+
+    public function test_enviar_nova_foto_de_outro_usuario_substitui_a_anterior_sem_deixar_lixo(): void
+    {
+        Storage::fake('local');
+        $empresa = Empresa::factory()->create();
+        $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
+        $promotor = Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]);
+        Sanctum::actingAs($admin);
+
+        $this->postJson("/api/usuarios/{$promotor->uuid}/foto", ['imagem' => $this->imagemFake('primeira.png')])->assertOk();
+        $caminhoAntigo = $promotor->refresh()->foto_path;
+
+        $this->postJson("/api/usuarios/{$promotor->uuid}/foto", ['imagem' => $this->imagemFake('segunda.png')])->assertOk();
+        $promotor->refresh();
+
+        $this->assertNotSame($caminhoAntigo, $promotor->foto_path);
+        Storage::disk('local')->assertMissing($caminhoAntigo);
+        Storage::disk('local')->assertExists($promotor->foto_path);
+    }
+
+    public function test_admin_remove_a_foto_de_outro_usuario(): void
+    {
+        Storage::fake('local');
+        $empresa = Empresa::factory()->create();
+        $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
+        $promotor = Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]);
+        Sanctum::actingAs($admin);
+        $this->postJson("/api/usuarios/{$promotor->uuid}/foto", ['imagem' => $this->imagemFake()])->assertOk();
+        $caminho = $promotor->refresh()->foto_path;
+
+        $response = $this->deleteJson("/api/usuarios/{$promotor->uuid}/foto");
+
+        $response->assertOk()->assertJsonPath('usuario.foto_url', null);
+        Storage::disk('local')->assertMissing($caminho);
+        $this->assertNull($promotor->refresh()->foto_path);
+    }
+
+    public function test_promotor_nao_envia_foto_de_outro_usuario(): void
+    {
+        $empresa = Empresa::factory()->create();
+        $promotor = Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]);
+        $colega = Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]);
+        Sanctum::actingAs($promotor);
+
+        $this->postJson("/api/usuarios/{$colega->uuid}/foto", ['imagem' => $this->imagemFake()])->assertForbidden();
+        $this->deleteJson("/api/usuarios/{$colega->uuid}/foto")->assertForbidden();
     }
 }

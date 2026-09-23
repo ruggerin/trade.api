@@ -19,10 +19,14 @@ class UsuarioResource extends JsonResource
             'user_type' => $this->user_type,
             'ativo' => $this->ativo,
             'avatar_url' => $this->avatar_url,
-            // Foto enviada pelo próprio usuário (ver AuthController::atualizarFoto) — separado
+            // Foto enviada pelo próprio usuário (AuthController::atualizarFoto) ou por um
+            // ADMIN/GESTOR pela tela de usuários (UsuarioController::atualizarFoto) — separado
             // de avatar_url (texto livre do admin web) de propósito, nunca mistura os dois.
-            // Rota autenticada, mesmo padrão de VisitaRegistroController::imagem.
-            'foto_url' => $this->foto_path ? url("/api/usuarios/{$this->uuid}/foto") : null,
+            // Rota autenticada, mesmo padrão de VisitaRegistroController::imagem. `?v=` muda a
+            // cada `update()` do usuário (não só foto) — inofensivo (só gera um refetch a mais
+            // do blob em componentes como UsuarioAvatar), mas garante que trocar a foto invalida
+            // o cache do browser mesmo a URL sendo sempre a mesma rota.
+            'foto_url' => $this->foto_path ? url("/api/usuarios/{$this->uuid}/foto") . '?v=' . $this->updated_at?->timestamp : null,
             // SUPERADMIN não pertence a nenhuma empresa — empresa_id é null nesse caso.
             'empresa' => $this->whenLoaded('empresa', fn () => new EmpresaResource($this->empresa)),
             // GESTOR (permissões de admin) ou PROMOTOR (visibilidade no mobile) — ver

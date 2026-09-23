@@ -347,6 +347,10 @@ Route::middleware('auth:sanctum')->group(function (): void {
         Route::post('/usuarios', [UsuarioController::class, 'store']);
         Route::put('/usuarios/{usuario}', [UsuarioController::class, 'update']);
         Route::delete('/usuarios/{usuario}', [UsuarioController::class, 'destroy']);
+        // ADMIN/GESTOR envia/remove a foto de outro usuário da empresa (distinto do
+        // self-service em /auth/me/foto) — ver UsuarioController::atualizarFoto.
+        Route::post('/usuarios/{usuario}/foto', [UsuarioController::class, 'atualizarFoto']);
+        Route::delete('/usuarios/{usuario}/foto', [UsuarioController::class, 'removerFoto']);
         // Força logout do dispositivo atual (perda/roubo de aparelho, troca de promotor) —
         // ver App\Http\Controllers\UsuarioController::revogarDispositivo. Nunca pelo
         // SUPERADMIN (DELETE continua bloqueado pra ele, ver EnsurePermissao).
