@@ -24,6 +24,7 @@ use App\Http\Controllers\MarcaAuditoriaController;
 use App\Http\Controllers\NivelExibicaoController;
 use App\Http\Controllers\ObjetivoVisitaController;
 use App\Http\Controllers\DirecionamentoController;
+use App\Http\Controllers\OperacaoDoDiaController;
 use App\Http\Controllers\OrdemServicoController;
 use App\Http\Controllers\ParametroController;
 use App\Http\Controllers\PerfilController;
@@ -159,6 +160,10 @@ Route::middleware('auth:sanctum')->group(function (): void {
     // acompanhar tudo que rolou nas visitas do dia, todo mundo junto — ver
     // AtividadeController::index e docs/17-PAINEL-ATIVIDADES.md.
     Route::get('/atividades', [AtividadeController::class, 'index']);
+
+    // Operação do Dia: KPIs + equipe em campo + fila de ações num payload só, pra ADMIN/GESTOR
+    // — ver OperacaoDoDiaController::index e docs/32-PAINEL-OPERACAO-DO-DIA.md.
+    Route::get('/operacao-do-dia', [OperacaoDoDiaController::class, 'index']);
 
     // Galeria de Fotos: grade só de fotos (não timeline), filtrável por período/tipo de
     // registro/catálogo/loja/rede/ramo/promotor/ruptura — ver GaleriaFotosController::index e
