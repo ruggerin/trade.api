@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Empresa;
 use App\Models\PontoVenda;
+use App\Models\ProdutoAuditoria;
 use App\Models\TipoRegistro;
 use App\Models\Usuario;
 use App\Models\Visita;
@@ -98,6 +99,7 @@ class ComentarioRegistroTest extends TestCase
         $this->getJson('/api/comentarios/nao-lidos')->assertOk()
             ->assertJsonPath('total', 1)
             ->assertJsonPath('registros.0.registro_id', $this->registro->uuid)
+            ->assertJsonPath('registros.0.sobre', 'Ruptura')
             ->assertJsonPath('registros.0.ultimo.autor', 'Gestora')
             ->assertJsonPath('registros.0.ultimo.texto', 'Pedido chega sexta');
 
@@ -110,6 +112,24 @@ class ComentarioRegistroTest extends TestCase
         $this->postJson($this->url(), ['texto' => 'Confirmado'])->assertCreated();
         Sanctum::actingAs($this->promotor);
         $this->getJson('/api/comentarios/nao-lidos')->assertOk()->assertJsonPath('total', 1);
+    }
+
+    public function test_nao_lidos_preferre_o_produto_ao_tipo_no_campo_sobre(): void
+    {
+        $produto = ProdutoAuditoria::factory()->create(['empresa_id' => $this->empresa->id, 'descricao' => 'Amaciante Carinho']);
+        $registroComProduto = VisitaRegistro::create([
+            'visita_id' => $this->visita->id,
+            'tipo_registro_id' => $this->registro->tipo_registro_id,
+            'produto_auditoria_id' => $produto->id,
+        ]);
+
+        Sanctum::actingAs($this->admin);
+        $this->postJson("/api/visitas/{$this->visita->uuid}/registros/{$registroComProduto->uuid}/comentarios", ['texto' => 'Ok'])
+            ->assertCreated();
+
+        Sanctum::actingAs($this->promotor);
+        $this->getJson('/api/comentarios/nao-lidos')->assertOk()
+            ->assertJsonPath('registros.0.sobre', 'Amaciante Carinho');
     }
 
     public function test_promotor_so_ve_nao_lidos_das_proprias_visitas(): void
