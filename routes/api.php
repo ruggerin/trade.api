@@ -3,6 +3,7 @@
 use App\Http\Controllers\AgendaVisitaController;
 use App\Http\Controllers\AtividadeController;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\AutorizacaoGestorController;
 use App\Http\Controllers\CampanhaAuditoriaController;
 use App\Http\Controllers\CampanhaItemController;
 use App\Http\Controllers\CampoSortimentoController;
@@ -184,6 +185,9 @@ Route::middleware('auth:sanctum')->group(function (): void {
         Route::post('/visitas/{visita}/cancelar', [VisitaController::class, 'cancelar']);
         Route::post('/visitas/{visita}/forcar-checkout', [VisitaController::class, 'forcarCheckout']);
         Route::patch('/visitas/{visita}/horarios', [VisitaController::class, 'corrigirHorarios']);
+        // Código de 6 dígitos pra autorizar cancelar-autorizado sem digitar e-mail/senha no
+        // aparelho do promotor — mesma permissão, ver §12 da doc.
+        Route::post('/autorizacoes-gestor', [AutorizacaoGestorController::class, 'store']);
     });
 
     // Ordens de serviço (compromisso de visita direcionado pelo gestor) — leitura aberta a

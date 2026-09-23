@@ -3,6 +3,7 @@
 namespace Tests\Feature\Visita;
 
 use App\Enums\Permissao;
+use App\Models\AutorizacaoGestor;
 use App\Models\Empresa;
 use App\Models\OrdemServico;
 use App\Models\Perfil;
@@ -10,6 +11,7 @@ use App\Models\PontoVenda;
 use App\Models\Usuario;
 use App\Models\Visita;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
 use Laravel\Sanctum\Sanctum;
@@ -222,5 +224,147 @@ class RetomadaEAutorizacaoTest extends TestCase
 
         $this->postJson("/api/visitas/{$id}/cancelar-autorizado", $corpo)->assertOk();
         $this->postJson("/api/visitas/{$id}/cancelar-autorizado", $corpo)->assertOk()->assertJsonPath('visita.status', 'CANCELADA');
+    }
+
+    // ---- cancelamento autorizado via código (gerado no admin, sem e-mail/senha no aparelho) ----
+
+    /** Gera o código logado como o gestor, depois volta a agir como o promotor de novo. */
+    private function gerarCodigo(Usuario $gestor): string
+    {
+        Sanctum::actingAs($gestor);
+        $codigo = $this->postJson('/api/autorizacoes-gestor')->assertCreated()->json('codigo');
+        Sanctum::actingAs($this->promotor);
+
+        return $codigo;
+    }
+
+    public function test_admin_gera_codigo_e_autoriza_o_cancelamento(): void
+    {
+        $admin = $this->supervisor();
+        $id = $this->visitaAberta();
+
+        $codigo = $this->gerarCodigo($admin);
+        $this->postJson("/api/visitas/{$id}/cancelar-autorizado", ['codigo' => $codigo])
+            ->assertOk()->assertJsonPath('visita.status', 'CANCELADA');
+
+        $intervencao = \App\Models\VisitaIntervencao::first();
+        $this->assertSame('Gestora Bia', $intervencao->usuario->nome);
+    }
+
+    public function test_gera_codigo_de_6_digitos_valido_por_10_minutos(): void
+    {
+        Sanctum::actingAs($this->supervisor());
+
+        $resposta = $this->postJson('/api/autorizacoes-gestor')->assertCreated();
+        $codigo = $resposta->json('codigo');
+
+        $this->assertMatchesRegularExpression('/^\d{6}$/', $codigo);
+        $expiraEm = Carbon::parse($resposta->json('expira_em'));
+        $this->assertTrue($expiraEm->between(now()->addMinutes(9), now()->addMinutes(10)));
+    }
+
+    public function test_gestor_com_permissao_tambem_gera_codigo(): void
+    {
+        $gestor = $this->supervisor('gestor');
+        $perfil = Perfil::factory()->comPermissoes([Permissao::VISITAS_INTERVIR->value])->create(['empresa_id' => $this->empresa->id]);
+        $gestor->update(['perfil_id' => $perfil->id]);
+        Sanctum::actingAs($gestor);
+
+        $this->postJson('/api/autorizacoes-gestor')->assertCreated();
+    }
+
+    public function test_gestor_sem_permissao_nao_gera_codigo(): void
+    {
+        $gestor = $this->supervisor('gestor');
+        Sanctum::actingAs($gestor);
+
+        $this->postJson('/api/autorizacoes-gestor')->assertForbidden();
+    }
+
+    public function test_promotor_nao_gera_codigo(): void
+    {
+        $this->postJson('/api/autorizacoes-gestor')->assertForbidden();
+    }
+
+    public function test_codigo_errado_e_negado(): void
+    {
+        $this->supervisor();
+        $id = $this->visitaAberta();
+
+        $this->postJson("/api/visitas/{$id}/cancelar-autorizado", ['codigo' => '000000'])->assertForbidden();
+    }
+
+    public function test_codigo_ja_usado_nao_serve_de_novo_pra_outra_visita(): void
+    {
+        $admin = $this->supervisor();
+        $primeira = $this->visitaAberta();
+        $codigo = $this->gerarCodigo($admin);
+        $this->postJson("/api/visitas/{$primeira}/cancelar-autorizado", ['codigo' => $codigo])->assertOk();
+
+        $segunda = $this->visitaAberta();
+        $this->postJson("/api/visitas/{$segunda}/cancelar-autorizado", ['codigo' => $codigo])->assertForbidden();
+    }
+
+    public function test_retentativa_da_mesma_visita_com_codigo_ja_gasto_continua_idempotente(): void
+    {
+        // Simula a resposta da 1ª chamada se perdendo: o app tenta de novo com o mesmo código,
+        // que o servidor já marcou como usado — não pode dar 403, a visita já foi cancelada.
+        $admin = $this->supervisor();
+        $id = $this->visitaAberta();
+        $codigo = $this->gerarCodigo($admin);
+
+        $this->postJson("/api/visitas/{$id}/cancelar-autorizado", ['codigo' => $codigo])->assertOk();
+        $this->postJson("/api/visitas/{$id}/cancelar-autorizado", ['codigo' => $codigo])
+            ->assertOk()->assertJsonPath('visita.status', 'CANCELADA');
+    }
+
+    public function test_codigo_expirado_e_negado(): void
+    {
+        $admin = $this->supervisor();
+        $id = $this->visitaAberta();
+        $codigo = $this->gerarCodigo($admin);
+
+        Carbon::setTestNow(now()->addMinutes(11));
+        try {
+            $this->postJson("/api/visitas/{$id}/cancelar-autorizado", ['codigo' => $codigo])->assertForbidden();
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    public function test_codigo_de_outra_empresa_nao_autoriza(): void
+    {
+        $outraEmpresa = Empresa::factory()->create();
+        $adminOutraEmpresa = Usuario::factory()->admin()->create(['empresa_id' => $outraEmpresa->id]);
+        $codigo = $this->gerarCodigo($adminOutraEmpresa);
+
+        $id = $this->visitaAberta();
+        $this->postJson("/api/visitas/{$id}/cancelar-autorizado", ['codigo' => $codigo])->assertForbidden();
+    }
+
+    public function test_codigo_de_gestor_desativado_apos_gerar_nao_autoriza(): void
+    {
+        $gestor = $this->supervisor('gestor');
+        $perfil = Perfil::factory()->comPermissoes([Permissao::VISITAS_INTERVIR->value])->create(['empresa_id' => $this->empresa->id]);
+        $gestor->update(['perfil_id' => $perfil->id]);
+        $id = $this->visitaAberta();
+
+        $codigo = $this->gerarCodigo($gestor);
+        $gestor->update(['ativo' => false]);
+
+        $this->postJson("/api/visitas/{$id}/cancelar-autorizado", ['codigo' => $codigo])->assertForbidden();
+    }
+
+    public function test_codigo_conta_no_mesmo_limite_de_tentativas_que_senha(): void
+    {
+        RateLimiter::clear('cancelar-autorizado:'.$this->promotor->id);
+        $this->supervisor();
+        $id = $this->visitaAberta();
+
+        for ($i = 0; $i < 5; $i++) {
+            $this->postJson("/api/visitas/{$id}/cancelar-autorizado", ['codigo' => '000000'])->assertForbidden();
+        }
+
+        $this->postJson("/api/visitas/{$id}/cancelar-autorizado", ['codigo' => '111111'])->assertStatus(429);
     }
 }

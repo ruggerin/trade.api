@@ -70,6 +70,8 @@ class ComentarioRegistroController extends Controller
             ->join('visita_registros as r', 'r.id', '=', 'c.visita_registro_id')
             ->join('visitas as v', 'v.id', '=', 'r.visita_id')
             ->join('usuarios as autor', 'autor.id', '=', 'c.usuario_id')
+            ->join('tipos_registro as tr', 'tr.id', '=', 'r.tipo_registro_id')
+            ->leftJoin('produtos_auditoria as p', 'p.id', '=', 'r.produto_auditoria_id')
             ->leftJoin('visita_registro_comentario_leituras as l', fn ($j) => $j
                 ->on('l.visita_registro_id', '=', 'c.visita_registro_id')
                 ->where('l.usuario_id', '=', $usuario->id))
@@ -78,7 +80,11 @@ class ComentarioRegistroController extends Controller
             ->when($usuario->user_type === UserType::PROMOTOR, fn ($q) => $q->where('v.usuario_id', $usuario->id))
             ->where(fn ($q) => $q->whereNull('l.lido_em')->orWhereColumn('c.created_at', '>', 'l.lido_em'))
             ->orderByDesc('c.created_at')
-            ->get(['c.uuid as comentario_uuid', 'c.texto', 'c.created_at', 'r.uuid as registro_uuid', 'v.uuid as visita_uuid', 'v.ponto_venda_id', 'autor.nome as autor']);
+            ->get([
+                'c.uuid as comentario_uuid', 'c.texto', 'c.created_at', 'r.uuid as registro_uuid',
+                'v.uuid as visita_uuid', 'v.ponto_venda_id', 'autor.nome as autor',
+                'tr.descricao as tipo_registro_descricao', 'p.descricao as produto_descricao',
+            ]);
 
         $pdvs = DB::table('pontos_venda')->whereIn('id', $linhas->pluck('ponto_venda_id')->unique())->pluck('fantasia', 'id');
 
@@ -89,6 +95,9 @@ class ComentarioRegistroController extends Controller
                 'registro_id' => $ultimo->registro_uuid,
                 'visita_id' => $ultimo->visita_uuid,
                 'ponto_venda' => $pdvs[$ultimo->ponto_venda_id] ?? null,
+                // Produto quando o registro tem um vinculado, senão o tipo (mesma prioridade de
+                // VisitaDetalheScreen.RegistroCard no mobile).
+                'sobre' => $ultimo->produto_descricao ?? $ultimo->tipo_registro_descricao,
                 'nao_lidos' => $grupo->count(),
                 'ultimo' => ['autor' => $ultimo->autor, 'texto' => $ultimo->texto, 'em' => $ultimo->created_at],
             ];

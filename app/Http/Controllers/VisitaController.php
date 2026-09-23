@@ -14,6 +14,7 @@ use App\Http\Requests\Visita\CheckoutVisitaRequest;
 use App\Http\Requests\Visita\CorrigirHorariosVisitaRequest;
 use App\Http\Requests\Visita\ForcarCheckoutVisitaRequest;
 use App\Http\Resources\VisitaResource;
+use App\Models\AutorizacaoGestor;
 use App\Models\CampanhaAuditoria;
 use App\Models\OrdemServico;
 use App\Models\PontoVenda;
@@ -494,10 +495,13 @@ class VisitaController extends Controller
 
     /**
      * Saída de segurança pra visita travada quando o promotor NÃO pode cancelar sozinho (parâmetro
-     * desligado, ou o app em estado inconsistente): um ADMIN — ou GESTOR com `visitas.intervir` — digita
-     * o e-mail e a senha dele no aparelho do promotor e a visita é cancelada com a autoria DELE na
-     * trilha de auditoria (`visita_intervencoes`). Limitado a 5 tentativas por promotor a cada 15 min,
-     * pra não virar adivinhação de senha. Ver docs/15-INTERVENCAO-ADMINISTRATIVA-VISITA.md.
+     * desligado, ou o app em estado inconsistente): um ADMIN — ou GESTOR com `visitas.intervir` —
+     * autoriza no aparelho do promotor, e a visita é cancelada com a autoria DELE na trilha de
+     * auditoria (`visita_intervencoes`). Dois jeitos de autorizar (§12 da doc): `codigo` (gerado no
+     * admin web por `AutorizacaoGestorController`, o gestor nunca digita e-mail/senha no aparelho de
+     * outra pessoa — preferido) ou, ainda por compatibilidade, `email`+`senha` dele direto. Limitado
+     * a 5 tentativas por promotor a cada 15 min, pra não virar adivinhação. Ver
+     * docs/15-INTERVENCAO-ADMINISTRATIVA-VISITA.md.
      */
     public function cancelarAutorizado(Request $request, Visita $visita): JsonResponse
     {
@@ -505,9 +509,18 @@ class VisitaController extends Controller
         $promotor = $request->user();
         abort_if($promotor->user_type !== UserType::PROMOTOR, 403, 'Esta ação é só para o promotor.');
 
+        // Idempotência ANTES de gastar o código: com e-mail/senha uma nova tentativa reautentica
+        // igual; com código de uso único, se checássemos isto só depois de validar a autorização,
+        // um retry (resposta da 1ª chamada se perdeu, código já foi consumido) falharia à toa —
+        // o app já teria êxito, só não soube.
+        if ($visita->status === StatusVisita::CANCELADA) {
+            return response()->json(['visita' => new VisitaResource($visita)]);
+        }
+
         $dados = $request->validate([
-            'email' => ['required', 'string', 'email'],
-            'senha' => ['required', 'string'],
+            'codigo' => ['nullable', 'string', 'size:6', 'required_without_all:email,senha'],
+            'email' => ['nullable', 'string', 'email', 'required_without:codigo'],
+            'senha' => ['nullable', 'string', 'required_without:codigo'],
             'motivo' => ['nullable', 'string', 'max:500'],
         ]);
 
@@ -518,29 +531,37 @@ class VisitaController extends Controller
             ], 429);
         }
 
-        $supervisor = Usuario::withoutGlobalScopes()
-            ->where('email', $dados['email'])
-            ->where('empresa_id', $promotor->empresa_id)
-            ->where('ativo', true)
-            ->whereIn('user_type', [UserType::ADMIN->value, UserType::GESTOR->value])
-            ->first();
+        if (isset($dados['codigo'])) {
+            $autorizacao = AutorizacaoGestor::valido($promotor->empresa_id, $dados['codigo'])->first();
+            $supervisor = $autorizacao?->usuario;
+            // Gerar o código já exigiu a permissão (middleware da rota) — aqui só reconfirma que
+            // a conta continua ativa no intervalo (código vive até 10 min).
+            $autorizado = $autorizacao !== null && $supervisor?->ativo === true;
+            $mensagemNegada = 'Autorização negada. Confira o código.';
+        } else {
+            $supervisor = Usuario::withoutGlobalScopes()
+                ->where('email', $dados['email'])
+                ->where('empresa_id', $promotor->empresa_id)
+                ->where('ativo', true)
+                ->whereIn('user_type', [UserType::ADMIN->value, UserType::GESTOR->value])
+                ->first();
 
-        $autorizado = $supervisor
-            && Hash::check($dados['senha'], $supervisor->senha_hash)
-            && ($supervisor->user_type === UserType::ADMIN || ($supervisor->perfil?->tem(Permissao::VISITAS_INTERVIR) ?? false));
+            $autorizado = $supervisor
+                && Hash::check($dados['senha'], $supervisor->senha_hash)
+                && ($supervisor->user_type === UserType::ADMIN || ($supervisor->perfil?->tem(Permissao::VISITAS_INTERVIR) ?? false));
+            // Mensagem única de propósito: não diz se o e-mail existe nem se faltou permissão.
+            $mensagemNegada = 'Autorização negada. Confira o e-mail e a senha do gestor.';
+        }
 
         if (! $autorizado) {
             RateLimiter::hit($chave, 15 * 60);
 
-            // Mensagem única de propósito: não diz se o e-mail existe nem se faltou permissão.
-            return response()->json(['message' => 'Autorização negada. Confira o e-mail e a senha do gestor.'], 403);
+            return response()->json(['message' => $mensagemNegada], 403);
         }
 
         RateLimiter::clear($chave);
-
-        // Já cancelada (ex.: a chamada anterior chegou e a resposta se perdeu) — idempotente: o app pode seguir.
-        if ($visita->status === StatusVisita::CANCELADA) {
-            return response()->json(['visita' => new VisitaResource($visita)]);
+        if (isset($autorizacao)) {
+            $autorizacao->update(['usado_em' => now()]);
         }
 
         if ($visita->status !== StatusVisita::ABERTA) {
