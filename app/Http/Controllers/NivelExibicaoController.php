@@ -16,6 +16,10 @@ class NivelExibicaoController extends Controller
     {
         $niveis = NivelExibicao::query()
             ->when($request->has('ativo'), fn ($query) => $query->where('ativo', $request->boolean('ativo')))
+            ->when($request->filled('busca'), function ($query) use ($request) {
+                $termo = '%'.addcslashes($request->string('busca'), '%_\\').'%';
+                $query->where('descricao', 'ilike', $termo);
+            })
             // Só tem efeito prático pro SUPERADMIN — ver DepartamentoAuditoriaController::index.
             ->when(
                 $request->filled('empresa_uuid'),

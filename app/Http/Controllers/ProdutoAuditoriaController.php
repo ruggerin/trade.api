@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Enums\AutonomiaPromotor;
+use App\Enums\Propriedade;
 use App\Enums\StatusAprovacao;
 use App\Http\Requests\ProdutoAuditoria\StoreProdutoAuditoriaPropriaRequest;
 use App\Http\Requests\ProdutoAuditoria\StoreProdutoAuditoriaRequest;
@@ -49,6 +50,13 @@ class ProdutoAuditoriaController extends Controller
             ->when($request->filled('marca_uuid'), function ($query) use ($request) {
                 $query->where('marca_id', MarcaAuditoria::where('uuid', $request->string('marca_uuid'))->value('id'));
             })
+            // Própria (do cliente) vs. concorrente — ver App\Enums\Propriedade. `tryFrom` ignora
+            // silenciosamente um valor inválido em vez de 422 — é um filtro de lista, não um
+            // formulário de escrita.
+            ->when(
+                Propriedade::tryFrom((string) $request->string('propriedade')),
+                fn ($query, Propriedade $propriedade) => $query->where('propriedade', $propriedade),
+            )
             // Só tem efeito prático pro SUPERADMIN — ver DepartamentoAuditoriaController::index.
             ->when(
                 $request->filled('empresa_uuid'),

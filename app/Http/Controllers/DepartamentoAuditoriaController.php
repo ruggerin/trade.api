@@ -16,6 +16,10 @@ class DepartamentoAuditoriaController extends Controller
     {
         $departamentos = DepartamentoAuditoria::query()
             ->when($request->has('ativo'), fn ($query) => $query->where('ativo', $request->boolean('ativo')))
+            ->when($request->filled('busca'), function ($query) use ($request) {
+                $termo = '%'.addcslashes($request->string('busca'), '%_\\').'%';
+                $query->where('descricao', 'ilike', $termo);
+            })
             // Só tem efeito prático pro SUPERADMIN — BelongsToEmpresa já restringe ADMIN/GESTOR à
             // própria empresa, então filtrar por outra aqui só resulta em lista vazia (inofensivo,
             // nunca vaza dado de outro tenant). Sem isso, SUPERADMIN via lista de todas as

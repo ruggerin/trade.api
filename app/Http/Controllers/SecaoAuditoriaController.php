@@ -17,6 +17,10 @@ class SecaoAuditoriaController extends Controller
     {
         $secoes = SecaoAuditoria::query()
             ->when($request->has('ativo'), fn ($query) => $query->where('ativo', $request->boolean('ativo')))
+            ->when($request->filled('busca'), function ($query) use ($request) {
+                $termo = '%'.addcslashes($request->string('busca'), '%_\\').'%';
+                $query->where('descricao', 'ilike', $termo);
+            })
             ->when($request->filled('departamento_uuid'), function ($query) use ($request) {
                 $query->where('departamento_id', DepartamentoAuditoria::where('uuid', $request->string('departamento_uuid'))->value('id'));
             })
