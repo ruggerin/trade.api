@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\Propriedade;
 use App\Http\Requests\MarcaAuditoria\StoreMarcaAuditoriaRequest;
 use App\Http\Requests\MarcaAuditoria\UpdateMarcaAuditoriaRequest;
 use App\Http\Resources\MarcaAuditoriaResource;
@@ -16,6 +17,14 @@ class MarcaAuditoriaController extends Controller
     {
         $marcas = MarcaAuditoria::query()
             ->when($request->has('ativo'), fn ($query) => $query->where('ativo', $request->boolean('ativo')))
+            ->when($request->filled('busca'), function ($query) use ($request) {
+                $termo = '%'.addcslashes($request->string('busca'), '%_\\').'%';
+                $query->where('descricao', 'ilike', $termo);
+            })
+            ->when(
+                Propriedade::tryFrom((string) $request->string('propriedade')),
+                fn ($query, Propriedade $propriedade) => $query->where('propriedade', $propriedade),
+            )
             // Só tem efeito prático pro SUPERADMIN — ver DepartamentoAuditoriaController::index.
             ->when(
                 $request->filled('empresa_uuid'),

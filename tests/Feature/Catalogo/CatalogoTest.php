@@ -134,6 +134,50 @@ class CatalogoTest extends TestCase
         $this->postJson('/api/departamentos-auditoria', ['descricao' => 'Tentativa'])->assertForbidden();
     }
 
+    public function test_busca_por_descricao_filtra_departamento_secao_marca_e_nivel(): void
+    {
+        $empresa = Empresa::factory()->create();
+        $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
+        Sanctum::actingAs($admin);
+
+        DepartamentoAuditoria::factory()->create(['empresa_id' => $empresa->id, 'descricao' => 'Limpeza']);
+        DepartamentoAuditoria::factory()->create(['empresa_id' => $empresa->id, 'descricao' => 'Bebidas']);
+        $this->getJson('/api/departamentos-auditoria?busca=limp')->assertOk()->assertJsonCount(1, 'departamentos');
+
+        $departamento = DepartamentoAuditoria::factory()->create(['empresa_id' => $empresa->id]);
+        SecaoAuditoria::factory()->create(['empresa_id' => $empresa->id, 'departamento_id' => $departamento->id, 'descricao' => 'Roupas']);
+        SecaoAuditoria::factory()->create(['empresa_id' => $empresa->id, 'departamento_id' => $departamento->id, 'descricao' => 'Casa']);
+        $this->getJson('/api/secoes-auditoria?busca=rou')->assertOk()->assertJsonCount(1, 'secoes');
+
+        MarcaAuditoria::factory()->create(['empresa_id' => $empresa->id, 'descricao' => 'Marca Alfa']);
+        MarcaAuditoria::factory()->create(['empresa_id' => $empresa->id, 'descricao' => 'Marca Beta']);
+        $this->getJson('/api/marcas-auditoria?busca=alf')->assertOk()->assertJsonCount(1, 'marcas');
+
+        NivelExibicao::factory()->create(['empresa_id' => $empresa->id, 'descricao' => 'Prateleira']);
+        NivelExibicao::factory()->create(['empresa_id' => $empresa->id, 'descricao' => 'Ponta de gôndola']);
+        $this->getJson('/api/niveis-exibicao?busca=prate')->assertOk()->assertJsonCount(1, 'niveis_exibicao');
+    }
+
+    public function test_filtro_de_propriedade_em_marca_e_produto(): void
+    {
+        $empresa = Empresa::factory()->create();
+        $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
+        Sanctum::actingAs($admin);
+
+        MarcaAuditoria::factory()->create(['empresa_id' => $empresa->id, 'propriedade' => 'PROPRIA']);
+        MarcaAuditoria::factory()->create(['empresa_id' => $empresa->id, 'propriedade' => 'CONCORRENTE']);
+        $this->getJson('/api/marcas-auditoria?propriedade=CONCORRENTE')->assertOk()->assertJsonCount(1, 'marcas')
+            ->assertJsonPath('marcas.0.propriedade', 'CONCORRENTE');
+
+        ProdutoAuditoria::factory()->create(['empresa_id' => $empresa->id, 'propriedade' => 'PROPRIA']);
+        ProdutoAuditoria::factory()->create(['empresa_id' => $empresa->id, 'propriedade' => 'CONCORRENTE']);
+        $this->getJson('/api/produtos-auditoria?propriedade=PROPRIA')->assertOk()->assertJsonCount(1, 'produtos')
+            ->assertJsonPath('produtos.0.propriedade', 'PROPRIA');
+
+        // Valor inválido é ignorado (lista inteira), não 422 — filtro de leitura, não formulário.
+        $this->getJson('/api/marcas-auditoria?propriedade=LIXO')->assertOk()->assertJsonCount(2, 'marcas');
+    }
+
     public function test_nivel_de_exibicao_e_isolado_por_empresa(): void
     {
         $empresaA = Empresa::factory()->create();
