@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Enums\UserType;
+use App\Http\Requests\Usuario\AtualizarFotoUsuarioRequest;
 use App\Http\Requests\Usuario\StoreUsuarioRequest;
 use App\Http\Requests\Usuario\UpdateUsuarioRequest;
 use App\Http\Resources\UsuarioResource;
@@ -179,6 +180,37 @@ class UsuarioController extends Controller
         $usuario->tokens()->delete();
 
         return response()->json(status: 204);
+    }
+
+    /**
+     * ADMIN/GESTOR envia (ou substitui) a foto de outro usuário da empresa — mesma lógica de
+     * storage do self-service (AuthController::atualizarFoto), só que gated por
+     * `usuarios.gerenciar` em vez de ser sempre a foto de quem está autenticado.
+     */
+    public function atualizarFoto(AtualizarFotoUsuarioRequest $request, Usuario $usuario): JsonResponse
+    {
+        if ($usuario->foto_path) {
+            Storage::disk(config('filesystems.default'))->delete($usuario->foto_path);
+        }
+
+        $caminho = $request->file('imagem')->store("usuarios/{$usuario->id}", config('filesystems.default'));
+        $usuario->update(['foto_path' => $caminho]);
+
+        return response()->json([
+            'usuario' => new UsuarioResource($usuario->fresh()->loadMissing(['empresa', 'perfil', 'centroCusto', 'dispositivo'])),
+        ]);
+    }
+
+    public function removerFoto(Usuario $usuario): JsonResponse
+    {
+        if ($usuario->foto_path) {
+            Storage::disk(config('filesystems.default'))->delete($usuario->foto_path);
+            $usuario->update(['foto_path' => null]);
+        }
+
+        return response()->json([
+            'usuario' => new UsuarioResource($usuario->fresh()->loadMissing(['empresa', 'perfil', 'centroCusto', 'dispositivo'])),
+        ]);
     }
 
     /**
