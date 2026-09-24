@@ -3,6 +3,7 @@
 namespace App\Http\Resources;
 
 use App\Support\CalculadoraPontuacao;
+use App\Support\FormatadorValoresCampos;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -48,6 +49,16 @@ class VisitaRegistroResource extends JsonResource
             'ruptura' => $this->ruptura,
             'observacao' => $this->observacao,
             'valores_campos' => $this->valores_campos,
+            // Mesmo dado de valores_campos, mas já com rótulo resolvido e valor formatado por
+            // tipo_campo (BOOLEANO vira Sim/Não, SORTIMENTO resolve os uuids de produto pra
+            // descrição) — ver App\Support\FormatadorValoresCampos. Pronto pra render direto,
+            // sem o front precisar conhecer os tipos de campo.
+            'campos_respondidos' => $this->whenLoaded(
+                'tipoRegistro',
+                fn () => $this->tipoRegistro
+                    ? FormatadorValoresCampos::formatar($this->tipoRegistro, $this->valores_campos)
+                    : [],
+            ),
             // % de compliance do formulário — só quando tipo_registro.usa_pontuacao = true, ver
             // App\Support\CalculadoraPontuacao e decisão 5 de docs/20-FORMULARIO-DINAMICO-CAMPANHA.md.
             'pontuacao' => $this->whenLoaded(
