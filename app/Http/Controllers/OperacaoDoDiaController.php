@@ -216,7 +216,10 @@ class OperacaoDoDiaController extends Controller
                 'usuario' => $registro->visita->usuario
                     ? ['id' => $registro->visita->usuario->uuid, 'nome' => $registro->visita->usuario->nome]
                     : null,
-                'registro' => ['id' => $registro->uuid],
+                // visita_id junto do registro: o front precisa dos dois pra chamar
+                // POST /visitas/{visita}/registros/{registro}/resolver-alerta (mesmo endpoint já
+                // usado no Painel de Atividades, doc 19).
+                'registro' => ['id' => $registro->uuid, 'visita_id' => $registro->visita->uuid],
             ]);
 
         $deAtraso = $porPromotor

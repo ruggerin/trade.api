@@ -257,7 +257,36 @@ class OperacaoDoDiaTest extends TestCase
         $porSku = collect($response->json('rupturas_por_sku'));
         $this->assertSame($produto->uuid, $porSku->first()['produto']['id']);
         $this->assertSame(1, $porSku->first()['pdvs']);
-        $this->assertNotNull(collect($response->json('fila_acoes'))->firstWhere('tipo', 'ALERTA'));
+        $itemAlerta = collect($response->json('fila_acoes'))->firstWhere('tipo', 'ALERTA');
+        $this->assertNotNull($itemAlerta);
+        // O front precisa do id da visita junto do registro pra poder chamar
+        // POST /visitas/{visita}/registros/{registro}/resolver-alerta (botão "Resolver").
+        $this->assertSame($visita->uuid, $itemAlerta['registro']['visita_id']);
+    }
+
+    public function test_registro_com_visita_id_da_fila_de_acoes_resolve_o_alerta(): void
+    {
+        $empresa = Empresa::factory()->create();
+        $pdv = PontoVenda::factory()->create(['empresa_id' => $empresa->id]);
+        $promotor = Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]);
+        $tipoRuptura = TipoRegistro::create(['empresa_id' => $empresa->id, 'descricao' => 'Ruptura', 'eh_alerta' => true]);
+        $visita = Visita::factory()->create(['empresa_id' => $empresa->id, 'ponto_venda_id' => $pdv->id, 'usuario_id' => $promotor->id]);
+        VisitaRegistro::create([
+            'visita_id' => $visita->id,
+            'tipo_registro_id' => $tipoRuptura->id,
+            'ruptura' => true,
+        ]);
+
+        $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
+        Sanctum::actingAs($admin);
+        $item = collect($this->getJson('/api/operacao-do-dia')->json('fila_acoes'))->firstWhere('tipo', 'ALERTA');
+
+        $this->postJson("/api/visitas/{$item['registro']['visita_id']}/registros/{$item['registro']['id']}/resolver-alerta")
+            ->assertOk();
+
+        $depois = $this->getJson('/api/operacao-do-dia')->assertOk();
+        $this->assertSame(0, $depois->json('kpis.rupturas_abertas.total'));
+        $this->assertNull(collect($depois->json('fila_acoes'))->firstWhere('tipo', 'ALERTA'));
     }
 
     public function test_ruptura_resolvida_nao_conta_como_aberta(): void
