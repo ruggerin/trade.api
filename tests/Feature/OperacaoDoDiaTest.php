@@ -112,6 +112,11 @@ class OperacaoDoDiaTest extends TestCase
         $this->assertCount(1, $linha['blocos_jornada']);
         $this->assertSame('FEITA', $linha['blocos_jornada'][0]['status']);
         $this->assertNotNull($linha['blocos_jornada'][0]['fim']);
+        // Hover (loja + horário) e duplo clique (abrir a visita) no Gantt — ver
+        // docs/32-PAINEL-OPERACAO-DO-DIA.md.
+        $this->assertSame($pdv->uuid, $linha['blocos_jornada'][0]['ponto_venda']['id']);
+        $this->assertSame($pdv->fantasia, $linha['blocos_jornada'][0]['ponto_venda']['fantasia']);
+        $this->assertSame($visita->uuid, $linha['blocos_jornada'][0]['visita_id']);
     }
 
     public function test_os_pendente_sem_visita_vira_bloco_previsto_ou_atrasado_no_gantt(): void
@@ -132,6 +137,10 @@ class OperacaoDoDiaTest extends TestCase
 
         $this->assertCount(1, $linha['blocos_jornada']);
         $this->assertSame('ATRASO_INICIO', $linha['blocos_jornada'][0]['status']);
+        // Bloco nominal (ainda sem Visita) — tem loja (vem da própria OS) mas não tem visita_id
+        // pra abrir num duplo clique.
+        $this->assertSame($pdv->uuid, $linha['blocos_jornada'][0]['ponto_venda']['id']);
+        $this->assertNull($linha['blocos_jornada'][0]['visita_id']);
     }
 
     public function test_todas_as_os_concluidas_sem_visita_aberta_e_encerrado(): void
@@ -409,5 +418,102 @@ class OperacaoDoDiaTest extends TestCase
         $response = $this->getJson('/api/operacao-do-dia')->assertOk();
         $this->assertSame([], $response->json('equipe'));
         $this->assertSame(0, $response->json('kpis.em_campo.total'));
+    }
+
+    /**
+     * Seletor de data (docs/32-PAINEL-OPERACAO-DO-DIA.md, "puxar o realizado de ontem") —
+     * ?data= traz o dia pedido em vez de hoje, com `historico: true` marcando isso pro front.
+     */
+    public function test_data_passada_traz_o_historico_daquele_dia(): void
+    {
+        $empresa = Empresa::factory()->create();
+        $pdv = PontoVenda::factory()->create(['empresa_id' => $empresa->id]);
+        $promotor = Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]);
+        $ontem = Carbon::parse('2026-09-22');
+
+        $os = $this->criarOrdemServico($empresa, $pdv, $promotor, [
+            'prazo_fim' => $ontem,
+            'status' => StatusOrdemServico::CONCLUIDA,
+        ]);
+        $visita = Visita::factory()->finalizada()->create([
+            'empresa_id' => $empresa->id,
+            'ponto_venda_id' => $pdv->id,
+            'usuario_id' => $promotor->id,
+            'ordem_servico_id' => $os->id,
+            'inicio_data' => $ontem->copy()->setTime(9, 0),
+            'fim_data' => $ontem->copy()->setTime(10, 0),
+        ]);
+        $os->update(['visita_id' => $visita->id]);
+
+        // Uma OS de HOJE não pode vazar pro histórico de ontem.
+        $this->criarOrdemServico($empresa, $pdv, $promotor, ['status' => StatusOrdemServico::PENDENTE]);
+
+        $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
+        Sanctum::actingAs($admin);
+
+        $response = $this->getJson('/api/operacao-do-dia?data=2026-09-22')->assertOk();
+
+        $this->assertSame('2026-09-22', $response->json('data'));
+        $this->assertTrue($response->json('historico'));
+        $this->assertSame(1, $response->json('kpis.visitas_realizadas.feitas'));
+        $this->assertSame(1, $response->json('kpis.visitas_realizadas.total'));
+
+        $linha = collect($response->json('equipe'))->firstWhere('usuario.id', $promotor->uuid);
+        $this->assertCount(1, $linha['blocos_jornada']);
+        $this->assertSame('FEITA', $linha['blocos_jornada'][0]['status']);
+        $this->assertSame($visita->uuid, $linha['blocos_jornada'][0]['visita_id']);
+    }
+
+    public function test_data_futura_e_rejeitada(): void
+    {
+        $empresa = Empresa::factory()->create();
+        $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
+        Sanctum::actingAs($admin);
+
+        $this->getJson('/api/operacao-do-dia?data=2026-09-24')->assertStatus(422);
+    }
+
+    public function test_historico_esconde_sinal_fila_de_acoes_e_rupturas_por_sku(): void
+    {
+        $empresa = Empresa::factory()->create();
+        $pdv = PontoVenda::factory()->create(['empresa_id' => $empresa->id]);
+        $promotor = Usuario::factory()->promotor()->create([
+            'empresa_id' => $empresa->id,
+            'ultima_localizacao_em' => null,
+        ]);
+        $produto = ProdutoAuditoria::factory()->create(['empresa_id' => $empresa->id]);
+        $tipoRuptura = TipoRegistro::withoutGlobalScopes()->where('empresa_id', $empresa->id)->where('descricao', 'Ruptura')->first();
+        $tipoRuptura->update(['eh_alerta' => true]);
+
+        $os = $this->criarOrdemServico($empresa, $pdv, $promotor, ['status' => StatusOrdemServico::CONCLUIDA]);
+        $visita = Visita::factory()->finalizada()->create([
+            'empresa_id' => $empresa->id,
+            'ponto_venda_id' => $pdv->id,
+            'usuario_id' => $promotor->id,
+            'ordem_servico_id' => $os->id,
+        ]);
+        VisitaRegistro::create([
+            'visita_id' => $visita->id,
+            'tipo_registro_id' => $tipoRuptura->id,
+            'produto_auditoria_id' => $produto->id,
+            'ruptura' => true,
+        ]);
+
+        $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
+        Sanctum::actingAs($admin);
+
+        // Hoje (sem ?data=): sinal, fila de ações e rupturas por SKU aparecem normalmente.
+        $hoje = $this->getJson('/api/operacao-do-dia')->assertOk();
+        $this->assertFalse($hoje->json('historico'));
+        $this->assertGreaterThan(0, $hoje->json('kpis.rupturas_abertas.total'));
+        $this->assertNotEmpty($hoje->json('rupturas_por_sku'));
+
+        // Um dia passado: tudo isso é sempre "agora", não "daquele dia" — some da resposta.
+        $ontem = $this->getJson('/api/operacao-do-dia?data=2026-09-22')->assertOk();
+        $this->assertTrue($ontem->json('historico'));
+        $this->assertSame(0, $ontem->json('kpis.sem_sinal'));
+        $this->assertSame(['total' => 0, 'pdvs' => 0], $ontem->json('kpis.rupturas_abertas'));
+        $this->assertSame([], $ontem->json('fila_acoes'));
+        $this->assertSame([], $ontem->json('rupturas_por_sku'));
     }
 }
