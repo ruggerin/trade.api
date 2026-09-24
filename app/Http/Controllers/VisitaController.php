@@ -18,6 +18,7 @@ use App\Models\AutorizacaoGestor;
 use App\Models\CampanhaAuditoria;
 use App\Models\OrdemServico;
 use App\Models\PontoVenda;
+use App\Models\ProdutoAuditoria;
 use App\Models\Usuario;
 use App\Models\Visita;
 use App\Models\VisitaIntervencao;
@@ -63,7 +64,26 @@ class VisitaController extends Controller
             ->when($request->filled('data_fim'), fn ($query) => $query->whereDate('inicio_data', '<=', $request->string('data_fim')))
             // docs/03-ADMIN-WEB.md §1 pede filtro por status na listagem — não estava
             // documentado em docs/02-API-BACKEND.md ainda, sincronizado junto com este código.
-            ->when($request->filled('status'), fn ($query) => $query->where('status', $request->string('status')));
+            ->when($request->filled('status'), fn ($query) => $query->where('status', $request->string('status')))
+            // Drill-down do "Rupturas por SKU" da Operação do Dia (docs/32-PAINEL-OPERACAO-DO-DIA.md)
+            // pras visitas de origem — combináveis: só ruptura=1 já filtra qualquer ruptura aberta,
+            // só produto_auditoria_uuid filtra qualquer registro daquele produto (não só ruptura).
+            ->when(
+                $request->filled('produto_auditoria_uuid') || $request->boolean('ruptura'),
+                function ($query) use ($request) {
+                    $query->whereHas('registros', function ($q) use ($request) {
+                        $q->whereNull('cancelado_em')
+                            ->when(
+                                $request->filled('produto_auditoria_uuid'),
+                                fn ($q) => $q->where(
+                                    'produto_auditoria_id',
+                                    ProdutoAuditoria::where('uuid', $request->string('produto_auditoria_uuid'))->value('id'),
+                                ),
+                            )
+                            ->when($request->boolean('ruptura'), fn ($q) => $q->where('ruptura', true));
+                    });
+                },
+            );
 
         $visitas = $query->orderByDesc('inicio_data')->paginate();
 

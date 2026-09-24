@@ -6,6 +6,8 @@ use App\Models\CampanhaAuditoria;
 use App\Models\Empresa;
 use App\Models\Parametro;
 use App\Models\PontoVenda;
+use App\Models\ProdutoAuditoria;
+use App\Models\TipoRegistro;
 use App\Models\Usuario;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
@@ -286,6 +288,65 @@ class CheckinTest extends TestCase
         $ids = collect($response->json('visitas'))->pluck('id');
         $this->assertEquals([$finalizadaUuid], $ids->all());
         $this->assertNotContains($abertaUuid, $ids->all());
+    }
+
+    /**
+     * Drill-down do "Rupturas por SKU" da Operação do Dia (docs/32-PAINEL-OPERACAO-DO-DIA.md)
+     * pras visitas de origem — os dois filtros combinam: só a visita com ruptura do produto
+     * certo deve sobrar, não um registro do mesmo produto sem ruptura nem uma ruptura de outro
+     * produto.
+     */
+    public function test_lista_de_visitas_filtra_por_produto_e_ruptura(): void
+    {
+        $empresa = Empresa::factory()->create();
+        $promotor = Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]);
+        $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
+
+        $produtoA = ProdutoAuditoria::factory()->create(['empresa_id' => $empresa->id]);
+        $produtoB = ProdutoAuditoria::factory()->create(['empresa_id' => $empresa->id]);
+        $tipoRuptura = TipoRegistro::withoutGlobalScopes()->where('empresa_id', $empresa->id)->where('descricao', 'Ruptura')->value('uuid');
+        $tipoObservacao = TipoRegistro::withoutGlobalScopes()->where('empresa_id', $empresa->id)->where('descricao', 'Observação')->value('uuid');
+
+        Sanctum::actingAs($promotor);
+
+        // Visita 1: ruptura do produto A — é a única que deveria sobrar no filtro combinado.
+        $pdv1 = PontoVenda::factory()->create(['empresa_id' => $empresa->id]);
+        $visita1 = $this->postJson('/api/visitas', [
+            'ponto_venda_uuid' => $pdv1->uuid, 'latitude' => $pdv1->latitude, 'longitude' => $pdv1->longitude,
+        ])->json('visita.id');
+        $this->postJson("/api/visitas/{$visita1}/registros", [
+            'tipo_registro_uuid' => $tipoRuptura, 'produto_auditoria_uuid' => $produtoA->uuid, 'ruptura' => true,
+        ])->assertCreated();
+
+        // Visita 2: registro do produto A SEM ruptura — não pode aparecer quando ruptura=1.
+        $pdv2 = PontoVenda::factory()->create(['empresa_id' => $empresa->id]);
+        $visita2 = $this->postJson('/api/visitas', [
+            'ponto_venda_uuid' => $pdv2->uuid, 'latitude' => $pdv2->latitude, 'longitude' => $pdv2->longitude,
+        ])->json('visita.id');
+        $this->postJson("/api/visitas/{$visita2}/registros", [
+            'tipo_registro_uuid' => $tipoObservacao, 'produto_auditoria_uuid' => $produtoA->uuid, 'observacao' => 'ok',
+        ])->assertCreated();
+
+        // Visita 3: ruptura do produto B — não pode aparecer quando filtra pelo produto A.
+        $pdv3 = PontoVenda::factory()->create(['empresa_id' => $empresa->id]);
+        $visita3 = $this->postJson('/api/visitas', [
+            'ponto_venda_uuid' => $pdv3->uuid, 'latitude' => $pdv3->latitude, 'longitude' => $pdv3->longitude,
+        ])->json('visita.id');
+        $this->postJson("/api/visitas/{$visita3}/registros", [
+            'tipo_registro_uuid' => $tipoRuptura, 'produto_auditoria_uuid' => $produtoB->uuid, 'ruptura' => true,
+        ])->assertCreated();
+
+        Sanctum::actingAs($admin);
+
+        $resposta = $this->getJson("/api/visitas?produto_auditoria_uuid={$produtoA->uuid}&ruptura=1")->assertOk();
+        $this->assertEquals([$visita1], collect($resposta->json('visitas'))->pluck('id')->all());
+
+        // Só ruptura=1, sem produto — pega as visitas 1 e 3 (qualquer ruptura), não a 2.
+        $respostaSoRuptura = $this->getJson('/api/visitas?ruptura=1')->assertOk();
+        $this->assertEqualsCanonicalizing(
+            [$visita1, $visita3],
+            collect($respostaSoRuptura->json('visitas'))->pluck('id')->all(),
+        );
     }
 
     /**

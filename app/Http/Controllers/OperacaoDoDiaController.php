@@ -29,19 +29,43 @@ class OperacaoDoDiaController extends Controller
             abort(403, 'A Operação do Dia é só para ADMIN/GESTOR.');
         }
 
+        $request->validate([
+            // Sem 'after' pro futuro aqui — "operação do dia" de um dia que ainda não chegou não
+            // tem o que mostrar (nenhuma OS/visita existiria ainda pra ele); rejeitado abaixo com
+            // a mesma mensagem de validação, não um 200 silenciosamente vazio.
+            'data' => ['nullable', 'date_format:Y-m-d'],
+        ]);
+
         $empresa = $usuario->empresa;
-        $agora = now();
+        $dia = $request->filled('data') ? Carbon::parse($request->string('data'))->startOfDay() : now();
+
+        if ($dia->isFuture()) {
+            abort(422, 'A Operação do Dia não existe pra uma data futura.');
+        }
+
+        // "Histórico" = qualquer dia que não seja hoje. Um punhado de conceitos aqui só fazem
+        // sentido "agora" (sinal de GPS ao vivo, fila de ações, rupturas ainda abertas) — eles
+        // continuam sempre no estado atual, nunca filtrados por `$dia` (ver kpis()/filaAcoes()/
+        // rupturas_por_sku abaixo); o front esconde essas seções quando `historico` é true, pra
+        // não parecer que são "daquele dia".
+        $historico = ! $dia->isToday();
+        // Blocos ainda "em aberto" (visita ATUAL, OS pendente sem visita) e a comparação de
+        // atraso precisam de um teto — hoje é "agora" de verdade; num dia passado, o teto é o
+        // fim daquele próprio dia (senão uma visita esquecida aberta desde ontem esticaria a
+        // barra do Gantt até a hora atual de hoje, sem nenhum sentido visual).
+        $agora = $historico ? $dia->copy()->endOfDay() : now();
         $janelaSinal = now()->subMinutes(Rastreamento::JANELA_ATIVO_MINUTOS);
 
-        $porPromotor = SuporteOperacaoDoDia::statusPorPromotor($empresa);
+        $porPromotor = SuporteOperacaoDoDia::statusPorPromotor($empresa, $dia);
         $rupturasAbertas = $this->rupturasAbertasPorPromotor($empresa);
         $tolerancia = SuporteOperacaoDoDia::toleranciaAtrasoMinutos($empresa);
 
-        $equipe = $porPromotor->map(function (array $linha) use ($janelaSinal, $rupturasAbertas, $agora, $tolerancia) {
+        $equipe = $porPromotor->map(function (array $linha) use ($janelaSinal, $rupturasAbertas, $agora, $tolerancia, $historico) {
             $promotor = $linha['usuario'];
             $visita = $linha['visita_aberta'];
             $ordens = $linha['ordens'];
-            $semSinal = ! $promotor->ultima_localizacao_em || $promotor->ultima_localizacao_em->lt($janelaSinal);
+            $semSinal = ! $historico
+                && (! $promotor->ultima_localizacao_em || $promotor->ultima_localizacao_em->lt($janelaSinal));
 
             return [
                 'usuario' => [
@@ -66,11 +90,14 @@ class OperacaoDoDiaController extends Controller
         })->sortBy(fn ($linha) => $linha['usuario']['nome'])->values();
 
         return response()->json([
+            'data' => $dia->toDateString(),
+            'historico' => $historico,
             'jornada' => SuporteOperacaoDoDia::jornada($empresa),
-            'kpis' => $this->kpis($empresa, $porPromotor, $equipe),
+            'kpis' => $this->kpis($empresa, $porPromotor, $equipe, $dia),
             'equipe' => $equipe,
-            'fila_acoes' => $this->filaAcoes($empresa, $porPromotor, $agora),
-            'rupturas_por_sku' => SuporteOperacaoDoDia::rupturasAbertasPorSku($empresa)->map(fn ($linha) => [
+            // Sempre o estado atual — nunca "daquele dia" (ver comentário acima de $historico).
+            'fila_acoes' => $historico ? [] : $this->filaAcoes($empresa, $porPromotor, $agora),
+            'rupturas_por_sku' => $historico ? [] : SuporteOperacaoDoDia::rupturasAbertasPorSku($empresa)->map(fn ($linha) => [
                 'produto' => [
                     'id' => $linha['produto']->uuid,
                     'descricao' => $linha['produto']->descricao,
@@ -85,8 +112,9 @@ class OperacaoDoDiaController extends Controller
     /**
      * @param  Collection<int, array{usuario: \App\Models\Usuario, status: string, visita_aberta: mixed, ordens: Collection}>  $porPromotor
      */
-    private function kpis(Empresa $empresa, Collection $porPromotor, Collection $equipe): array
+    private function kpis(Empresa $empresa, Collection $porPromotor, Collection $equipe, Carbon $dia): array
     {
+        $historico = ! $dia->isToday();
         $ordensHoje = $porPromotor->flatMap(fn ($linha) => $linha['ordens']);
         $planejadas = $ordensHoje->whereNotIn('status', [StatusOrdemServico::CANCELADA, StatusOrdemServico::AGUARDANDO_APROVACAO]);
 
@@ -101,9 +129,10 @@ class OperacaoDoDiaController extends Controller
                 'encerrados' => $porPromotor->where('status', SuporteOperacaoDoDia::STATUS_ENCERRADO)->count(),
             ],
             'atrasados' => $porPromotor->where('status', SuporteOperacaoDoDia::STATUS_ATRASADO)->count(),
-            'sem_sinal' => $equipe->where('sem_sinal', true)->count(),
-            'rupturas_abertas' => $this->contagemRupturasAbertas($empresa),
-            'formularios_emitidos' => SuporteOperacaoDoDia::formulariosEmitidosHoje($empresa),
+            // Sempre o estado atual, nunca "daquele dia" — ver comentário de $historico em index().
+            'sem_sinal' => $historico ? 0 : $equipe->where('sem_sinal', true)->count(),
+            'rupturas_abertas' => $historico ? ['total' => 0, 'pdvs' => 0] : $this->contagemRupturasAbertas($empresa),
+            'formularios_emitidos' => SuporteOperacaoDoDia::formulariosEmitidosHoje($empresa, $dia),
         ];
     }
 
@@ -123,12 +152,18 @@ class OperacaoDoDiaController extends Controller
         foreach ($ordens as $os) {
             /** @var OrdemServico $os */
             $visita = $os->visita;
+            // A visita nasce vinculada à mesma loja da OS (ver VisitaController::store) — usar a
+            // da própria OS evita depender de `visita.pontoVenda` estar eager-loaded aqui (só
+            // `pontoVenda`/`visita`/`usuario` vêm carregados de OperacaoDoDia::statusPorPromotor).
+            $pontoVenda = $os->pontoVenda ? ['id' => $os->pontoVenda->uuid, 'fantasia' => $os->pontoVenda->fantasia] : null;
 
             if ($visita) {
                 $blocos[] = [
                     'inicio' => $visita->inicio_data,
                     'fim' => $visita->fim_data ?? $agora,
                     'status' => $visita->fim_data ? 'FEITA' : 'ATUAL',
+                    'ponto_venda' => $pontoVenda,
+                    'visita_id' => $visita->uuid,
                 ];
 
                 continue;
@@ -145,6 +180,10 @@ class OperacaoDoDiaController extends Controller
                 'inicio' => $previsto,
                 'fim' => $previsto->copy()->addMinutes($atrasado ? 15 : 45),
                 'status' => $atrasado ? 'ATRASO_INICIO' : 'PREVISTA',
+                'ponto_venda' => $pontoVenda,
+                // Ainda não existe Visita pra um bloco nominal (previsto/atrasado) — nada pra
+                // detalhar num duplo clique.
+                'visita_id' => null,
             ];
         }
 
