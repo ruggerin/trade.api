@@ -35,8 +35,9 @@ class OperacaoDoDiaController extends Controller
 
         $porPromotor = SuporteOperacaoDoDia::statusPorPromotor($empresa);
         $rupturasAbertas = $this->rupturasAbertasPorPromotor($empresa);
+        $tolerancia = SuporteOperacaoDoDia::toleranciaAtrasoMinutos($empresa);
 
-        $equipe = $porPromotor->map(function (array $linha) use ($janelaSinal, $rupturasAbertas) {
+        $equipe = $porPromotor->map(function (array $linha) use ($janelaSinal, $rupturasAbertas, $agora, $tolerancia) {
             $promotor = $linha['usuario'];
             $visita = $linha['visita_aberta'];
             $ordens = $linha['ordens'];
@@ -60,6 +61,7 @@ class OperacaoDoDiaController extends Controller
                 'rupturas' => $rupturasAbertas->get($promotor->id, 0),
                 'ultima_localizacao_em' => $promotor->ultima_localizacao_em,
                 'sem_sinal' => $semSinal && $linha['status'] !== SuporteOperacaoDoDia::STATUS_ENCERRADO,
+                'blocos_jornada' => $this->blocosJornada($ordens, $agora, $tolerancia),
             ];
         })->sortBy(fn ($linha) => $linha['usuario']['nome'])->values();
 
@@ -103,6 +105,50 @@ class OperacaoDoDiaController extends Controller
             'rupturas_abertas' => $this->contagemRupturasAbertas($empresa),
             'formularios_emitidos' => SuporteOperacaoDoDia::formulariosEmitidosHoje($empresa),
         ];
+    }
+
+    /**
+     * Blocos pro Gantt "Jornada" (Fase 3) — um por OS do promotor hoje. OS com visita vinculada
+     * vira bloco real (FEITA se a visita já fechou, ATUAL se ainda está aberta, `fim` = agora
+     * nesse caso). OS ainda pendente (sem visita) vira um bloco pequeno e nominal a partir do
+     * `horario_previsto` — 45 min se ainda dentro da tolerância (PREVISTA), 15 min se já passou
+     * (ATRASO_INICIO); não é a duração real (ainda não existe), só um marcador visual.
+     *
+     * @return list<array{inicio: Carbon, fim: Carbon, status: string}>
+     */
+    private function blocosJornada(Collection $ordens, Carbon $agora, int $tolerancia): array
+    {
+        $blocos = [];
+
+        foreach ($ordens as $os) {
+            /** @var OrdemServico $os */
+            $visita = $os->visita;
+
+            if ($visita) {
+                $blocos[] = [
+                    'inicio' => $visita->inicio_data,
+                    'fim' => $visita->fim_data ?? $agora,
+                    'status' => $visita->fim_data ? 'FEITA' : 'ATUAL',
+                ];
+
+                continue;
+            }
+
+            if (! $os->horario_previsto || $os->status === StatusOrdemServico::CANCELADA) {
+                continue;
+            }
+
+            $previsto = SuporteOperacaoDoDia::horarioPrevistoEm($agora, $os->horario_previsto);
+            $atrasado = $previsto->copy()->addMinutes($tolerancia)->lt($agora);
+
+            $blocos[] = [
+                'inicio' => $previsto,
+                'fim' => $previsto->copy()->addMinutes($atrasado ? 15 : 45),
+                'status' => $atrasado ? 'ATRASO_INICIO' : 'PREVISTA',
+            ];
+        }
+
+        return $blocos;
     }
 
     /** @return array{total: int, pdvs: int} */

@@ -83,6 +83,55 @@ class OperacaoDoDiaTest extends TestCase
         $this->assertSame('NO_PDV', $linha['status']);
         $this->assertSame($pdv->uuid, $linha['ponto_venda_atual']['id']);
         $this->assertSame(1, $response->json('kpis.em_campo.atual'));
+
+        // Bloco "ATUAL" do Gantt — visita aberta, sem fim ainda.
+        $this->assertCount(1, $linha['blocos_jornada']);
+        $this->assertSame('ATUAL', $linha['blocos_jornada'][0]['status']);
+    }
+
+    public function test_visita_finalizada_vira_bloco_feita_no_gantt(): void
+    {
+        $empresa = Empresa::factory()->create();
+        $pdv = PontoVenda::factory()->create(['empresa_id' => $empresa->id]);
+        $promotor = Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]);
+        $os = $this->criarOrdemServico($empresa, $pdv, $promotor, ['status' => StatusOrdemServico::CONCLUIDA]);
+        $visita = Visita::factory()->finalizada()->create([
+            'empresa_id' => $empresa->id,
+            'ponto_venda_id' => $pdv->id,
+            'usuario_id' => $promotor->id,
+            'ordem_servico_id' => $os->id,
+        ]);
+        $os->update(['visita_id' => $visita->id]);
+
+        $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
+        Sanctum::actingAs($admin);
+
+        $response = $this->getJson('/api/operacao-do-dia')->assertOk();
+        $linha = collect($response->json('equipe'))->firstWhere('usuario.id', $promotor->uuid);
+
+        $this->assertCount(1, $linha['blocos_jornada']);
+        $this->assertSame('FEITA', $linha['blocos_jornada'][0]['status']);
+        $this->assertNotNull($linha['blocos_jornada'][0]['fim']);
+    }
+
+    public function test_os_pendente_sem_visita_vira_bloco_previsto_ou_atrasado_no_gantt(): void
+    {
+        $empresa = Empresa::factory()->create();
+        $pdv = PontoVenda::factory()->create(['empresa_id' => $empresa->id]);
+        $promotor = Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]);
+        $this->criarOrdemServico($empresa, $pdv, $promotor, [
+            'status' => StatusOrdemServico::PENDENTE,
+            'horario_previsto' => now()->subHour()->format('H:i'),
+        ]);
+
+        $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
+        Sanctum::actingAs($admin);
+
+        $response = $this->getJson('/api/operacao-do-dia')->assertOk();
+        $linha = collect($response->json('equipe'))->firstWhere('usuario.id', $promotor->uuid);
+
+        $this->assertCount(1, $linha['blocos_jornada']);
+        $this->assertSame('ATRASO_INICIO', $linha['blocos_jornada'][0]['status']);
     }
 
     public function test_todas_as_os_concluidas_sem_visita_aberta_e_encerrado(): void
