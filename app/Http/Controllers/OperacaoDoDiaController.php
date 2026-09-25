@@ -243,7 +243,7 @@ class OperacaoDoDiaController extends Controller
             ->whereNull('alerta_resolvido_em')
             ->whereHas('tipoRegistro', fn ($q) => $q->where('eh_alerta', true))
             ->whereHas('visita', fn ($q) => $q->where('empresa_id', $empresa->id))
-            ->with(['visita.pontoVenda', 'visita.usuario', 'tipoRegistro', 'produtoAuditoria'])
+            ->with(['visita.pontoVenda', 'visita.usuario', 'tipoRegistro', 'produtoAuditoria', 'planoAcaoAtivo'])
             ->get()
             ->map(fn (VisitaRegistro $registro) => [
                 'tipo' => 'ALERTA',
@@ -258,7 +258,18 @@ class OperacaoDoDiaController extends Controller
                 // visita_id junto do registro: o front precisa dos dois pra chamar
                 // POST /visitas/{visita}/registros/{registro}/resolver-alerta (mesmo endpoint já
                 // usado no Painel de Atividades, doc 19).
-                'registro' => ['id' => $registro->uuid, 'visita_id' => $registro->visita->uuid],
+                // tipo/produto/observacao pré-preenchem o diálogo "Abrir Plano de Ação"; o plano
+                // ativo troca "Resolver" por "Ver plano" (docs/37-PLANOS-DE-ACAO.md §5).
+                'registro' => [
+                    'id' => $registro->uuid,
+                    'visita_id' => $registro->visita->uuid,
+                    'tipo' => $registro->tipoRegistro->descricao,
+                    'produto' => $registro->produtoAuditoria?->descricao,
+                    'observacao' => $registro->observacao,
+                    'plano_acao_ativo' => $registro->planoAcaoAtivo
+                        ? ['id' => $registro->planoAcaoAtivo->uuid, 'status' => $registro->planoAcaoAtivo->status]
+                        : null,
+                ],
             ]);
 
         $deAtraso = $porPromotor

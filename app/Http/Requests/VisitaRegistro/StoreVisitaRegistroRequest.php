@@ -154,8 +154,15 @@ class StoreVisitaRegistroRequest extends FormRequest
                     $validator->errors()->add("valores_campos.{$campo->chave}", "Valor inválido pro campo \"{$campo->rotulo}\".");
                 }
 
-                if ($campo->tipo_campo === TipoCampoRegistro::DATA && ! $this->ehDataValida($valor)) {
-                    $validator->errors()->add("valores_campos.{$campo->chave}", "O campo \"{$campo->rotulo}\" precisa ser uma data válida no formato dd/mm/aaaa.");
+                if ($campo->tipo_campo === TipoCampoRegistro::DATA) {
+                    if (! $this->ehDataValida($valor)) {
+                        $validator->errors()->add("valores_campos.{$campo->chave}", "O campo \"{$campo->rotulo}\" precisa ser uma data válida no formato dd/mm/aaaa.");
+                    } elseif ($campo->limite_dias_retroativos !== null && ! $this->dentroDoLimiteRetroativo($valor, $campo->limite_dias_retroativos)) {
+                        $validator->errors()->add(
+                            "valores_campos.{$campo->chave}",
+                            "O campo \"{$campo->rotulo}\" não aceita uma data anterior a {$campo->limite_dias_retroativos} dia(s) atrás.",
+                        );
+                    }
                 }
 
                 if ($campo->tipo_campo === TipoCampoRegistro::SORTIMENTO) {
@@ -214,6 +221,19 @@ class StoreVisitaRegistroRequest extends FormRequest
         } catch (\Throwable) {
             return false;
         }
+    }
+
+    /**
+     * `$valor` já passou por ehDataValida() antes de chegar aqui — ver docs/35-LIMITE-RETROATIVO-
+     * CAMPO-DATA.md. Data futura nunca é rejeitada por este limite (só controla o quanto pro
+     * passado é aceito).
+     */
+    private function dentroDoLimiteRetroativo(string $valor, int $limiteDias): bool
+    {
+        $data = Carbon::createFromFormat('d/m/Y', $valor)->startOfDay();
+        $maisAntigaAceita = Carbon::now()->startOfDay()->subDays($limiteDias);
+
+        return ! $data->lt($maisAntigaAceita);
     }
 
     /**

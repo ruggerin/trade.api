@@ -54,6 +54,8 @@ class UpdateTipoRegistroRequest extends FormRequest
             'campos.*.opcoes' => ['required_if:campos.*.tipo_campo,MULTIPLA_ESCOLHA', 'array', 'min:1'],
             'campos.*.opcoes.*' => ['string', 'max:255'],
             'campos.*.obrigatorio' => ['nullable', 'boolean'],
+            // Só tem efeito quando tipo_campo = DATA — ver docs/35-LIMITE-RETROATIVO-CAMPO-DATA.md.
+            'campos.*.limite_dias_retroativos' => ['nullable', 'integer', 'min:0'],
             // Campo condicional — ver StoreTipoRegistroRequest.
             'campos.*.depende_de_chave' => ['nullable', 'string', 'max:50'],
             'campos.*.depende_de_valor' => ['required_with:campos.*.depende_de_chave', 'nullable', 'string'],

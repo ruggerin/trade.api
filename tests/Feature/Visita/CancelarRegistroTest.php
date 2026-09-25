@@ -123,7 +123,10 @@ class CancelarRegistroTest extends TestCase
         $promotor = Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]);
         $visitaUuidA = $this->abrirVisita($promotor, $pdv);
         $registroUuidA = $this->criarRegistro($empresa, $visitaUuidA);
-        // Outra loja: no MESMO PDV o check-in retomaria a visita aberta (ver RetomadaEAutorizacaoTest).
+        // Uma visita ABERTA por vez (RetomadaEAutorizacaoTest) — finaliza A antes de abrir B em
+        // outra loja (no MESMO PDV o check-in retomaria a visita aberta em vez de criar outra).
+        Sanctum::actingAs($promotor);
+        $this->patchJson("/api/visitas/{$visitaUuidA}/checkout", ['latitude' => $pdv->latitude, 'longitude' => $pdv->longitude])->assertOk();
         $visitaUuidB = $this->abrirVisita($promotor, PontoVenda::factory()->create(['empresa_id' => $empresa->id]));
 
         Sanctum::actingAs($promotor);

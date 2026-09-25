@@ -187,9 +187,10 @@ class GaleriaFotosTest extends TestCase
         $empresa = Empresa::factory()->create();
         $pdvA = PontoVenda::factory()->create(['empresa_id' => $empresa->id]);
         $pdvB = PontoVenda::factory()->create(['empresa_id' => $empresa->id]);
-        $promotor = Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]);
-        $this->criarRegistroComFoto($empresa, $pdvA, $promotor);
-        $this->criarRegistroComFoto($empresa, $pdvB, $promotor);
+        // Um promotor por loja — uma visita ABERTA por vez (RetomadaEAutorizacaoTest) impediria o
+        // mesmo promotor abrir as duas sem finalizar a primeira, e não é o que este teste cobre.
+        $this->criarRegistroComFoto($empresa, $pdvA, Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]));
+        $this->criarRegistroComFoto($empresa, $pdvB, Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]));
 
         $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
         Sanctum::actingAs($admin);
@@ -210,9 +211,9 @@ class GaleriaFotosTest extends TestCase
             'empresa_id' => $empresa->id, 'rede_loja_id' => $rede->id, 'ramo_atividade_id' => $ramo->id,
         ]);
         $pdvFora = PontoVenda::factory()->create(['empresa_id' => $empresa->id]);
-        $promotor = Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]);
-        $this->criarRegistroComFoto($empresa, $pdvNaRede, $promotor);
-        $this->criarRegistroComFoto($empresa, $pdvFora, $promotor);
+        // Um promotor por loja — mesmo racional de test_filtro_por_loja acima.
+        $this->criarRegistroComFoto($empresa, $pdvNaRede, Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]));
+        $this->criarRegistroComFoto($empresa, $pdvFora, Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]));
 
         $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
         Sanctum::actingAs($admin);

@@ -90,6 +90,12 @@ class VisitaRegistroResource extends JsonResource
                 'resolvidoPor',
                 fn () => $this->resolvidoPor ? ['id' => $this->resolvidoPor->uuid, 'nome' => $this->resolvidoPor->nome] : null,
             ),
+            // Plano de Ação em andamento nascido deste alerta (docs/37 §5) — o card do Painel de
+            // Atividades troca "Abrir Plano de Ação" por "Ver plano" quando existe.
+            'plano_acao_ativo' => $this->whenLoaded(
+                'planoAcaoAtivo',
+                fn () => $this->planoAcaoAtivo ? ['id' => $this->planoAcaoAtivo->uuid, 'status' => $this->planoAcaoAtivo->status] : null,
+            ),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];

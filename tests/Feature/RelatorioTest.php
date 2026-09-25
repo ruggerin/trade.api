@@ -12,6 +12,7 @@ use App\Models\TipoRegistro;
 use App\Models\Usuario;
 use App\Models\Visita;
 use App\Models\VisitaRegistro;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
@@ -31,9 +32,22 @@ class RelatorioTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        // Congela o relógio ao meio-dia — vários testes montam OS com `now()->subMinute()`/
+        // `now()->addMinutes(30)`/etc. em cima de "agora" real; perto da meia-noite isso pode
+        // cruzar pro dia seguinte (ou anterior) enquanto `$hoje = now()->toDateString()` já foi
+        // calculado antes, fazendo o filtro de data do relatório excluir a OS que o teste acabou
+        // de criar — mesma classe de bug já corrigida em
+        // App\Support\OperacaoDoDia::horarioPrevistoEm (ver OperacaoDoDiaTest).
+        Carbon::setTestNow(Carbon::parse('2026-09-23 12:00:00'));
         $this->empresa = Empresa::factory()->create();
         $this->promotor = Usuario::factory()->promotor()->create(['empresa_id' => $this->empresa->id, 'nome' => 'Ana Promotora']);
         Sanctum::actingAs(Usuario::factory()->admin()->create(['empresa_id' => $this->empresa->id]));
+    }
+
+    protected function tearDown(): void
+    {
+        Carbon::setTestNow();
+        parent::tearDown();
     }
 
     private function pdv(?Empresa $empresa = null): PontoVenda

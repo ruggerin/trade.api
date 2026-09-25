@@ -28,6 +28,7 @@ use App\Http\Controllers\OperacaoDoDiaController;
 use App\Http\Controllers\OrdemServicoController;
 use App\Http\Controllers\ParametroController;
 use App\Http\Controllers\PerfilController;
+use App\Http\Controllers\PlanoAcaoController;
 use App\Http\Controllers\PlanogramaBlocoController;
 use App\Http\Controllers\PlanogramaController;
 use App\Http\Controllers\PlanogramaPrateleiraController;
@@ -423,6 +424,24 @@ Route::middleware('auth:sanctum')->group(function (): void {
         Route::put('/agendas-visita/{agendaVisita}', [AgendaVisitaController::class, 'update']);
         Route::delete('/agendas-visita/{agendaVisita}', [AgendaVisitaController::class, 'destroy']);
     });
+
+    // Planos de Ação (docs/37-PLANOS-DE-ACAO.md) — rastreamento multi-etapa de um alerta, cada
+    // ação atrás da própria permissão (§6): um "Supervisor de Vendas" pode ter só planos_acao.*.
+    // /responsaveis precisa vir ANTES de /{planoAcao} (mesma nota de /campanhas-auditoria/disponiveis).
+    Route::middleware('permissao:planos_acao.visualizar')->group(function (): void {
+        Route::get('/planos-acao', [PlanoAcaoController::class, 'index']);
+        Route::get('/planos-acao/responsaveis', [PlanoAcaoController::class, 'responsaveis']);
+        Route::get('/planos-acao/{planoAcao}', [PlanoAcaoController::class, 'show']);
+        Route::get('/planos-acao/{planoAcao}/etapas/{etapa}/evidencia', [PlanoAcaoController::class, 'evidencia']);
+    });
+    Route::post('/planos-acao', [PlanoAcaoController::class, 'store'])->middleware('permissao:planos_acao.criar');
+    Route::middleware('permissao:planos_acao.movimentar_etapa')->group(function (): void {
+        Route::post('/planos-acao/{planoAcao}/etapas', [PlanoAcaoController::class, 'adicionarEtapa']);
+        // POST (não PATCH) porque aceita multipart com o anexo de evidência.
+        Route::post('/planos-acao/{planoAcao}/etapas/{etapa}/status', [PlanoAcaoController::class, 'alterarStatusEtapa']);
+    });
+    Route::post('/planos-acao/{planoAcao}/concluir', [PlanoAcaoController::class, 'concluir'])->middleware('permissao:planos_acao.concluir');
+    Route::post('/planos-acao/{planoAcao}/cancelar', [PlanoAcaoController::class, 'cancelar'])->middleware('permissao:planos_acao.cancelar');
 
     // Centros de custo: dado financeiro, diferente do resto do catálogo a LEITURA também exige
     // a permissão (nunca aberta a qualquer autenticado) — ver docs/08-CENTRO-DE-CUSTO.md.

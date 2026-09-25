@@ -114,8 +114,14 @@ class VisitaController extends Controller
         // VisitaRegistroResource) — a visita pai já é conhecida aqui.
         $visita->registros->each(fn ($registro) => $registro->setRelation('visita', $visita));
 
+        // Raio de check-in ATUAL da empresa (não o de quando a visita aconteceu — não é gravado
+        // por visita) — o admin desenha a cerca no mapa do detalhe. null = sem limite (parâmetro
+        // desativado, ver App\Support\RaioCheckin).
+        $raio = RaioCheckin::metros($visita->empresa);
+
         return response()->json([
             'visita' => new VisitaResource($visita),
+            'raio_checkin_metros' => is_finite($raio) ? $raio : null,
         ]);
     }
 
@@ -188,6 +194,27 @@ class VisitaController extends Controller
                 'visita' => new VisitaResource($aberta->load(['pontoVenda', 'campanha', 'ordemServico'])),
                 'retomada' => true,
             ], 200);
+        }
+
+        // Visita ABERTA deste promotor em OUTRA loja — diferente do caso acima, aqui não tem o que
+        // retomar (é outro PDV de verdade), então recusa. Até agora essa regra só existia no
+        // aparelho (lib/visitaLocal.ts::iniciarVisitaLocal, "uma visita por vez") — sem trava aqui,
+        // qualquer coisa que fizesse o estado local divergir do servidor (reinstalar o app, trocar
+        // de aparelho, limpar dados) deixava abrir uma segunda visita ABERTA de verdade. O check-in
+        // no mobile é assíncrono (fila de envio, ver docs/04-APP-MOBILE.md) — essa `message` chega
+        // como rejeição permanente e vira "Check-in recusado pelo servidor: ..." pro promotor, sem
+        // precisar de nenhuma mudança no app.
+        $outraAberta = Visita::where('usuario_id', $request->user()->id)
+            ->where('ponto_venda_id', '!=', $pontoVenda->id)
+            ->where('status', StatusVisita::ABERTA)
+            ->with('pontoVenda')
+            ->orderByDesc('id')
+            ->first();
+
+        if ($outraAberta) {
+            return response()->json([
+                'message' => "Você já está em uma visita em {$outraAberta->pontoVenda->fantasia}. Finalize-a antes de iniciar outra.",
+            ], 422);
         }
 
         $visita = Visita::create([

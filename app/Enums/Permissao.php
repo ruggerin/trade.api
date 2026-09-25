@@ -40,6 +40,16 @@ enum Permissao: string
     // Gravar pedidos do ERP (docs/28 §4.2) — pensada pro integrador externo (um usuário ADMIN de
     // serviço, ou um perfil de GESTOR dedicado), não pra digitação manual no admin.
     case PEDIDOS_GERENCIAR = 'pedidos.gerenciar';
+
+    // Planos de Ação (docs/37-PLANOS-DE-ACAO.md §6) — fatiadas por ação, não um "gerenciar"
+    // único: quem movimenta etapa no dia a dia ("operacional") não é necessariamente quem tem
+    // autoridade pra dar o problema como resolvido (concluir). Permite, por exemplo, um perfil
+    // "Supervisor de Vendas" só com planos_acao.*, sem nada de campanha/contrato.
+    case PLANOS_ACAO_VISUALIZAR = 'planos_acao.visualizar';
+    case PLANOS_ACAO_CRIAR = 'planos_acao.criar';
+    case PLANOS_ACAO_MOVIMENTAR_ETAPA = 'planos_acao.movimentar_etapa';
+    case PLANOS_ACAO_CONCLUIR = 'planos_acao.concluir';
+    case PLANOS_ACAO_CANCELAR = 'planos_acao.cancelar';
 }
 
 // Tipo de visita (tag colorida) e agenda de visita reaproveitam ORDENS_SERVICO_GERENCIAR — são

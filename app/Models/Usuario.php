@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\Permissao;
 use App\Enums\UserType;
 use App\Models\Concerns\BelongsToEmpresa;
 use App\Models\Concerns\HasUuid;
@@ -72,6 +73,21 @@ class Usuario extends Authenticatable
     public function perfil(): BelongsTo
     {
         return $this->belongsTo(Perfil::class);
+    }
+
+    /**
+     * Mesma regra de EnsurePermissao pra ADMIN/GESTOR (ADMIN sempre, GESTOR pelo perfil), pra
+     * quando o controller precisa DIZER ao front o que o usuário pode fazer em vez de só barrar
+     * a rota — ex.: botão "Concluir plano" desabilitado com aviso (docs/37 §4.7). Não cobre a
+     * exceção de SUPERADMIN do middleware (restrita a chaves/métodos específicos).
+     */
+    public function temPermissao(Permissao $permissao): bool
+    {
+        return match ($this->user_type) {
+            UserType::ADMIN => true,
+            UserType::GESTOR => $this->perfil?->tem($permissao) ?? false,
+            default => false,
+        };
     }
 
     /**

@@ -23,6 +23,7 @@ class CampoTipoRegistro extends Model
 
     protected $fillable = [
         'tipo_registro_id', 'chave', 'rotulo', 'tipo_campo', 'opcoes', 'obrigatorio', 'ordem',
+        'limite_dias_retroativos',
         'depende_de_campo_id', 'depende_de_valor',
         'sortimento_origem', 'sortimento_tipo_vinculo', 'sortimento_secao_id',
         'sortimento_departamento_id', 'sortimento_marca_id', 'confirmar_ruptura_ausentes',
@@ -34,6 +35,7 @@ class CampoTipoRegistro extends Model
             'tipo_campo' => TipoCampoRegistro::class,
             'opcoes' => 'array',
             'obrigatorio' => 'boolean',
+            'limite_dias_retroativos' => 'integer',
             'sortimento_origem' => SortimentoOrigemCampo::class,
             'sortimento_tipo_vinculo' => TipoItemCampanha::class,
             'confirmar_ruptura_ausentes' => 'boolean',
