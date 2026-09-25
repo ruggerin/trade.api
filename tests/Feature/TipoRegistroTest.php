@@ -115,7 +115,47 @@ class TipoRegistroTest extends TestCase
 
         $response->assertCreated()
             ->assertJsonPath('tipo_registro.campos.0.tipo_campo', 'BOOLEANO')
-            ->assertJsonPath('tipo_registro.campos.1.tipo_campo', 'DATA');
+            ->assertJsonPath('tipo_registro.campos.1.tipo_campo', 'DATA')
+            // Sem limite = comportamento padrão, aceita qualquer data passada — ver
+            // docs/35-LIMITE-RETROATIVO-CAMPO-DATA.md.
+            ->assertJsonPath('tipo_registro.campos.1.limite_dias_retroativos', null);
+    }
+
+    /** docs/35-LIMITE-RETROATIVO-CAMPO-DATA.md — salva, edita e permite limpar (voltar a "sem limite"). */
+    public function test_salva_edita_e_limpa_limite_dias_retroativos_no_campo_data(): void
+    {
+        $empresa = Empresa::factory()->create();
+        $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
+        Sanctum::actingAs($admin);
+
+        $criado = $this->postJson('/api/tipos-registro', [
+            'descricao' => 'Alerta de Validade Próxima',
+            'campos' => [
+                ['chave' => 'dt_validade', 'rotulo' => 'Validade', 'tipo_campo' => 'DATA', 'limite_dias_retroativos' => 30],
+            ],
+        ])->assertCreated()->assertJsonPath('tipo_registro.campos.0.limite_dias_retroativos', 30);
+
+        $uuid = $criado->json('tipo_registro.id');
+
+        $this->putJson("/api/tipos-registro/{$uuid}", [
+            'campos' => [
+                ['chave' => 'dt_validade', 'rotulo' => 'Validade', 'tipo_campo' => 'DATA', 'limite_dias_retroativos' => null],
+            ],
+        ])->assertOk()->assertJsonPath('tipo_registro.campos.0.limite_dias_retroativos', null);
+    }
+
+    public function test_limite_dias_retroativos_negativo_retorna_422(): void
+    {
+        $empresa = Empresa::factory()->create();
+        $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
+        Sanctum::actingAs($admin);
+
+        $this->postJson('/api/tipos-registro', [
+            'descricao' => 'Loja Perfeita',
+            'campos' => [
+                ['chave' => 'dt_validade', 'rotulo' => 'Validade', 'tipo_campo' => 'DATA', 'limite_dias_retroativos' => -1],
+            ],
+        ])->assertUnprocessable();
     }
 
     public function test_campo_condicional_referencia_chave_de_campo_anterior(): void

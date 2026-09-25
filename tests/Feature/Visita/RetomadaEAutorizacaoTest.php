@@ -65,11 +65,30 @@ class RetomadaEAutorizacaoTest extends TestCase
         $this->assertSame(1, Visita::withoutGlobalScopes()->where('usuario_id', $this->promotor->id)->count());
     }
 
-    public function test_loja_diferente_abre_visita_nova(): void
+    /**
+     * "Uma visita por vez" — até aqui só era aplicada no aparelho (lib/visitaLocal.ts); o
+     * servidor deixava abrir uma segunda visita ABERTA numa loja diferente sem nenhuma checagem.
+     * Ver docs/04-APP-MOBILE.md, "Uma visita por loja e descarte seguro".
+     */
+    public function test_loja_diferente_com_visita_aberta_e_recusada(): void
     {
         $this->checkin()->assertCreated();
         $outra = PontoVenda::factory()->create(['empresa_id' => $this->empresa->id]);
 
+        $this->checkin(null, $outra)
+            ->assertStatus(422)
+            ->assertJsonPath('message', "Você já está em uma visita em {$this->pdv->fantasia}. Finalize-a antes de iniciar outra.");
+
+        $this->assertSame(1, Visita::withoutGlobalScopes()->where('usuario_id', $this->promotor->id)->count());
+    }
+
+    public function test_loja_diferente_funciona_depois_de_finalizar_a_primeira(): void
+    {
+        $id = $this->checkin()->assertCreated()->json('visita.id');
+        $this->patchJson("/api/visitas/{$id}/checkout", ['latitude' => $this->pdv->latitude, 'longitude' => $this->pdv->longitude])
+            ->assertOk();
+
+        $outra = PontoVenda::factory()->create(['empresa_id' => $this->empresa->id]);
         $this->checkin(null, $outra)->assertCreated();
 
         $this->assertSame(2, Visita::withoutGlobalScopes()->where('usuario_id', $this->promotor->id)->count());

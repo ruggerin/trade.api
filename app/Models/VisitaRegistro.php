@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\StatusPlanoAcao;
 use App\Enums\TipoItemCampanha;
 use App\Models\Concerns\HasUuid;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -11,6 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 /**
  * Tem uuid (usado na rota de imagem) mas não BelongsToEmpresa — herda o isolamento de Visita
@@ -88,6 +90,17 @@ class VisitaRegistro extends Model
     public function resolvidoPor(): BelongsTo
     {
         return $this->belongsTo(Usuario::class, 'alerta_resolvido_por_id');
+    }
+
+    /**
+     * Plano de Ação ABERTO/EM_ANDAMENTO nascido deste alerta — no máximo um por vez (índice
+     * parcial em planos_acao). O card do Painel de Atividades usa pra trocar "Abrir Plano de
+     * Ação" por "Ver plano". Ver docs/37-PLANOS-DE-ACAO.md §5.
+     */
+    public function planoAcaoAtivo(): HasOne
+    {
+        return $this->hasOne(PlanoAcao::class, 'origem_registro_id')
+            ->whereIn('status', StatusPlanoAcao::ativos());
     }
 
     public function tipoRegistro(): BelongsTo

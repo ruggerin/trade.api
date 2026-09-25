@@ -207,7 +207,7 @@ class AtividadeController extends Controller
             ->comContagemComentarios($request->user()->id)
             ->with([
                 'visita.pontoVenda', 'visita.usuario', 'tipoRegistro.campos', 'produtoAuditoria',
-                'secao', 'departamento', 'marca', 'resolvidoPor', 'imagens',
+                'secao', 'departamento', 'marca', 'resolvidoPor', 'imagens', 'planoAcaoAtivo',
             ])
             ->get();
 

@@ -25,7 +25,9 @@ class RedeLojaController extends Controller
             )
             ->with('empresa')
             ->orderBy('descricao')
-            ->paginate();
+            // Opt-in pra listar mais que os 15 padrão (capado em 200) — seletores de rede (ex.:
+            // Plano de Ação) precisam da lista inteira, mesmo padrão de PontoVendaController::index.
+            ->paginate($request->filled('por_pagina') ? min($request->integer('por_pagina'), 200) : null);
 
         return response()->json([
             'redes_lojas' => RedeLojaResource::collection($redes->items()),

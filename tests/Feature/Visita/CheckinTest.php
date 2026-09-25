@@ -263,14 +263,9 @@ class CheckinTest extends TestCase
         $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
         $promotor = Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]);
 
+        // Uma visita ABERTA por vez (ver RetomadaEAutorizacaoTest) — primeiro finaliza a de pdvB
+        // pra só depois abrir a de pdv, que fica ABERTA de propósito (nunca finalizada aqui).
         Sanctum::actingAs($promotor);
-        $abertaUuid = $this->postJson('/api/visitas', [
-            'ponto_venda_uuid' => $pdv->uuid,
-            'latitude' => $pdv->latitude,
-            'longitude' => $pdv->longitude,
-        ])->json('visita.id');
-
-        // Outra loja: no mesmo PDV o check-in retomaria a visita aberta em vez de criar outra.
         $pdvB = PontoVenda::factory()->create(['empresa_id' => $empresa->id]);
         $finalizadaUuid = $this->postJson('/api/visitas', [
             'ponto_venda_uuid' => $pdvB->uuid,
@@ -281,6 +276,12 @@ class CheckinTest extends TestCase
             'latitude' => $pdvB->latitude,
             'longitude' => $pdvB->longitude,
         ])->assertOk();
+
+        $abertaUuid = $this->postJson('/api/visitas', [
+            'ponto_venda_uuid' => $pdv->uuid,
+            'latitude' => $pdv->latitude,
+            'longitude' => $pdv->longitude,
+        ])->json('visita.id');
 
         Sanctum::actingAs($admin);
         $response = $this->getJson('/api/visitas?status=FINALIZADA')->assertOk();
@@ -299,7 +300,6 @@ class CheckinTest extends TestCase
     public function test_lista_de_visitas_filtra_por_produto_e_ruptura(): void
     {
         $empresa = Empresa::factory()->create();
-        $promotor = Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]);
         $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
 
         $produtoA = ProdutoAuditoria::factory()->create(['empresa_id' => $empresa->id]);
@@ -307,9 +307,11 @@ class CheckinTest extends TestCase
         $tipoRuptura = TipoRegistro::withoutGlobalScopes()->where('empresa_id', $empresa->id)->where('descricao', 'Ruptura')->value('uuid');
         $tipoObservacao = TipoRegistro::withoutGlobalScopes()->where('empresa_id', $empresa->id)->where('descricao', 'Observação')->value('uuid');
 
-        Sanctum::actingAs($promotor);
+        // Um promotor por visita — não é o que está sendo testado aqui, e uma visita ABERTA por
+        // vez (RetomadaEAutorizacaoTest) impede o mesmo promotor abrir as 3 sem finalizar nenhuma.
 
         // Visita 1: ruptura do produto A — é a única que deveria sobrar no filtro combinado.
+        Sanctum::actingAs(Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]));
         $pdv1 = PontoVenda::factory()->create(['empresa_id' => $empresa->id]);
         $visita1 = $this->postJson('/api/visitas', [
             'ponto_venda_uuid' => $pdv1->uuid, 'latitude' => $pdv1->latitude, 'longitude' => $pdv1->longitude,
@@ -319,6 +321,7 @@ class CheckinTest extends TestCase
         ])->assertCreated();
 
         // Visita 2: registro do produto A SEM ruptura — não pode aparecer quando ruptura=1.
+        Sanctum::actingAs(Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]));
         $pdv2 = PontoVenda::factory()->create(['empresa_id' => $empresa->id]);
         $visita2 = $this->postJson('/api/visitas', [
             'ponto_venda_uuid' => $pdv2->uuid, 'latitude' => $pdv2->latitude, 'longitude' => $pdv2->longitude,
@@ -328,6 +331,7 @@ class CheckinTest extends TestCase
         ])->assertCreated();
 
         // Visita 3: ruptura do produto B — não pode aparecer quando filtra pelo produto A.
+        Sanctum::actingAs(Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]));
         $pdv3 = PontoVenda::factory()->create(['empresa_id' => $empresa->id]);
         $visita3 = $this->postJson('/api/visitas', [
             'ponto_venda_uuid' => $pdv3->uuid, 'latitude' => $pdv3->latitude, 'longitude' => $pdv3->longitude,
@@ -389,14 +393,18 @@ class CheckinTest extends TestCase
 
         Sanctum::actingAs($promotor);
 
-        $this->postJson('/api/visitas', [
+        $primeira = $this->postJson('/api/visitas', [
             'ponto_venda_uuid' => $pdv->uuid,
             'latitude' => $pdv->latitude,
             'longitude' => $pdv->longitude,
             'idempotency_key' => (string) Str::uuid(),
-        ])->assertCreated();
+        ])->assertCreated()->json('visita.id');
+        // Uma visita ABERTA por vez (RetomadaEAutorizacaoTest) — finaliza antes de abrir a de
+        // outra loja (na mesma loja o check-in retomaria a visita aberta em vez de criar outra).
+        $this->patchJson("/api/visitas/{$primeira}/checkout", [
+            'latitude' => $pdv->latitude, 'longitude' => $pdv->longitude,
+        ])->assertOk();
 
-        // Loja diferente (na mesma loja o check-in retoma a visita aberta — RetomadaEAutorizacaoTest).
         $this->postJson('/api/visitas', [
             'ponto_venda_uuid' => $outroPdv->uuid,
             'latitude' => $outroPdv->latitude,
@@ -443,11 +451,16 @@ class CheckinTest extends TestCase
 
         Sanctum::actingAs($promotor);
 
-        $this->postJson('/api/visitas', [
+        $primeira = $this->postJson('/api/visitas', [
             'ponto_venda_uuid' => $pdv->uuid,
             'latitude' => $pdv->latitude,
             'longitude' => $pdv->longitude,
-        ])->assertCreated();
+        ])->assertCreated()->json('visita.id');
+        // Uma visita ABERTA por vez (RetomadaEAutorizacaoTest) — finaliza antes de abrir a de
+        // outra loja.
+        $this->patchJson("/api/visitas/{$primeira}/checkout", [
+            'latitude' => $pdv->latitude, 'longitude' => $pdv->longitude,
+        ])->assertOk();
 
         $this->postJson('/api/visitas', [
             'ponto_venda_uuid' => $outroPdv->uuid,

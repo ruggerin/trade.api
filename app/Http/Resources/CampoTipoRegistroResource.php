@@ -20,6 +20,9 @@ class CampoTipoRegistroResource extends JsonResource
             'opcoes' => $this->opcoes,
             'obrigatorio' => $this->obrigatorio,
             'ordem' => $this->ordem,
+            // Só tem efeito quando tipo_campo = DATA — ver docs/35-LIMITE-RETROATIVO-CAMPO-DATA.md.
+            // null = sem limite (aceita qualquer data passada, comportamento padrão).
+            'limite_dias_retroativos' => $this->limite_dias_retroativos,
             // Campo condicional (decisão 7 de docs/20-FORMULARIO-DINAMICO-CAMPANHA.md) — expõe a
             // `chave` do campo pai, não o id interno, mesmo contrato que o Store/UpdateRequest
             // aceita de volta (ver TipoRegistroController::sincronizarCampos).

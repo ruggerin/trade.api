@@ -18,10 +18,21 @@ class VisitaResource extends JsonResource
                 'id' => $this->pontoVenda->uuid,
                 'razao_social' => $this->pontoVenda->razao_social,
                 'fantasia' => $this->pontoVenda->fantasia,
+                // Posição/endereço/fachada da loja — o detalhe da visita no admin plota a loja
+                // junto dos pontos de check-in/checkout (docs/34 §mapa).
+                'latitude' => $this->pontoVenda->latitude,
+                'longitude' => $this->pontoVenda->longitude,
+                'endereco' => collect([
+                    trim(implode(', ', array_filter([$this->pontoVenda->endereco, $this->pontoVenda->numero]))),
+                    $this->pontoVenda->bairro,
+                    $this->pontoVenda->cidade,
+                ])->filter()->implode(' · ') ?: null,
+                'fachada_url' => $this->pontoVenda->fachada_path ? url("/api/pontos-venda/{$this->pontoVenda->uuid}/fachada") : null,
             ]),
             'usuario' => $this->whenLoaded('usuario', fn () => [
                 'id' => $this->usuario->uuid,
                 'nome' => $this->usuario->nome,
+                'foto_url' => $this->usuario->foto_path ? url("/api/usuarios/{$this->usuario->uuid}/foto") : null,
             ]),
             // Só presente quando havia exatamente uma campanha ativa/vigente da empresa no
             // momento do check-in — ver VisitaController::resolverCampanhaUnica.

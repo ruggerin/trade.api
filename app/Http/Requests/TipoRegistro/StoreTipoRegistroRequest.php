@@ -57,6 +57,9 @@ class StoreTipoRegistroRequest extends FormRequest
             'campos.*.opcoes' => ['required_if:campos.*.tipo_campo,MULTIPLA_ESCOLHA', 'array', 'min:1'],
             'campos.*.opcoes.*' => ['string', 'max:255'],
             'campos.*.obrigatorio' => ['nullable', 'boolean'],
+            // Só tem efeito quando tipo_campo = DATA — ver docs/35-LIMITE-RETROATIVO-CAMPO-DATA.md.
+            // Vazio/null = sem limite (aceita qualquer data passada).
+            'campos.*.limite_dias_retroativos' => ['nullable', 'integer', 'min:0'],
             // Campo condicional (decisão 7 de docs/20-FORMULARIO-DINAMICO-CAMPANHA.md) — referencia
             // a `chave` de outro campo DESTE MESMO array (não um uuid — o campo pai pode ser novo,
             // ainda sem id, na mesma requisição). Validado contra o array inteiro em withValidator

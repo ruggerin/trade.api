@@ -230,6 +230,7 @@ class TipoRegistroController extends Controller
                 'opcoes' => $campo['opcoes'] ?? null,
                 'obrigatorio' => $campo['obrigatorio'] ?? false,
                 'ordem' => $indice,
+                'limite_dias_retroativos' => $campo['limite_dias_retroativos'] ?? null,
                 // Só usado quando tipo_campo = SORTIMENTO (decisão 3 de
                 // docs/20-FORMULARIO-DINAMICO-CAMPANHA.md) — fica tudo NULL/false pros demais tipos.
                 'sortimento_origem' => $campo['sortimento_origem'] ?? null,
@@ -305,6 +306,7 @@ class TipoRegistroController extends Controller
                     'opcoes' => $original->opcoes,
                     'obrigatorio' => $original->obrigatorio,
                     'ordem' => $original->ordem,
+                    'limite_dias_retroativos' => $original->limite_dias_retroativos,
                     'sortimento_origem' => $original->sortimento_origem,
                     'sortimento_tipo_vinculo' => $original->sortimento_tipo_vinculo,
                     'sortimento_secao_id' => $original->sortimento_secao_id,

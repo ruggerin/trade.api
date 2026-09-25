@@ -363,6 +363,44 @@ class RegistroTest extends TestCase
             ->assertJsonPath('registro.valores_campos.validade', '15/03/2026');
     }
 
+    /**
+     * docs/35-LIMITE-RETROATIVO-CAMPO-DATA.md — `limite_dias_retroativos` só controla o passado;
+     * data futura nunca é rejeitada por causa dele. Sem o parâmetro (campo `validade` do teste
+     * acima, ou qualquer campo já cadastrado antes desta feature), continua sem limite nenhum.
+     */
+    public function test_campo_data_com_limite_dias_retroativos_rejeita_data_antiga_demais(): void
+    {
+        $empresa = Empresa::factory()->create();
+        $pdv = PontoVenda::factory()->create(['empresa_id' => $empresa->id]);
+        $promotor = Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]);
+        $tipo = TipoRegistro::create(['empresa_id' => $empresa->id, 'descricao' => 'Alerta de Validade Próxima']);
+        CampoTipoRegistro::create([
+            'tipo_registro_id' => $tipo->id, 'chave' => 'dt_validade', 'rotulo' => 'Validade',
+            'tipo_campo' => 'DATA', 'ordem' => 0, 'limite_dias_retroativos' => 30,
+        ]);
+        $visitaUuid = $this->abrirVisita($promotor, $pdv);
+
+        // Mais de 30 dias atrás: rejeitado.
+        $this->postJson("/api/visitas/{$visitaUuid}/registros", [
+            'tipo_registro_uuid' => $tipo->uuid,
+            'valores_campos' => ['dt_validade' => now()->subDays(40)->format('d/m/Y')],
+        ])->assertStatus(422)->assertJsonValidationErrors(['valores_campos.dt_validade']);
+
+        // Dentro dos 30 dias: aceito.
+        $this->postJson("/api/visitas/{$visitaUuid}/registros", [
+            'tipo_registro_uuid' => $tipo->uuid,
+            'idempotency_key' => (string) \Illuminate\Support\Str::uuid(),
+            'valores_campos' => ['dt_validade' => now()->subDays(10)->format('d/m/Y')],
+        ])->assertCreated();
+
+        // Data futura: o limite retroativo nunca bloqueia isso.
+        $this->postJson("/api/visitas/{$visitaUuid}/registros", [
+            'tipo_registro_uuid' => $tipo->uuid,
+            'idempotency_key' => (string) \Illuminate\Support\Str::uuid(),
+            'valores_campos' => ['dt_validade' => now()->addYear()->format('d/m/Y')],
+        ])->assertCreated();
+    }
+
     public function test_campo_sortimento_aceita_produtos_do_recorte_e_rejeita_fora_dele(): void
     {
         $empresa = Empresa::factory()->create();
