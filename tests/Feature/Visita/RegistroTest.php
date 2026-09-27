@@ -309,6 +309,37 @@ class RegistroTest extends TestCase
         $response->assertCreated()->assertJsonPath('registro.valores_campos.quantidade', '5');
     }
 
+    public function test_produto_em_ruptura_dispensa_campo_obrigatorio(): void
+    {
+        $empresa = Empresa::factory()->create();
+        $pdv = PontoVenda::factory()->create(['empresa_id' => $empresa->id]);
+        $promotor = Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]);
+        $tipo = TipoRegistro::create(['empresa_id' => $empresa->id, 'descricao' => 'Pesquisa de Preço']);
+        CampoTipoRegistro::create([
+            'tipo_registro_id' => $tipo->id, 'chave' => 'preco', 'rotulo' => 'Preço',
+            'tipo_campo' => 'MOEDA', 'obrigatorio' => true, 'ordem' => 0,
+        ]);
+        $visitaUuid = $this->abrirVisita($promotor, $pdv);
+
+        // Em ruptura não tem o que coletar — o preço obrigatório deixa de ser exigido.
+        $this->postJson("/api/visitas/{$visitaUuid}/registros", [
+            'tipo_registro_uuid' => $tipo->uuid,
+            'ruptura' => true,
+        ])->assertCreated()->assertJsonPath('registro.ruptura', true);
+
+        // Mas valor enviado mesmo assim continua validado.
+        $this->postJson("/api/visitas/{$visitaUuid}/registros", [
+            'tipo_registro_uuid' => $tipo->uuid,
+            'ruptura' => true,
+            'valores_campos' => ['preco' => 'caro'],
+        ])->assertStatus(422)->assertJsonValidationErrors('valores_campos.preco');
+
+        // Sem ruptura, continua obrigatório.
+        $this->postJson("/api/visitas/{$visitaUuid}/registros", [
+            'tipo_registro_uuid' => $tipo->uuid,
+        ])->assertStatus(422)->assertJsonValidationErrors('valores_campos.preco');
+    }
+
     public function test_campo_multipla_escolha_rejeita_valor_fora_das_opcoes(): void
     {
         $empresa = Empresa::factory()->create();

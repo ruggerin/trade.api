@@ -16,6 +16,7 @@ class UsuarioResource extends JsonResource
             'id' => $this->uuid,
             'nome' => $this->nome,
             'email' => $this->email,
+            'codigo_externo' => $this->codigo_externo,
             'user_type' => $this->user_type,
             'ativo' => $this->ativo,
             'avatar_url' => $this->avatar_url,
@@ -33,7 +34,13 @@ class UsuarioResource extends JsonResource
             // App\Models\Usuario::perfil().
             'perfil' => $this->whenLoaded(
                 'perfil',
-                fn () => $this->perfil ? ['id' => $this->perfil->uuid, 'nome' => $this->perfil->nome] : null,
+                fn () => $this->perfil ? [
+                    'id' => $this->perfil->uuid,
+                    'nome' => $this->perfil->nome,
+                    // O mobile decide o que mostrar por isso — ex.: aba "Pedidos" só com
+                    // pedidos_venda.criar (docs/38-PEDIDO-VENDEDOR.md §4). Perfil inativo = nada.
+                    'permissoes' => $this->perfil->ativo ? ($this->perfil->permissoes ?? []) : [],
+                ] : null,
             ),
             // Só tem valor pra PROMOTOR — nome do perfil de custo, nunca os valores (que exigem
             // a permissão centros_custo.gerenciar, ver docs/08-CENTRO-DE-CUSTO.md).

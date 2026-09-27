@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\EscopoAcaoTipoRegistro;
 use App\Http\Requests\TipoRegistro\MoverTipoRegistroRequest;
 use App\Http\Requests\TipoRegistro\StoreTipoRegistroRequest;
 use App\Http\Requests\TipoRegistro\UpdateTipoRegistroRequest;
@@ -11,7 +12,9 @@ use App\Models\CampoTipoRegistro;
 use App\Models\DepartamentoAuditoria;
 use App\Models\Empresa;
 use App\Models\MarcaAuditoria;
+use App\Models\PontoVenda;
 use App\Models\ProdutoAuditoria;
+use App\Models\RedeLoja;
 use App\Models\SecaoAuditoria;
 use App\Models\TipoRegistro;
 use App\Models\TipoRegistroSecaoExcecao;
@@ -27,6 +30,13 @@ class TipoRegistroController extends Controller
     private const RELACOES_CAMPOS = [
         'campos.dependeDe', 'campos.sortimentoSecao', 'campos.sortimentoDepartamento',
         'campos.sortimentoMarca', 'campos.produtosFixos',
+    ];
+
+    // Escopo LOJA_REDE (docs/40) — o mobile resolve a Ação com esses uuids × a rede do PDV.
+    private const RELACOES_ESCOPO = [
+        'pontosVenda:id,uuid,fantasia', 'redesLojas:id,uuid,descricao',
+        // Lista predefinida de produtos (granularidade PRODUTO) — o mobile usa como opções de vínculo.
+        'produtosPredefinidos:id,uuid,descricao,codigo_barras,codigo_externo',
     ];
 
     public function index(Request $request): JsonResponse
@@ -47,13 +57,14 @@ class TipoRegistroController extends Controller
                     fn ($q) => $q->where('uuid', $request->string('campanha_auditoria_uuid')),
                 ),
             )
-            ->with([...self::RELACOES_CAMPOS, 'empresa', 'campanhaAuditoria', 'excecoesGranularidade.secao'])
+            ->with([...self::RELACOES_CAMPOS, 'empresa', 'campanhaAuditoria', 'excecoesGranularidade.secao', ...self::RELACOES_ESCOPO])
             // Sequência de exibição escolhida pelo gestor (ver mover() abaixo) — mesma ordem
             // pro admin e pro mobile, que consome este mesmo endpoint. `descricao` só entra
             // como desempate defensivo (na operação normal `ordem` já é único por empresa).
             ->orderBy('ordem')
             ->orderBy('descricao')
-            ->paginate();
+            // `por_pagina` opt-in (até 200) — "copiar de outro formulário" precisa da lista toda.
+            ->paginate($request->filled('por_pagina') ? min(max($request->integer('por_pagina'), 1), 200) : null);
 
         return response()->json([
             'tipos_registro' => TipoRegistroResource::collection($tipos->items()),
@@ -73,7 +84,7 @@ class TipoRegistroController extends Controller
      */
     public function show(TipoRegistro $tipoRegistro): JsonResponse
     {
-        $tipoRegistro->load([...self::RELACOES_CAMPOS, 'campanhaAuditoria', 'excecoesGranularidade.secao']);
+        $tipoRegistro->load([...self::RELACOES_CAMPOS, 'campanhaAuditoria', 'excecoesGranularidade.secao', ...self::RELACOES_ESCOPO]);
 
         return response()->json([
             'tipo_registro' => new TipoRegistroResource($tipoRegistro),
@@ -109,10 +120,12 @@ class TipoRegistroController extends Controller
             ]);
             $this->sincronizarCampos($tipo, $dados['campos'] ?? []);
             $this->sincronizarExcecoesGranularidade($tipo, $dados['excecoes_granularidade'] ?? []);
+            $this->sincronizarEscopoLojaRede($tipo, $dados);
+            $this->sincronizarProdutosPredefinidos($tipo, $dados);
 
             return $tipo;
         });
-        $tipo->load([...self::RELACOES_CAMPOS, 'campanhaAuditoria', 'excecoesGranularidade.secao']);
+        $tipo->load([...self::RELACOES_CAMPOS, 'campanhaAuditoria', 'excecoesGranularidade.secao', ...self::RELACOES_ESCOPO]);
 
         return response()->json([
             'tipo_registro' => new TipoRegistroResource($tipo),
@@ -136,7 +149,18 @@ class TipoRegistroController extends Controller
         // fazem delete-all + recreate — uma falha no meio deixaria o tipo sem NENHUM campo em vez
         // de manter o estado anterior ou salvar o novo por completo.
         DB::transaction(function () use ($tipoRegistro, $dados): void {
-            $tipoRegistro->update(collect($dados)->except(['campos', 'excecoes_granularidade'])->all());
+            $tipoRegistro->update(collect($dados)->except(['campos', 'excecoes_granularidade', 'pontos_venda_uuids', 'redes_lojas_uuids', 'produtos_uuids'])->all());
+
+            // Só mexe nas pivôs quando o escopo ou as listas vieram no request — um update parcial
+            // (ex.: só `ativo`) não pode apagar a configuração de lojas/redes.
+            if (array_key_exists('escopo_acao', $dados) || array_key_exists('acao_obrigatoria', $dados)
+                || array_key_exists('pontos_venda_uuids', $dados) || array_key_exists('redes_lojas_uuids', $dados)) {
+                $this->sincronizarEscopoLojaRede($tipoRegistro->refresh(), $dados);
+            }
+            // Mesmo cuidado: update parcial (só descrição/ativo) não apaga a lista de produtos.
+            if (array_key_exists('produtos_uuids', $dados) || array_key_exists('granularidade_padrao', $dados)) {
+                $this->sincronizarProdutosPredefinidos($tipoRegistro->refresh(), $dados);
+            }
 
             if (array_key_exists('campos', $dados)) {
                 $this->sincronizarCampos($tipoRegistro, $dados['campos']);
@@ -147,11 +171,58 @@ class TipoRegistroController extends Controller
             }
         });
 
-        $tipoRegistro->load([...self::RELACOES_CAMPOS, 'campanhaAuditoria', 'excecoesGranularidade.secao']);
+        $tipoRegistro->load([...self::RELACOES_CAMPOS, 'campanhaAuditoria', 'excecoesGranularidade.secao', ...self::RELACOES_ESCOPO]);
 
         return response()->json([
             'tipo_registro' => new TipoRegistroResource($tipoRegistro),
         ]);
+    }
+
+    /**
+     * Pivôs do escopo LOJA_REDE (docs/40 §3.2). Qualquer outro escopo (ou Ação não obrigatória)
+     * limpa as duas — mesmo raciocínio de `campanha_auditoria_id` ao sair de CAMPANHA.
+     */
+    private function sincronizarEscopoLojaRede(TipoRegistro $tipo, array $dados): void
+    {
+        if (! $tipo->acao_obrigatoria || $tipo->escopo_acao !== EscopoAcaoTipoRegistro::LOJA_REDE) {
+            $tipo->pontosVenda()->detach();
+            $tipo->redesLojas()->detach();
+
+            return;
+        }
+
+        if (array_key_exists('pontos_venda_uuids', $dados)) {
+            $tipo->pontosVenda()->sync(PontoVenda::whereIn('uuid', $dados['pontos_venda_uuids'] ?? [])->pluck('id'));
+        }
+        if (array_key_exists('redes_lojas_uuids', $dados)) {
+            $tipo->redesLojas()->sync(RedeLoja::whereIn('uuid', $dados['redes_lojas_uuids'] ?? [])->pluck('id'));
+        }
+    }
+
+    /**
+     * Lista predefinida de produtos — só faz sentido com granularidade PRODUTO; qualquer outra
+     * limpa a lista (mesmo raciocínio das pivôs do escopo LOJA_REDE). Ordem = ordem do array.
+     */
+    private function sincronizarProdutosPredefinidos(TipoRegistro $tipo, array $dados): void
+    {
+        if ($tipo->granularidade_padrao?->value !== 'PRODUTO') {
+            $tipo->produtosPredefinidos()->detach();
+
+            return;
+        }
+        if (! array_key_exists('produtos_uuids', $dados)) {
+            return;
+        }
+
+        $uuids = array_values($dados['produtos_uuids'] ?? []);
+        $ids = ProdutoAuditoria::whereIn('uuid', $uuids)->pluck('id', 'uuid');
+        $sync = [];
+        foreach ($uuids as $ordem => $uuid) {
+            if (isset($ids[$uuid])) {
+                $sync[$ids[$uuid]] = ['ordem' => $ordem];
+            }
+        }
+        $tipo->produtosPredefinidos()->sync($sync);
     }
 
     private function resolverCampanhaAuditoriaId(?string $campanhaUuid): ?int
@@ -197,7 +268,7 @@ class TipoRegistroController extends Controller
 
         return response()->json([
             'tipo_registro' => new TipoRegistroResource(
-                $tipoRegistro->fresh()->load([...self::RELACOES_CAMPOS, 'campanhaAuditoria', 'excecoesGranularidade.secao']),
+                $tipoRegistro->fresh()->load([...self::RELACOES_CAMPOS, 'campanhaAuditoria', 'excecoesGranularidade.secao', ...self::RELACOES_ESCOPO]),
             ),
         ]);
     }
@@ -337,10 +408,16 @@ class TipoRegistroController extends Controller
                 ]);
             }
 
+            // Lista predefinida de produtos vai junto (é parte da "forma" do formulário, diferente
+            // de Ação obrigatória/campanha, que a cópia nunca herda).
+            $copia->produtosPredefinidos()->sync(
+                $tipoRegistro->produtosPredefinidos()->get()->mapWithKeys(fn ($p) => [$p->id => ['ordem' => $p->pivot->ordem]])->all(),
+            );
+
             return $copia;
         });
 
-        $copia->load([...self::RELACOES_CAMPOS, 'campanhaAuditoria', 'excecoesGranularidade.secao']);
+        $copia->load([...self::RELACOES_CAMPOS, 'campanhaAuditoria', 'excecoesGranularidade.secao', ...self::RELACOES_ESCOPO]);
 
         return response()->json([
             'tipo_registro' => new TipoRegistroResource($copia),

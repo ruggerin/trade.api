@@ -4,6 +4,7 @@ namespace Tests\Feature\PontoVenda;
 
 use App\Models\Empresa;
 use App\Models\PontoVenda;
+use App\Models\RedeLoja;
 use App\Models\Usuario;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
@@ -123,5 +124,44 @@ class FiltrosEcnpjTest extends TestCase
             ->assertOk()
             ->assertJsonCount(1, 'pontos_venda')
             ->assertJsonPath('pontos_venda.0.cnpj', '33.333.333/0001-33');
+    }
+    // ---- filtros da lista (código externo, rede, cidade, período, sem promotor, recentes) ----
+
+    public function test_lista_filtra_por_codigo_rede_cidade_periodo_e_ordena_por_recentes(): void
+    {
+        $empresa = Empresa::factory()->create();
+        Sanctum::actingAs(Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]));
+        $rede = RedeLoja::factory()->create(['empresa_id' => $empresa->id]);
+
+        $antiga = PontoVenda::factory()->create([
+            'empresa_id' => $empresa->id, 'fantasia' => 'Antiga', 'codigo_externo' => 'CLI-777',
+            'cidade' => 'Manaus', 'created_at' => now()->subMonths(2), 'updated_at' => now()->subMonths(2),
+        ]);
+        $nova = PontoVenda::factory()->create([
+            'empresa_id' => $empresa->id, 'fantasia' => 'Nova', 'rede_loja_id' => $rede->id,
+            'cidade' => 'Belém', 'created_at' => now()->subDay(), 'updated_at' => now()->subDay(),
+        ]);
+
+        $this->getJson('/api/pontos-venda?busca=cli-777')->assertOk()
+            ->assertJsonCount(1, 'pontos_venda')->assertJsonPath('pontos_venda.0.id', $antiga->uuid);
+        $this->getJson("/api/pontos-venda?rede_loja_uuid={$rede->uuid}")->assertOk()
+            ->assertJsonCount(1, 'pontos_venda')->assertJsonPath('pontos_venda.0.id', $nova->uuid);
+        $this->getJson('/api/pontos-venda?cidade=bel')->assertOk()
+            ->assertJsonCount(1, 'pontos_venda')->assertJsonPath('pontos_venda.0.id', $nova->uuid);
+
+        $desde = now()->subDays(7)->toDateString();
+        $this->getJson("/api/pontos-venda?data_campo=created_at&data_inicio={$desde}")->assertOk()
+            ->assertJsonCount(1, 'pontos_venda')->assertJsonPath('pontos_venda.0.id', $nova->uuid);
+
+        // Mexer no cadastro da antiga a leva pra "atualizada recentemente", mas não "cadastrada".
+        $antiga->update(['telefone' => '92999990000']);
+        $this->getJson("/api/pontos-venda?data_campo=updated_at&data_inicio={$desde}")->assertOk()
+            ->assertJsonCount(2, 'pontos_venda');
+        $this->getJson('/api/pontos-venda?ordenar=recentes&data_campo=updated_at')->assertOk()
+            ->assertJsonPath('pontos_venda.0.id', $antiga->uuid);
+        $this->getJson('/api/pontos-venda?ordenar=recentes&data_campo=created_at')->assertOk()
+            ->assertJsonPath('pontos_venda.0.id', $nova->uuid);
+
+        $this->getJson('/api/pontos-venda?sem_promotor=1')->assertOk()->assertJsonCount(2, 'pontos_venda');
     }
 }

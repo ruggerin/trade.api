@@ -48,6 +48,16 @@ class StoreTipoRegistroRequest extends FormRequest
                 'string',
                 Rule::exists('campanhas_auditoria', 'uuid')->where('empresa_id', $this->user()->empresa_id),
             ],
+            // Escopo LOJA_REDE (docs/40-ACAO-OBRIGATORIA-LOJA-REDE.md) — as duas listas opcionais;
+            // ignoradas (e limpas) em qualquer outro escopo.
+            // Lista predefinida de produtos (só com granularidade PRODUTO) — ver
+            // TipoRegistro::produtosPredefinidos.
+            'produtos_uuids' => ['nullable', 'array', 'max:500'],
+            'produtos_uuids.*' => ['string', 'distinct', Rule::exists('produtos_auditoria', 'uuid')->where('empresa_id', $this->user()->empresa_id)],
+            'pontos_venda_uuids' => ['nullable', 'array', 'max:2000'],
+            'pontos_venda_uuids.*' => ['string', 'distinct', Rule::exists('pontos_venda', 'uuid')->where('empresa_id', $this->user()->empresa_id)],
+            'redes_lojas_uuids' => ['nullable', 'array', 'max:500'],
+            'redes_lojas_uuids.*' => ['string', 'distinct', Rule::exists('redes_lojas', 'uuid')->where('empresa_id', $this->user()->empresa_id)],
             // Lista completa dos campos customizados deste tipo — sempre substituída inteira a
             // cada salvar (ver TipoRegistroController), não incrementalmente.
             'campos' => ['nullable', 'array'],

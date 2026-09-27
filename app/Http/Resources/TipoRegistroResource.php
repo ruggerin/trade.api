@@ -25,6 +25,19 @@ class TipoRegistroResource extends JsonResource
             'acao_obrigatoria' => $this->acao_obrigatoria,
             'escopo_acao' => $this->escopo_acao?->value,
             'campanha_auditoria_uuid' => $this->whenLoaded('campanhaAuditoria', fn () => $this->campanhaAuditoria?->uuid),
+            // Escopo LOJA_REDE (docs/40-ACAO-OBRIGATORIA-LOJA-REDE.md): uuids pro mobile resolver a
+            // Ação (loja OU rede do PDV; as duas vazias = todas), nomes pro admin mostrar os chips.
+            // Lista predefinida (granularidade PRODUTO) — com ela, o promotor só vincula a estes.
+            'produtos_predefinidos' => $this->whenLoaded('produtosPredefinidos', fn () => $this->produtosPredefinidos->map(fn ($p) => [
+                'id' => $p->uuid,
+                'descricao' => $p->descricao,
+                'codigo_barras' => $p->codigo_barras,
+                'codigo_externo' => $p->codigo_externo,
+            ])->values()),
+            'pontos_venda_uuids' => $this->whenLoaded('pontosVenda', fn () => $this->pontosVenda->pluck('uuid')->values()),
+            'redes_lojas_uuids' => $this->whenLoaded('redesLojas', fn () => $this->redesLojas->pluck('uuid')->values()),
+            'pontos_venda_escopo' => $this->whenLoaded('pontosVenda', fn () => $this->pontosVenda->map(fn ($p) => ['id' => $p->uuid, 'fantasia' => $p->fantasia])->values()),
+            'redes_lojas_escopo' => $this->whenLoaded('redesLojas', fn () => $this->redesLojas->map(fn ($r) => ['id' => $r->uuid, 'descricao' => $r->descricao])->values()),
             // Ver App\Support\GranularidadeChecklist e docs/16-GRANULARIDADE-CHECKLIST-AUDITORIA.md.
             'granularidade_padrao' => $this->granularidade_padrao?->value,
             // Marca a coluna "Ruptura" da grade de coleta (Fase 2) — ver

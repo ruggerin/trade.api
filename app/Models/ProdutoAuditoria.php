@@ -49,6 +49,10 @@ class ProdutoAuditoria extends Model
         // docs/16-GRANULARIDADE-CHECKLIST-AUDITORIA.md §6. Só o admin web define, nunca o
         // self-service do promotor.
         'produto_chave',
+        // Preço de venda — só usado pelo Pedido de Venda (docs/38-PEDIDO-VENDEDOR.md §6). Um preço
+        // por produto/empresa na v1; nulo = produto não pode entrar em pedido.
+        'preco_tabela',
+        'desconto_maximo_pct',
     ];
 
     protected function casts(): array
@@ -61,6 +65,8 @@ class ProdutoAuditoria extends Model
             'ativo' => 'boolean',
             'status_aprovacao' => StatusAprovacao::class,
             'produto_chave' => 'boolean',
+            'preco_tabela' => 'decimal:2',
+            'desconto_maximo_pct' => 'decimal:2',
         ];
     }
 

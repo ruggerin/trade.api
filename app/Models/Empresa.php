@@ -20,6 +20,8 @@ class Empresa extends Model
         'limite_usuarios',
         'limite_pontos_venda',
         'limite_licencas',
+        // Módulo pago, só SUPERADMIN edita (docs/38-PEDIDO-VENDEDOR.md §12).
+        'pedidos_venda_habilitado',
         'ativo',
     ];
 
@@ -30,6 +32,7 @@ class Empresa extends Model
             'limite_usuarios' => 'integer',
             'limite_pontos_venda' => 'integer',
             'limite_licencas' => 'integer',
+            'pedidos_venda_habilitado' => 'boolean',
             'ativo' => 'boolean',
         ];
     }

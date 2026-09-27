@@ -6,7 +6,9 @@ use App\Models\CampanhaAuditoria;
 use App\Models\CampoTipoRegistro;
 use App\Models\DepartamentoAuditoria;
 use App\Models\Empresa;
+use App\Models\PontoVenda;
 use App\Models\ProdutoAuditoria;
+use App\Models\RedeLoja;
 use App\Models\SecaoAuditoria;
 use App\Models\TipoRegistro;
 use App\Models\Usuario;
@@ -672,5 +674,117 @@ class TipoRegistroTest extends TestCase
         Sanctum::actingAs($gestor);
 
         $this->postJson("/api/tipos-registro/{$tipo->uuid}/mover", ['direcao' => 'cima'])->assertForbidden();
+    }
+    // ---- escopo LOJA_REDE (docs/40-ACAO-OBRIGATORIA-LOJA-REDE.md) ----
+
+    /** @return array{0: Empresa, 1: PontoVenda, 2: RedeLoja} */
+    private function cenarioLojaRede(): array
+    {
+        $empresa = Empresa::factory()->create();
+        Sanctum::actingAs(Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]));
+        $rede = RedeLoja::factory()->create(['empresa_id' => $empresa->id]);
+        $loja = PontoVenda::factory()->create(['empresa_id' => $empresa->id]);
+
+        return [$empresa, $loja, $rede];
+    }
+
+    public function test_cria_acao_obrigatoria_restrita_a_lojas_e_redes(): void
+    {
+        [, $loja, $rede] = $this->cenarioLojaRede();
+
+        $this->postJson('/api/tipos-registro', [
+            'descricao' => 'Pesquisa de Preço',
+            'acao_obrigatoria' => true,
+            'escopo_acao' => 'LOJA_REDE',
+            'pontos_venda_uuids' => [$loja->uuid],
+            'redes_lojas_uuids' => [$rede->uuid],
+        ])->assertCreated()
+            ->assertJsonPath('tipo_registro.escopo_acao', 'LOJA_REDE')
+            ->assertJsonPath('tipo_registro.pontos_venda_uuids', [$loja->uuid])
+            ->assertJsonPath('tipo_registro.redes_lojas_uuids', [$rede->uuid])
+            ->assertJsonPath('tipo_registro.pontos_venda_escopo.0.fantasia', $loja->fantasia)
+            ->assertJsonPath('tipo_registro.redes_lojas_escopo.0.descricao', $rede->descricao);
+    }
+
+    public function test_loja_rede_sem_nenhuma_lista_e_valido(): void
+    {
+        $this->cenarioLojaRede();
+
+        // Estado inicial antes de restringir — vale pra todas as lojas (§3), não é erro.
+        $this->postJson('/api/tipos-registro', [
+            'descricao' => 'Pesquisa de Preço', 'acao_obrigatoria' => true, 'escopo_acao' => 'LOJA_REDE',
+        ])->assertCreated()
+            ->assertJsonPath('tipo_registro.pontos_venda_uuids', [])
+            ->assertJsonPath('tipo_registro.redes_lojas_uuids', []);
+    }
+
+    public function test_trocar_de_loja_rede_pra_sempre_limpa_as_duas_listas(): void
+    {
+        [, $loja, $rede] = $this->cenarioLojaRede();
+        $uuid = $this->postJson('/api/tipos-registro', [
+            'descricao' => 'Pesquisa de Preço', 'acao_obrigatoria' => true, 'escopo_acao' => 'LOJA_REDE',
+            'pontos_venda_uuids' => [$loja->uuid], 'redes_lojas_uuids' => [$rede->uuid],
+        ])->json('tipo_registro.id');
+
+        // Update parcial sem mexer no escopo não pode apagar a configuração.
+        $this->putJson("/api/tipos-registro/{$uuid}", ['descricao' => 'Pesquisa de Preço (acordo)'])
+            ->assertOk()->assertJsonPath('tipo_registro.pontos_venda_uuids', [$loja->uuid]);
+
+        $this->putJson("/api/tipos-registro/{$uuid}", ['escopo_acao' => 'SEMPRE'])
+            ->assertOk()
+            ->assertJsonPath('tipo_registro.pontos_venda_uuids', [])
+            ->assertJsonPath('tipo_registro.redes_lojas_uuids', []);
+        $this->assertDatabaseCount('tipo_registro_pontos_venda', 0);
+        $this->assertDatabaseCount('tipo_registro_redes_lojas', 0);
+    }
+
+    public function test_loja_de_outra_empresa_e_recusada_no_escopo(): void
+    {
+        $this->cenarioLojaRede();
+        $alheia = PontoVenda::factory()->create(['empresa_id' => Empresa::factory()->create()->id]);
+
+        $this->postJson('/api/tipos-registro', [
+            'descricao' => 'Pesquisa de Preço', 'acao_obrigatoria' => true, 'escopo_acao' => 'LOJA_REDE',
+            'pontos_venda_uuids' => [$alheia->uuid],
+        ])->assertUnprocessable()->assertJsonValidationErrors('pontos_venda_uuids.0');
+    }
+    // ---- lista predefinida de produtos (granularidade PRODUTO) ----
+
+    public function test_lista_predefinida_de_produtos_mantem_a_ordem_e_some_fora_de_produto(): void
+    {
+        $empresa = Empresa::factory()->create();
+        Sanctum::actingAs(Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]));
+        $a = ProdutoAuditoria::factory()->create(['empresa_id' => $empresa->id, 'descricao' => 'Lasanha']);
+        $b = ProdutoAuditoria::factory()->create(['empresa_id' => $empresa->id, 'descricao' => 'Pizza']);
+
+        $uuid = $this->postJson('/api/tipos-registro', [
+            'descricao' => 'Pesquisa de Preço',
+            'granularidade_padrao' => 'PRODUTO',
+            'produtos_uuids' => [$b->uuid, $a->uuid],
+        ])->assertCreated()
+            ->assertJsonPath('tipo_registro.produtos_predefinidos.0.descricao', 'Pizza')
+            ->assertJsonPath('tipo_registro.produtos_predefinidos.1.descricao', 'Lasanha')
+            ->json('tipo_registro.id');
+
+        // Edição parcial não apaga a lista; a cópia leva junto.
+        $this->putJson("/api/tipos-registro/{$uuid}", ['descricao' => 'Pesquisa de Preço 2'])
+            ->assertOk()->assertJsonCount(2, 'tipo_registro.produtos_predefinidos');
+        $this->postJson("/api/tipos-registro/{$uuid}/duplicar")
+            ->assertJsonCount(2, 'tipo_registro.produtos_predefinidos');
+
+        // Sair da granularidade PRODUTO limpa a lista.
+        $this->putJson("/api/tipos-registro/{$uuid}", ['granularidade_padrao' => 'LINHA'])
+            ->assertOk()->assertJsonCount(0, 'tipo_registro.produtos_predefinidos');
+    }
+
+    public function test_produto_de_outra_empresa_e_recusado_na_lista(): void
+    {
+        $empresa = Empresa::factory()->create();
+        Sanctum::actingAs(Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]));
+        $alheio = ProdutoAuditoria::factory()->create(['empresa_id' => Empresa::factory()->create()->id]);
+
+        $this->postJson('/api/tipos-registro', [
+            'descricao' => 'Pesquisa', 'granularidade_padrao' => 'PRODUTO', 'produtos_uuids' => [$alheio->uuid],
+        ])->assertUnprocessable()->assertJsonValidationErrors('produtos_uuids.0');
     }
 }

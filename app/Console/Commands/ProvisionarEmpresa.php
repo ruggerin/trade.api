@@ -65,6 +65,7 @@ class ProvisionarEmpresa extends Command
         'CODIGO_BARRAS_OBRIGATORIO' => ['valor' => 'false', 'descricao' => 'Exige código de barras ao cadastrar produto (App\Support\CodigoBarrasProduto)'],
         'RASTREAMENTO_INTERVALO_SEGUNDOS' => ['valor' => '0', 'descricao' => 'Intervalo do rastreamento em tempo real, em segundos — 0 = desligado (App\Support\Rastreamento)'],
         'CODIGO_BARRAS_UNICO' => ['valor' => 'false', 'descricao' => 'Código de barras precisa ser único no catálogo da empresa (App\Support\CodigoBarrasProduto)'],
+        'PEDIDO_VENDA_SEM_VISITA_PERMITIDO' => ['valor' => 'false', 'descricao' => 'Vendedor pode tirar Pedido de Venda fora de uma visita (App\Support\PedidoVendaSemVisita) — false = só durante a visita'],
     ];
 
     /**

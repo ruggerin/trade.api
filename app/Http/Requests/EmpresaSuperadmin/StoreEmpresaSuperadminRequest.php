@@ -26,6 +26,7 @@ class StoreEmpresaSuperadminRequest extends FormRequest
             // Cobrança por licença de dispositivo — conta usuários PROMOTOR ativos (cada um
             // trava 1 dispositivo por vez, ver AuthController::login). null = sem limite.
             'limite_licencas' => ['nullable', 'integer', 'min:1'],
+            'pedidos_venda_habilitado' => ['nullable', 'boolean'],
             // Cria junto o primeiro ADMIN da empresa — sem isso não existe forma de logar
             // nela, o signup público cria uma empresa nova a cada vez, não anexa a uma
             // existente. Mesmo padrão de campos do EmpresaController::signup.

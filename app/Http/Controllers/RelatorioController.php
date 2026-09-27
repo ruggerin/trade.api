@@ -17,6 +17,7 @@ use App\Models\Visita;
 use App\Models\VisitaRegistro;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -153,30 +154,8 @@ class RelatorioController extends Controller
         $request->validate(['tipo_registro_uuid' => ['required', 'string']]);
         [$inicio, $fim, $tz] = $this->periodo($request);
 
-        $tipo = TipoRegistro::with('campos')->where('uuid', $request->string('tipo_registro_uuid'))->first();
-        if (! $tipo) {
-            abort(404, 'Formulário não encontrado.');
-        }
-
-        $usuarioId = $request->filled('usuario_uuid')
-            ? Usuario::where('uuid', $request->string('usuario_uuid'))->value('id')
-            : null;
-        $pontoVendaId = $request->filled('ponto_venda_uuid')
-            ? PontoVenda::where('uuid', $request->string('ponto_venda_uuid'))->value('id')
-            : null;
-        $redeId = $request->filled('rede_loja_uuid')
-            ? RedeLoja::where('uuid', $request->string('rede_loja_uuid'))->value('id')
-            : null;
-
-        $registros = VisitaRegistro::query()
-            ->where('tipo_registro_id', $tipo->id)
-            ->whereNull('cancelado_em')
-            ->whereHas('visita', function ($q) use ($inicio, $fim, $usuarioId, $pontoVendaId, $redeId) {
-                $q->whereBetween('inicio_data', [$inicio, $fim])
-                    ->when($usuarioId, fn ($v) => $v->where('usuario_id', $usuarioId))
-                    ->when($pontoVendaId, fn ($v) => $v->where('ponto_venda_id', $pontoVendaId))
-                    ->when($redeId, fn ($v) => $v->whereHas('pontoVenda', fn ($p) => $p->where('rede_loja_id', $redeId)));
-            })
+        $tipo = $this->tipoRegistro($request);
+        $registros = $this->registrosDoFormulario($request, $tipo, $inicio, $fim)
             ->with('produtoAuditoria:id,uuid,descricao')
             ->orderByDesc('id')
             ->get();
@@ -197,6 +176,118 @@ class RelatorioController extends Controller
         }
 
         return response()->json($resposta);
+    }
+
+    /**
+     * "Coleta por Formulário" (docs/39-RELATORIO-ANALITICO-PIVOT.md) — a aba ao lado do
+     * sintético. Devolve uma lista PLANA de células (registro × pergunta respondida); quem decide
+     * o que é linha e o que é coluna é o front, que monta a matriz (§4). Mesmos filtros do
+     * sintético. Campo SORTIMENTO fica de fora: é um checklist inteiro, não cabe numa célula.
+     */
+    public function respostasFormularioAnalitico(Request $request): JsonResponse
+    {
+        $this->exigirAdminOuGestor($request);
+        $request->validate(['tipo_registro_uuid' => ['required', 'string']]);
+        [$inicio, $fim, $tz] = $this->periodo($request);
+
+        $tipo = $this->tipoRegistro($request);
+        $campos = $tipo->campos
+            ->filter(fn (CampoTipoRegistro $c) => $c->tipo_campo !== TipoCampoRegistro::SORTIMENTO)
+            ->when($request->filled('campo_chave'), fn (Collection $c) => $c->where('chave', $request->string('campo_chave')->toString()))
+            ->values();
+
+        $registros = $this->registrosDoFormulario($request, $tipo, $inicio, $fim)
+            ->with([
+                'produtoAuditoria:id,uuid,descricao,codigo_externo',
+                'visita:id,uuid,ponto_venda_id,usuario_id,inicio_data',
+                'visita.pontoVenda:id,uuid,fantasia,rede_loja_id',
+                'visita.pontoVenda.redeLoja:id,descricao',
+                'visita.usuario:id,uuid,nome',
+            ])
+            ->orderBy('id')
+            ->get();
+
+        $celulas = [];
+        foreach ($registros as $registro) {
+            $visita = $registro->visita;
+            foreach ($campos as $campo) {
+                $bruto = $registro->valores_campos[$campo->chave] ?? null;
+                if ($bruto === null || $bruto === '') {
+                    continue;
+                }
+
+                $numerico = in_array($campo->tipo_campo, [TipoCampoRegistro::NUMERO, TipoCampoRegistro::MOEDA], true);
+                $celulas[] = [
+                    'registro_id' => $registro->uuid,
+                    'visita_id' => $visita?->uuid,
+                    'registrado_em' => $visita?->inicio_data ?? $registro->created_at,
+                    'ponto_venda' => $visita?->pontoVenda ? [
+                        'id' => $visita->pontoVenda->uuid,
+                        'fantasia' => $visita->pontoVenda->fantasia,
+                        'rede' => $visita->pontoVenda->redeLoja?->descricao,
+                    ] : null,
+                    'promotor' => $visita?->usuario?->nome,
+                    'produto' => $registro->produtoAuditoria ? [
+                        'id' => $registro->produtoAuditoria->uuid,
+                        'descricao' => $registro->produtoAuditoria->descricao,
+                        'codigo_externo' => $registro->produtoAuditoria->codigo_externo,
+                    ] : null,
+                    'campo' => $campo->chave,
+                    'valor' => $campo->tipo_campo === TipoCampoRegistro::BOOLEANO
+                        ? ((string) $bruto === '1' ? 'Sim' : 'Não')
+                        : (string) $bruto,
+                    // Já parseado ("12,50" e "12.50" — o campo é texto livre no mobile) pro front
+                    // não repetir a regra de estatisticas(); null quando não é número de verdade.
+                    'valor_numerico' => $numerico ? $this->numero($bruto) : null,
+                ];
+            }
+        }
+
+        return response()->json([
+            'tipo_registro' => ['id' => $tipo->uuid, 'descricao' => $tipo->descricao],
+            'periodo' => ['data_inicio' => $inicio->copy()->setTimezone($tz)->toDateString(), 'data_fim' => $fim->copy()->setTimezone($tz)->toDateString()],
+            'total_registros' => $registros->count(),
+            // Ordem do formulário — o front usa pra ordenar as colunas de pergunta.
+            'campos' => $campos->map(fn (CampoTipoRegistro $c) => [
+                'chave' => $c->chave,
+                'rotulo' => $c->rotulo,
+                'tipo_campo' => $c->tipo_campo->value,
+            ])->all(),
+            'celulas' => $celulas,
+        ]);
+    }
+
+    /**
+     * PDF da matriz exatamente como está na tela — o front já montou o pivot (orientação,
+     * agrupamento, rodapé), aqui só desenha a tabela. Evita duplicar a lógica do pivot em PHP.
+     * POST porque a matriz pode ser grande demais pra query string.
+     */
+    public function respostasFormularioAnaliticoPdf(Request $request): Response
+    {
+        $this->exigirAdminOuGestor($request);
+        $dados = $request->validate([
+            'titulo' => ['required', 'string', 'max:255'],
+            'subtitulo' => ['nullable', 'string', 'max:500'],
+            'cabecalho' => ['required', 'array', 'min:1', 'max:3'],
+            'cabecalho.*' => ['array', 'max:2000'],
+            'cabecalho.*.*.texto' => ['nullable', 'string', 'max:255'],
+            'cabecalho.*.*.colunas' => ['nullable', 'integer', 'min:1', 'max:2000'],
+            'cabecalho.*.*.linhas' => ['nullable', 'integer', 'min:1', 'max:3'],
+            'linhas' => ['present', 'array', 'max:5000'],
+            'linhas.*' => ['array', 'max:2000'],
+            'linhas.*.*' => ['nullable', 'string', 'max:255'],
+            'rodape' => ['nullable', 'array', 'max:10'],
+            'rodape.*' => ['array', 'max:2000'],
+            'rodape.*.*' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $pdf = Pdf::loadView('pdf.relatorio-coleta-formulario', ['dados' => $dados, 'geradoEm' => now()])
+            ->setPaper('a4', 'landscape');
+
+        return new Response($pdf->output(), 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'attachment; filename="'.str($dados['titulo'])->slug().'.pdf"',
+        ]);
     }
 
     /** Mesmo relatório de visitasPlanejadasXExecutadas, em PDF (tabela, pra imprimir/enviar). */
@@ -266,10 +357,52 @@ class RelatorioController extends Controller
     }
 
     /** Aceita "12,50" e "12.50" — o campo é texto livre no mobile. */
+    private function numero(mixed $valor): ?float
+    {
+        $n = str_replace(',', '.', trim((string) $valor));
+
+        return is_numeric($n) ? (float) $n : null;
+    }
+
+    private function tipoRegistro(Request $request): TipoRegistro
+    {
+        $tipo = TipoRegistro::with('campos')->where('uuid', $request->string('tipo_registro_uuid'))->first();
+        if (! $tipo) {
+            abort(404, 'Formulário não encontrado.');
+        }
+
+        return $tipo;
+    }
+
+    /** Registros não cancelados do formulário no período — base do sintético e da coleta. */
+    private function registrosDoFormulario(Request $request, TipoRegistro $tipo, Carbon $inicio, Carbon $fim): Builder
+    {
+        $usuarioId = $request->filled('usuario_uuid')
+            ? Usuario::where('uuid', $request->string('usuario_uuid'))->value('id')
+            : null;
+        $pontoVendaId = $request->filled('ponto_venda_uuid')
+            ? PontoVenda::where('uuid', $request->string('ponto_venda_uuid'))->value('id')
+            : null;
+        $redeId = $request->filled('rede_loja_uuid')
+            ? RedeLoja::where('uuid', $request->string('rede_loja_uuid'))->value('id')
+            : null;
+
+        return VisitaRegistro::query()
+            ->where('tipo_registro_id', $tipo->id)
+            ->whereNull('cancelado_em')
+            ->whereHas('visita', function ($q) use ($inicio, $fim, $usuarioId, $pontoVendaId, $redeId) {
+                $q->whereBetween('inicio_data', [$inicio, $fim])
+                    ->when($usuarioId, fn ($v) => $v->where('usuario_id', $usuarioId))
+                    ->when($pontoVendaId, fn ($v) => $v->where('ponto_venda_id', $pontoVendaId))
+                    ->when($redeId, fn ($v) => $v->whereHas('pontoVenda', fn ($p) => $p->where('rede_loja_id', $redeId)));
+            });
+    }
+
+    /** Aceita "12,50" e "12.50" — o campo é texto livre no mobile. */
     private function estatisticas(Collection $valores): ?array
     {
         $numeros = $valores
-            ->map(fn ($v) => is_numeric($n = str_replace(',', '.', (string) $v)) ? (float) $n : null)
+            ->map(fn ($v) => $this->numero($v))
             ->filter(fn ($n) => $n !== null)
             ->values();
 

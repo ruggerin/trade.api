@@ -17,8 +17,10 @@ use App\Http\Controllers\GaleriaFotosController;
 use App\Http\Controllers\ImagemRegistroController;
 use App\Http\Controllers\ComentarioRegistroController;
 use App\Http\Controllers\HistoricoLojaController;
+use App\Http\Controllers\ImportacaoDadosController;
 use App\Http\Controllers\LocalizacaoController;
 use App\Http\Controllers\PedidoController;
+use App\Http\Controllers\PedidoVendaController;
 use App\Http\Controllers\RelatorioController;
 use App\Http\Controllers\MarcaAuditoriaController;
 use App\Http\Controllers\NivelExibicaoController;
@@ -161,6 +163,9 @@ Route::middleware('auth:sanctum')->group(function (): void {
     // acompanhar tudo que rolou nas visitas do dia, todo mundo junto — ver
     // AtividadeController::index e docs/17-PAINEL-ATIVIDADES.md.
     Route::get('/atividades', [AtividadeController::class, 'index']);
+    // Coluna lateral + contadores (em loja agora, alertas sem tratativa, respostas novas) e badge
+    // do menu — ver AtividadeController::resumo e docs/43-REVISAO-UX-PAINEL-ATIVIDADES.md.
+    Route::get('/atividades/resumo', [AtividadeController::class, 'resumo']);
 
     // Operação do Dia: KPIs + equipe em campo + fila de ações num payload só, pra ADMIN/GESTOR
     // — ver OperacaoDoDiaController::index e docs/32-PAINEL-OPERACAO-DO-DIA.md.
@@ -177,6 +182,10 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::get('/relatorios/respostas-formulario', [RelatorioController::class, 'respostasFormulario']);
     Route::get('/relatorios/visitas-planejadas-x-executadas/pdf', [RelatorioController::class, 'visitasPlanejadasXExecutadasPdf']);
     Route::get('/relatorios/respostas-formulario/pdf', [RelatorioController::class, 'respostasFormularioPdf']);
+    // Coleta por Formulário (docs/39-RELATORIO-ANALITICO-PIVOT.md) — lista plana; o PDF recebe a
+    // matriz já montada pelo front (POST).
+    Route::get('/relatorios/respostas-formulario/analitico', [RelatorioController::class, 'respostasFormularioAnalitico']);
+    Route::post('/relatorios/respostas-formulario/analitico/pdf', [RelatorioController::class, 'respostasFormularioAnaliticoPdf']);
 
     // Rastreamento em tempo real (docs/11-RASTREAMENTO-TEMPO-REAL.md): o promotor manda a própria
     // posição; o mapa ao vivo do admin lê a lista, sob permissão dedicada.
@@ -249,6 +258,12 @@ Route::middleware('auth:sanctum')->group(function (): void {
     // Escrita nos cadastros — ADMIN sempre libera; GESTOR depende da permissão no perfil
     // atribuído a ele. Ver App\Http\Middleware\EnsurePermissao.
     Route::post('/pontos-venda', [PontoVendaController::class, 'store'])->middleware('permissao:pontos_venda.gerenciar');
+    // Cadastro em lote via CSV (codigo_externo = chave; existe → atualiza). Ver App\Support\ImportacaoPontosVenda.
+    Route::post('/pontos-venda/importar', [PontoVendaController::class, 'importar'])->middleware('permissao:pontos_venda.gerenciar');
+    // Importação de Dados (docs/42) — Produto (catálogo) e Vínculo Loja × Produto (sortimento,
+    // mesma permissão que o cadastro de sortimento pelo admin já usa).
+    Route::post('/produtos-auditoria/importar', [ImportacaoDadosController::class, 'produtos'])->middleware('permissao:catalogo.gerenciar');
+    Route::post('/sortimentos/importar', [ImportacaoDadosController::class, 'sortimento'])->middleware('permissao:pontos_venda.gerenciar');
     Route::put('/pontos-venda/{pontoVenda}', [PontoVendaController::class, 'update'])->middleware('permissao:pontos_venda.gerenciar');
     Route::delete('/pontos-venda/{pontoVenda}', [PontoVendaController::class, 'destroy'])->middleware('permissao:pontos_venda.gerenciar');
     // Foto da fachada da loja — mesmo padrão de AuthController::atualizarFoto/removerFoto, só
@@ -442,6 +457,21 @@ Route::middleware('auth:sanctum')->group(function (): void {
     });
     Route::post('/planos-acao/{planoAcao}/concluir', [PlanoAcaoController::class, 'concluir'])->middleware('permissao:planos_acao.concluir');
     Route::post('/planos-acao/{planoAcao}/cancelar', [PlanoAcaoController::class, 'cancelar'])->middleware('permissao:planos_acao.cancelar');
+
+    // Pedido de Venda (docs/38-PEDIDO-VENDEDOR.md) — "modo Vendedor" do promotor. Sem middleware
+    // `permissao:` de propósito: o vendedor é PROMOTOR, que o EnsurePermissao nunca libera — as
+    // permissões pedidos_venda.* são checadas no controller (App\Support\PermissaoPedidoVenda).
+    // /vendedores precisa vir ANTES de /{pedidoVenda}.
+    Route::get('/pedidos-venda', [PedidoVendaController::class, 'index']);
+    Route::get('/pedidos-venda/vendedores', [PedidoVendaController::class, 'vendedores']);
+    Route::post('/pedidos-venda', [PedidoVendaController::class, 'store']);
+    Route::get('/pedidos-venda/{pedidoVenda}', [PedidoVendaController::class, 'show']);
+    Route::put('/pedidos-venda/{pedidoVenda}', [PedidoVendaController::class, 'update']);
+    Route::post('/pedidos-venda/{pedidoVenda}/enviar', [PedidoVendaController::class, 'enviar']);
+    Route::post('/pedidos-venda/{pedidoVenda}/aprovar', [PedidoVendaController::class, 'aprovar']);
+    Route::post('/pedidos-venda/{pedidoVenda}/rejeitar', [PedidoVendaController::class, 'rejeitar']);
+    Route::post('/pedidos-venda/{pedidoVenda}/concluir', [PedidoVendaController::class, 'concluir']);
+    Route::post('/pedidos-venda/{pedidoVenda}/cancelar', [PedidoVendaController::class, 'cancelar']);
 
     // Centros de custo: dado financeiro, diferente do resto do catálogo a LEITURA também exige
     // a permissão (nunca aberta a qualquer autenticado) — ver docs/08-CENTRO-DE-CUSTO.md.

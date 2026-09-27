@@ -39,6 +39,10 @@ class ProdutoAuditoriaResource extends JsonResource
             'gerar_via_secoes_marcas' => $this->gerar_via_secoes_marcas,
             'peso_kg' => $this->peso_kg,
             'propriedade' => $this->propriedade,
+            // Pedido de Venda (docs/38 §6) — o mobile usa pra pré-preencher o preço e avisar
+            // quando o digitado fica abaixo do mínimo; produto sem preço aparece bloqueado.
+            'preco_tabela' => $this->preco_tabela !== null ? (float) $this->preco_tabela : null,
+            'desconto_maximo_pct' => $this->desconto_maximo_pct !== null ? (float) $this->desconto_maximo_pct : null,
             // Só carregado quando quem pede é SUPERADMIN (filtro/coluna de empresa no admin web).
             'empresa' => $this->whenLoaded('empresa', fn () => new EmpresaResource($this->empresa)),
             'ativo' => $this->ativo,

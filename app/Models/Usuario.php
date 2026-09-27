@@ -22,6 +22,8 @@ class Usuario extends Authenticatable
         'empresa_id',
         'nome',
         'email',
+        // Código do ERP/sistema de origem (ex.: RCA do vendedor) — só guardado e filtrável.
+        'codigo_externo',
         'senha_hash',
         'user_type',
         'perfil_id',

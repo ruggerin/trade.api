@@ -23,6 +23,9 @@ class UpdateEmpresaSuperadminRequest extends FormRequest
             'limite_usuarios' => ['sometimes', 'nullable', 'integer', 'min:1'],
             'limite_pontos_venda' => ['sometimes', 'nullable', 'integer', 'min:1'],
             'limite_licencas' => ['sometimes', 'nullable', 'integer', 'min:1'],
+            // Módulo pago (docs/38 §12) — de propósito só aqui, nunca no UpdateEmpresaRequest
+            // self-service do ADMIN.
+            'pedidos_venda_habilitado' => ['sometimes', 'boolean'],
             // Reativar uma empresa bloqueada passa por aqui (ativo: true) — o bloqueio em si é
             // via DELETE (mesmo padrão soft-delete do resto da API), ver
             // EmpresaController::destroySuperadmin.
