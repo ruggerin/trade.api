@@ -23,6 +23,9 @@ class EmpresaResource extends JsonResource
             'limite_usuarios' => $this->limite_usuarios,
             'limite_pontos_venda' => $this->limite_pontos_venda,
             'limite_licencas' => $this->limite_licencas,
+            // Módulo Pedido de Venda contratado (docs/38 §12) — o admin desabilita as permissões
+            // pedidos_venda.* no Perfil e o mobile esconde a aba Pedidos quando false.
+            'pedidos_venda_habilitado' => (bool) $this->pedidos_venda_habilitado,
             'ativo' => $this->ativo,
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,

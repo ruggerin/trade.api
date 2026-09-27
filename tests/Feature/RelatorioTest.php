@@ -279,6 +279,59 @@ class RelatorioTest extends TestCase
         $this->assertStringStartsWith('%PDF', $resposta->getContent());
     }
 
+    // ---- coleta por formulário (docs/39) ----
+
+    public function test_coleta_devolve_celulas_planas_por_registro_e_pergunta(): void
+    {
+        $tipo = TipoRegistro::create(['empresa_id' => $this->empresa->id, 'descricao' => 'Pesquisa de Preço']);
+        $this->campo($tipo, 'preco', 'MOEDA', 0);
+        $this->campo($tipo, 'promo', 'BOOLEANO', 1);
+        $this->campo($tipo, 'mix', 'SORTIMENTO', 2);
+        $produto = ProdutoAuditoria::factory()->create(['empresa_id' => $this->empresa->id, 'descricao' => 'Lasanha 600g']);
+
+        $r1 = $this->registro($tipo, ['preco' => '11,79', 'promo' => '1', 'mix' => '{"presentes":[],"ausentes":[]}'], ['produto_auditoria_id' => $produto->id]);
+        // Pergunta sem resposta não vira célula; registro cancelado não entra.
+        $this->registro($tipo, ['preco' => '12.50']);
+        $this->registro($tipo, ['preco' => '99'], ['cancelado_em' => now()]);
+
+        $resposta = $this->getJson("/api/relatorios/respostas-formulario/analitico?tipo_registro_uuid={$tipo->uuid}")
+            ->assertOk()
+            ->assertJsonPath('total_registros', 2)
+            ->assertJsonCount(2, 'campos') // SORTIMENTO fica de fora
+            ->assertJsonPath('campos.0.chave', 'preco')
+            ->assertJsonCount(3, 'celulas');
+
+        $celulas = collect($resposta->json('celulas'));
+        $preco1 = $celulas->first(fn ($c) => $c['registro_id'] === $r1->uuid && $c['campo'] === 'preco');
+        $this->assertSame('11,79', $preco1['valor']);
+        $this->assertEqualsWithDelta(11.79, $preco1['valor_numerico'], 0.001);
+        $this->assertSame('Lasanha 600g', $preco1['produto']['descricao']);
+        $this->assertSame('Ana Promotora', $preco1['promotor']);
+        $this->assertSame('Sim', $celulas->first(fn ($c) => $c['campo'] === 'promo')['valor']);
+        $this->assertNull($celulas->first(fn ($c) => $c['campo'] === 'preco' && $c['registro_id'] !== $r1->uuid)['produto']);
+    }
+
+    public function test_coleta_pdf_desenha_a_matriz_recebida(): void
+    {
+        $resposta = $this->postJson('/api/relatorios/respostas-formulario/analitico/pdf', [
+            'titulo' => 'Coleta por Formulário — Pesquisa de Preço',
+            'subtitulo' => '01/09/2026 a 26/09/2026',
+            'cabecalho' => [[['texto' => 'Loja', 'linhas' => 2], ['texto' => 'Lasanha', 'colunas' => 2]], [['texto' => 'Preço'], ['texto' => 'Promo']]],
+            'linhas' => [['Assaí', 'R$ 11,79', 'Sim'], ['Atacadão', null, 'Não']],
+            'rodape' => [['Média', 'R$ 11,79', '—']],
+        ])->assertOk()->assertHeader('Content-Type', 'application/pdf');
+
+        $this->assertStringStartsWith('%PDF', $resposta->getContent());
+    }
+
+    public function test_promotor_nao_acessa_coleta(): void
+    {
+        Sanctum::actingAs($this->promotor);
+
+        $this->getJson('/api/relatorios/respostas-formulario/analitico?tipo_registro_uuid=x')->assertForbidden();
+        $this->postJson('/api/relatorios/respostas-formulario/analitico/pdf', [])->assertForbidden();
+    }
+
     public function test_promotor_nao_baixa_pdf_dos_relatorios(): void
     {
         Sanctum::actingAs($this->promotor);

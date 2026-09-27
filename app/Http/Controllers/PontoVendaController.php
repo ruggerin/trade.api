@@ -13,6 +13,7 @@ use App\Models\PontoVenda;
 use App\Models\RamoAtividade;
 use App\Models\RedeLoja;
 use App\Models\Usuario;
+use App\Support\ImportacaoPontosVenda;
 use App\Support\VisibilidadePontosVenda;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -24,17 +25,39 @@ class PontoVendaController extends Controller
     public function index(Request $request): JsonResponse
     {
         $usuario = $request->user();
+        $request->validate([
+            'data_campo' => ['nullable', 'in:created_at,updated_at'],
+            'data_inicio' => ['nullable', 'date'],
+            'data_fim' => ['nullable', 'date'],
+            'ordenar' => ['nullable', 'in:fantasia,recentes'],
+        ]);
+        // Período por data de cadastro (loja que entrou na base) ou de última alteração.
+        $campoData = 'pontos_venda.'.$request->input('data_campo', 'created_at');
 
         $pontosVenda = PontoVenda::query()
             ->when($request->has('ativo'), fn ($query) => $query->where('ativo', $request->boolean('ativo')))
             ->when($request->filled('busca'), function ($query) use ($request) {
-                $busca = '%'.$request->string('busca').'%';
+                // % e _ digitados valem como texto, não como curinga do LIKE.
+                $busca = '%'.addcslashes($request->string('busca'), '%_\\').'%';
                 $query->where(function ($query) use ($busca) {
                     $query->where('razao_social', 'ilike', $busca)
                         ->orWhere('fantasia', 'ilike', $busca)
-                        ->orWhere('bairro', 'ilike', $busca);
+                        ->orWhere('bairro', 'ilike', $busca)
+                        // Código do ERP e CNPJ na mesma caixa — é por onde o cliente costuma
+                        // conferir se a loja subiu do ERP.
+                        ->orWhere('codigo_externo', 'ilike', $busca)
+                        ->orWhere('cnpj', 'ilike', $busca);
                 });
             })
+            ->when($request->filled('rede_loja_uuid'), fn ($query) => $query->whereHas(
+                'redeLoja',
+                fn ($q) => $q->where('uuid', $request->string('rede_loja_uuid')),
+            ))
+            ->when($request->filled('cidade'), fn ($query) => $query->where('cidade', 'ilike', '%'.addcslashes($request->string('cidade'), '%_\\').'%'))
+            // Loja sem nenhum promotor atribuído — pendência de configuração da carteira.
+            ->when($request->boolean('sem_promotor'), fn ($query) => $query->doesntHave('promotores'))
+            ->when($request->filled('data_inicio'), fn ($query) => $query->whereDate($campoData, '>=', $request->string('data_inicio')))
+            ->when($request->filled('data_fim'), fn ($query) => $query->whereDate($campoData, '<=', $request->string('data_fim')))
             // Filtros refinados pra além do "busca" genérico acima — usados pelo modal de busca
             // avançada do admin web (selecionar PDV certo entre vários parecidos), ver
             // docs/03-ADMIN-WEB.md#6-usuários. Cada um é independente, dá pra combinar.
@@ -80,7 +103,11 @@ class PontoVendaController extends Controller
             // Contagem rápida do mix — usada pelo Planejador de Visitas (mapa/relatório de
             // impressão), sem custo relevante (é só um COUNT por PDV na mesma query).
             ->withCount('sortimento')
-            ->orderBy('fantasia')
+            ->when(
+                $request->input('ordenar') === 'recentes',
+                fn ($query) => $query->orderByDesc($campoData)->orderBy('fantasia'),
+                fn ($query) => $query->orderBy('fantasia'),
+            )
             // `por_pagina` é opt-in (ninguém manda por padrão) — usado pelo Planejador de Visitas
             // pra listar a carteira inteira de um promotor de uma vez, sem paginação real.
             ->paginate($request->filled('por_pagina') ? min($request->integer('por_pagina'), 200) : null);
@@ -125,6 +152,28 @@ class PontoVendaController extends Controller
         return response()->json([
             'ponto_venda' => new PontoVendaResource($pontoVenda),
         ], 201);
+    }
+
+    /**
+     * Cadastro em lote via CSV — `codigo_externo` é a chave: existe → atualiza, não existe → cria.
+     * `simular=1` valida o arquivo inteiro e devolve o relatório sem gravar; sem ele, grava tudo
+     * ou nada (qualquer erro = nada gravado). Regras em App\Support\ImportacaoPontosVenda.
+     */
+    public function importar(Request $request): JsonResponse
+    {
+        $request->validate([
+            'arquivo' => ['required', 'file', 'max:5120', 'mimes:csv,txt'],
+            'simular' => ['nullable', 'boolean'],
+        ], [
+            'arquivo.mimes' => 'Envie um arquivo .csv (no Excel: Salvar como → CSV).',
+            'arquivo.max' => 'Arquivo grande demais (máximo 5 MB) — divida em partes.',
+        ]);
+
+        return response()->json(ImportacaoPontosVenda::executar(
+            $request->user()->empresa,
+            $request->file('arquivo')->get(),
+            $request->boolean('simular'),
+        ));
     }
 
     public function update(UpdatePontoVendaRequest $request, PontoVenda $pontoVenda): JsonResponse

@@ -30,6 +30,7 @@ class StoreUsuarioRequest extends FormRequest
         return [
             'nome' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email', 'unique:usuarios,email'],
+            'codigo_externo' => ['nullable', 'string', 'max:64'],
             'senha' => ['required', 'string', 'min:8'],
             // SUPERADMIN nunca é atribuível por aqui — só via comando artisan
             // usuario:criar-superadmin, fora da API pública.

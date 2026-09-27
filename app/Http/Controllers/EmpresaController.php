@@ -163,6 +163,7 @@ class EmpresaController extends Controller
                 'limite_usuarios' => $dados['limite_usuarios'] ?? null,
                 'limite_pontos_venda' => $dados['limite_pontos_venda'] ?? null,
                 'limite_licencas' => $dados['limite_licencas'] ?? null,
+                'pedidos_venda_habilitado' => $dados['pedidos_venda_habilitado'] ?? false,
             ]);
 
             $usuario = Usuario::create([

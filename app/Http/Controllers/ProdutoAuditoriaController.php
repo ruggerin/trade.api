@@ -62,9 +62,25 @@ class ProdutoAuditoriaController extends Controller
                 $request->filled('empresa_uuid'),
                 fn ($query) => $query->where('empresa_id', Empresa::where('uuid', $request->string('empresa_uuid'))->value('id')),
             )
+            // "Colar lista de códigos" do seletor de produtos do formulário — vários códigos de
+            // uma vez (código externo OU de barras, casamento exato). Aceita array ou texto
+            // separado por vírgula/quebra de linha.
+            ->when($request->filled('codigos'), function ($query) use ($request) {
+                $codigos = $request->input('codigos');
+                $lista = collect(is_array($codigos) ? $codigos : preg_split('/[\s,;]+/', (string) $codigos))
+                    ->map(fn ($c) => trim((string) $c))
+                    ->filter()
+                    ->unique()
+                    ->take(1000)
+                    ->values()
+                    ->all();
+                $query->where(fn ($q) => $q->whereIn('codigo_externo', $lista)->orWhereIn('codigo_barras', $lista));
+            })
             ->with(['departamento', 'secao', 'marca', 'nivelExibicao', 'empresa'])
             ->orderBy('descricao')
-            ->paginate();
+            // `por_pagina` opt-in (até 1000) — a resolução de uma lista colada precisa de tudo numa
+            // resposta só; o padrão de 15 continua valendo pro resto.
+            ->paginate($request->filled('por_pagina') ? min(max($request->integer('por_pagina'), 1), 1000) : null);
 
         return response()->json([
             'produtos' => ProdutoAuditoriaResource::collection($produtos->items()),

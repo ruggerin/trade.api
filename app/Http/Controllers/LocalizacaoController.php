@@ -47,6 +47,10 @@ class LocalizacaoController extends Controller
             return response()->json(status: 204);
         }
 
+        // Sem tocar em updated_at: posição chega a cada poucos segundos e não é edição do
+        // cadastro — senão "atualizado recentemente" na lista de usuários viraria "está com o GPS
+        // ligado", e o ?v= da foto (UsuarioResource::foto_url) invalidaria o cache a cada ping.
+        $usuario->timestamps = false;
         $usuario->forceFill([
             'ultima_localizacao_latitude' => $dados['latitude'],
             'ultima_localizacao_longitude' => $dados['longitude'],

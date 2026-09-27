@@ -50,6 +50,15 @@ enum Permissao: string
     case PLANOS_ACAO_MOVIMENTAR_ETAPA = 'planos_acao.movimentar_etapa';
     case PLANOS_ACAO_CONCLUIR = 'planos_acao.concluir';
     case PLANOS_ACAO_CANCELAR = 'planos_acao.cancelar';
+
+    // Pedido de Venda digitado pelo vendedor (docs/38-PEDIDO-VENDEDOR.md §5) — domínio próprio,
+    // não reaproveita `pedidos.*` (que é o Pedido somente-leitura do ERP). Como
+    // pontos_venda.visualizar_todos, vale também pra PROMOTOR: `criar` é o que "liga o modo
+    // Vendedor" no mobile. Checadas no controller via App\Support\PermissaoPedidoVenda, não pelo
+    // EnsurePermissao (que nunca libera PROMOTOR).
+    case PEDIDOS_VENDA_VISUALIZAR = 'pedidos_venda.visualizar';
+    case PEDIDOS_VENDA_CRIAR = 'pedidos_venda.criar';
+    case PEDIDOS_VENDA_APROVAR = 'pedidos_venda.aprovar';
 }
 
 // Tipo de visita (tag colorida) e agenda de visita reaproveitam ORDENS_SERVICO_GERENCIAR — são

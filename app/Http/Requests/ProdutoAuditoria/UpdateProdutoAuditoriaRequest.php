@@ -56,6 +56,8 @@ class UpdateProdutoAuditoriaRequest extends FormRequest
             'peso_kg' => ['sometimes', 'nullable', 'numeric'],
             'propriedade' => ['sometimes', 'required', Rule::enum(Propriedade::class)],
             'ativo' => ['sometimes', 'boolean'],
+            'preco_tabela' => ['sometimes', 'nullable', 'numeric', 'gt:0', 'max:9999999'],
+            'desconto_maximo_pct' => ['sometimes', 'nullable', 'numeric', 'between:0,100'],
         ];
     }
 }

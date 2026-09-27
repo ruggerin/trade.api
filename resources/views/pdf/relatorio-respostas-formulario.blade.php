@@ -17,7 +17,7 @@
     </style>
 </head>
 <body>
-    <div class="titulo">Respostas por pergunta — {{ $dados['tipo_registro']['descricao'] }}</div>
+    <div class="titulo">Coleta por Formulário — {{ $dados['tipo_registro']['descricao'] }}</div>
     <div class="meta">
         Período: {{ \Carbon\Carbon::parse($dados['periodo']['data_inicio'])->format('d/m/Y') }}
         a {{ \Carbon\Carbon::parse($dados['periodo']['data_fim'])->format('d/m/Y') }}

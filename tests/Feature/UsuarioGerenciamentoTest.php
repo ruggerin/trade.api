@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Dispositivo;
 use App\Models\Empresa;
+use App\Models\Parametro;
 use App\Models\Perfil;
 use App\Models\Usuario;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -242,5 +243,60 @@ class UsuarioGerenciamentoTest extends TestCase
 
         $this->postJson("/api/usuarios/{$colega->uuid}/foto", ['imagem' => $this->imagemFake()])->assertForbidden();
         $this->deleteJson("/api/usuarios/{$colega->uuid}/foto")->assertForbidden();
+    }
+    // ---- filtros da lista + codigo_externo ----
+
+    public function test_codigo_externo_e_gravado_e_devolvido(): void
+    {
+        $empresa = Empresa::factory()->create();
+        Sanctum::actingAs(Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]));
+        $promotor = Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]);
+
+        $this->putJson("/api/usuarios/{$promotor->uuid}", ['codigo_externo' => 'RCA-123'])
+            ->assertOk()->assertJsonPath('usuario.codigo_externo', 'RCA-123');
+    }
+
+    public function test_lista_filtra_por_busca_perfil_e_periodo_e_ordena_por_recentes(): void
+    {
+        $empresa = Empresa::factory()->create();
+        $perfil = Perfil::factory()->create(['empresa_id' => $empresa->id]);
+        Sanctum::actingAs(Usuario::factory()->admin()->create(['empresa_id' => $empresa->id, 'nome' => 'Zé Admin', 'created_at' => now()->subYear()]));
+
+        $antigo = Usuario::factory()->promotor()->create([
+            'empresa_id' => $empresa->id, 'nome' => 'Ana Antiga', 'codigo_externo' => 'RCA-9', 'created_at' => now()->subMonths(3),
+        ]);
+        $novo = Usuario::factory()->promotor()->create([
+            'empresa_id' => $empresa->id, 'nome' => 'Bia Nova', 'perfil_id' => $perfil->id, 'created_at' => now()->subDay(),
+        ]);
+
+        $this->getJson('/api/usuarios?busca=rca-9')->assertOk()
+            ->assertJsonCount(1, 'usuarios')->assertJsonPath('usuarios.0.id', $antigo->uuid);
+
+        $this->getJson("/api/usuarios?perfil_uuid={$perfil->uuid}")->assertOk()
+            ->assertJsonCount(1, 'usuarios')->assertJsonPath('usuarios.0.id', $novo->uuid);
+        $this->getJson('/api/usuarios?perfil_uuid=sem_perfil')->assertOk()
+            ->assertJsonCount(1, 'usuarios')->assertJsonPath('usuarios.0.id', $antigo->uuid);
+
+        $desde = now()->subDays(7)->toDateString();
+        $this->getJson("/api/usuarios?data_campo=created_at&data_inicio={$desde}")->assertOk()
+            ->assertJsonCount(1, 'usuarios')->assertJsonPath('usuarios.0.id', $novo->uuid);
+
+        $this->getJson('/api/usuarios?ordenar=recentes&data_campo=created_at')->assertOk()
+            ->assertJsonPath('usuarios.0.id', $novo->uuid)
+            ->assertJsonPath('usuarios.1.id', $antigo->uuid);
+    }
+
+    public function test_ping_de_localizacao_nao_mexe_no_updated_at(): void
+    {
+        $empresa = Empresa::factory()->create();
+        Parametro::create(['empresa_id' => $empresa->id, 'chave' => 'RASTREAMENTO_INTERVALO_SEGUNDOS', 'valor' => '60', 'ativo' => true]);
+        $promotor = Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id, 'updated_at' => now()->subWeek()]);
+        $antes = $promotor->fresh()->updated_at;
+        Sanctum::actingAs($promotor);
+
+        $this->patchJson('/api/localizacao', ['latitude' => -3.1, 'longitude' => -60.0])->assertNoContent();
+
+        $this->assertEquals($antes, $promotor->fresh()->updated_at);
+        $this->assertNotNull($promotor->fresh()->ultima_localizacao_em);
     }
 }

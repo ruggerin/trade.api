@@ -20,6 +20,7 @@ class UpdateUsuarioRequest extends FormRequest
         return [
             'nome' => ['sometimes', 'required', 'string', 'max:255'],
             'email' => ['sometimes', 'required', 'email', Rule::unique('usuarios', 'email')->ignore($this->route('usuario'))],
+            'codigo_externo' => ['sometimes', 'nullable', 'string', 'max:64'],
             // Reset de senha manual pelo admin — ver docs/03-ADMIN-WEB.md.
             'senha' => ['sometimes', 'required', 'string', 'min:8'],
             'user_type' => ['sometimes', 'required', Rule::in([

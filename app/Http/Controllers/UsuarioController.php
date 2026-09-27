@@ -38,6 +38,14 @@ class UsuarioController extends Controller
 
     public function index(Request $request): JsonResponse
     {
+        $request->validate([
+            'data_campo' => ['nullable', 'in:created_at,updated_at'],
+            'data_inicio' => ['nullable', 'date'],
+            'data_fim' => ['nullable', 'date'],
+            'ordenar' => ['nullable', 'in:nome,recentes'],
+        ]);
+        $campoData = $request->input('data_campo', 'created_at');
+
         $usuarios = Usuario::query()
             ->when($request->has('ativo'), fn ($query) => $query->where('ativo', $request->boolean('ativo')))
             ->when($request->filled('user_type'), fn ($query) => $query->where('user_type', $request->string('user_type')))
@@ -48,8 +56,27 @@ class UsuarioController extends Controller
                 $request->filled('empresa_uuid'),
                 fn ($query) => $query->where('empresa_id', Empresa::where('uuid', $request->string('empresa_uuid'))->value('id')),
             )
+            // Nome, e-mail ou código externo na mesma caixa (mesmo padrão da busca de produto).
+            ->when($request->filled('busca'), function ($query) use ($request) {
+                $termo = '%'.addcslashes($request->string('busca'), '%_\\').'%';
+                $query->where(fn ($q) => $q
+                    ->where('nome', 'ilike', $termo)
+                    ->orWhere('email', 'ilike', $termo)
+                    ->orWhere('codigo_externo', 'ilike', $termo));
+            })
+            // `sem_perfil` = GESTOR/PROMOTOR ainda sem perfil atribuído (pendência de configuração).
+            ->when($request->filled('perfil_uuid'), fn ($query) => $request->string('perfil_uuid')->toString() === 'sem_perfil'
+                ? $query->whereNull('perfil_id')->whereIn('user_type', [UserType::GESTOR, UserType::PROMOTOR])
+                : $query->whereHas('perfil', fn ($p) => $p->where('uuid', $request->string('perfil_uuid'))))
+            // Período por data de cadastro (quem entrou na base) ou de última alteração do cadastro.
+            ->when($request->filled('data_inicio'), fn ($query) => $query->whereDate($campoData, '>=', $request->string('data_inicio')))
+            ->when($request->filled('data_fim'), fn ($query) => $query->whereDate($campoData, '<=', $request->string('data_fim')))
             ->with(['perfil', 'centroCusto', 'dispositivo', 'empresa'])
-            ->orderBy('nome')
+            ->when(
+                $request->input('ordenar') === 'recentes',
+                fn ($query) => $query->orderByDesc($campoData)->orderBy('nome'),
+                fn ($query) => $query->orderBy('nome'),
+            )
             // `por_pagina` é opt-in (ninguém manda por padrão) — usado pelo Planejador de
             // Visitas pra listar todos os promotores de uma vez no seletor, sem paginação real.
             ->paginate($request->filled('por_pagina') ? min($request->integer('por_pagina'), 200) : null);

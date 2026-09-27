@@ -9,6 +9,7 @@ use App\Models\Concerns\HasUuid;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class TipoRegistro extends Model
@@ -67,6 +68,33 @@ class TipoRegistro extends Model
     public function campanhaAuditoria(): BelongsTo
     {
         return $this->belongsTo(CampanhaAuditoria::class);
+    }
+
+    /**
+     * Escopo LOJA_REDE (docs/40-ACAO-OBRIGATORIA-LOJA-REDE.md) — lojas específicas onde a Ação
+     * obrigatória vale. Vazio em qualquer outro escopo (o controller limpa ao trocar).
+     */
+    public function pontosVenda(): BelongsToMany
+    {
+        return $this->belongsToMany(PontoVenda::class, 'tipo_registro_pontos_venda');
+    }
+
+    /**
+     * Lista predefinida de produtos (granularidade PRODUTO) — com ela preenchida, o promotor só
+     * vincula o registro a um destes, em qualquer loja (no mix ou não). Vazia = mix/campanha da
+     * visita, como antes. Ordem = ordem em que o admin montou a lista.
+     */
+    public function produtosPredefinidos(): BelongsToMany
+    {
+        return $this->belongsToMany(ProdutoAuditoria::class, 'tipo_registro_produtos', 'tipo_registro_id', 'produto_auditoria_id')
+            ->withPivot('ordem')
+            ->orderByPivot('ordem');
+    }
+
+    /** Escopo LOJA_REDE — toda loja dessas redes também entra (OR com pontosVenda). */
+    public function redesLojas(): BelongsToMany
+    {
+        return $this->belongsToMany(RedeLoja::class, 'tipo_registro_redes_lojas');
     }
 
     /**

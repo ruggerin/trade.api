@@ -12,4 +12,8 @@ enum EscopoAcaoTipoRegistro: string
     case SEMPRE = 'SEMPRE';
     case CAMPANHA = 'CAMPANHA';
     case CONTRATO = 'CONTRATO';
+    // Só nas lojas/redes escolhidas no próprio TipoRegistro (pivôs tipo_registro_pontos_venda /
+    // tipo_registro_redes_lojas) — loja OU rede basta; as duas listas vazias = todas as lojas.
+    // Ver docs/40-ACAO-OBRIGATORIA-LOJA-REDE.md.
+    case LOJA_REDE = 'LOJA_REDE';
 }

@@ -116,6 +116,9 @@ class StoreVisitaRegistroRequest extends FormRequest
             $this->validarGranularidade($validator, $tipoRegistro);
 
             $valores = $this->input('valores_campos', []);
+            // Produto em ruptura: não tem o que coletar (preço, quantidade...) — as perguntas
+            // obrigatórias deixam de ser exigidas. Valor que vier mesmo assim continua validado.
+            $emRuptura = $this->boolean('ruptura');
 
             foreach ($tipoRegistro->campos as $campo) {
                 // Campo condicional (decisão 7 de docs/20-FORMULARIO-DINAMICO-CAMPANHA.md) — sem
@@ -132,7 +135,7 @@ class StoreVisitaRegistroRequest extends FormRequest
 
                 $valor = $valores[$campo->chave] ?? null;
 
-                if ($campo->obrigatorio && ($valor === null || $valor === '')) {
+                if ($campo->obrigatorio && ! $emRuptura && ($valor === null || $valor === '')) {
                     $validator->errors()->add("valores_campos.{$campo->chave}", "O campo \"{$campo->rotulo}\" é obrigatório.");
                     continue;
                 }

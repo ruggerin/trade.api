@@ -64,6 +64,10 @@ class StoreProdutoAuditoriaRequest extends FormRequest
             'gerar_via_secoes_marcas' => ['nullable', 'boolean'],
             'peso_kg' => ['nullable', 'numeric'],
             'propriedade' => ['required', Rule::enum(Propriedade::class)],
+            // Pedido de Venda (docs/38 §6) — mesma permissão de catálogo, sem permissão própria
+            // de preço (decisão §10 pergunta 1).
+            'preco_tabela' => ['nullable', 'numeric', 'gt:0', 'max:9999999'],
+            'desconto_maximo_pct' => ['nullable', 'numeric', 'between:0,100'],
         ];
     }
 }

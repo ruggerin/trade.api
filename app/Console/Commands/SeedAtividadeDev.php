@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Models\OrdemServico;
 use App\Models\PlanoAcao;
 use App\Models\PontoVenda;
 use App\Models\ProdutoAuditoria;
@@ -16,6 +17,8 @@ use Illuminate\Support\Carbon;
  * Enche a base local de dev com visitas/registros realistas (rupturas, observações) dos
  * promotores já cadastrados, pros últimos N dias + hoje — pra Operação do Dia, o Painel de
  * Atividades e a lista de Planos de Ação terem dado de verdade em vez de tela vazia.
+ * `--agenda-dias` faz o mesmo pra frente, mas em `OrdemServico` (compromisso planejado), nunca
+ * `Visita` — uma visita não existe antes de acontecer.
  *
  * Só roda fora de produção. Rastreia tudo que cria num manifesto
  * (storage/app/dev-seed/atividade-manifest.json) pra `--limpar` apagar exatamente o que foi
@@ -26,6 +29,7 @@ class SeedAtividadeDev extends Command
     protected $signature = 'dev:seed-atividade
         {--dias=7 : Quantos dias pra trás gerar, além de hoje}
         {--visitas-por-dia=4 : Média de visitas por promotor por dia}
+        {--agenda-dias=0 : Quantos dias pra frente gerar de Ordem de Serviço (agenda), a partir de amanhã}
         {--empresa=2 : ID da empresa a povoar}
         {--limpar : Só apaga o que foi gerado numa execução anterior (não gera nada de novo)}';
 
@@ -86,6 +90,7 @@ class SeedAtividadeDev extends Command
         $totalVisitas = 0;
         $totalRegistros = 0;
         $totalRupturas = 0;
+        $totalOs = 0;
 
         for ($offset = $dias; $offset >= 0; $offset--) {
             $dia = $hoje->copy()->subDays($offset);
@@ -183,9 +188,42 @@ class SeedAtividadeDev extends Command
             }
         }
 
+        // Agenda pra frente (amanhã em diante) — OrdemServico, não Visita: nada foi executado
+        // ainda, é só o compromisso planejado. Ver docs/07-ORDEM-DE-SERVICO.md.
+        $agendaDias = max(0, (int) $this->option('agenda-dias'));
+        for ($offset = 1; $offset <= $agendaDias; $offset++) {
+            $dia = $hoje->copy()->addDays($offset);
+
+            foreach ($promotores as $promotor) {
+                $qtd = max(1, $mediaVisitas + random_int(-1, 1));
+                $pdvsDoDia = $pdvs->random(min($qtd, $pdvs->count()));
+
+                foreach ($pdvsDoDia as $pdv) {
+                    $horaPrevista = sprintf('%02d:%02d', random_int(8, 16), random_int(0, 59));
+
+                    $os = OrdemServico::create([
+                        'empresa_id' => $empresaId,
+                        'ponto_venda_id' => $pdv->id,
+                        'usuario_id' => $promotor->id,
+                        'origem' => 'MANUAL',
+                        'obrigatoria' => random_int(1, 100) <= 70,
+                        'prazo_inicio' => $dia->copy()->setTime(8, 0),
+                        'prazo_fim' => $dia->copy()->setTime(18, 0),
+                        'horario_previsto' => $horaPrevista,
+                        'status' => 'PENDENTE',
+                    ]);
+                    $manifesto['ordens_servico'][] = $os->id;
+                    $totalOs++;
+                }
+            }
+        }
+
         $this->salvarManifesto($manifesto);
 
         $this->info("Pronto: {$totalVisitas} visitas, {$totalRegistros} registros ({$totalRupturas} rupturas) — hoje + {$dias} dia(s) anteriores, empresa {$empresaId}.");
+        if ($agendaDias > 0) {
+            $this->info("Agenda: {$totalOs} ordem(ns) de serviço pros próximos {$agendaDias} dia(s).");
+        }
         $this->line('Pra apagar tudo isso depois: php artisan dev:seed-atividade --limpar');
 
         return self::SUCCESS;
@@ -195,7 +233,7 @@ class SeedAtividadeDev extends Command
     {
         $manifesto = $this->lerManifesto();
 
-        if (empty($manifesto['visitas']) && empty($manifesto['registros'])) {
+        if (empty($manifesto['visitas']) && empty($manifesto['registros']) && empty($manifesto['ordens_servico'])) {
             $this->info('Nada pra limpar — nenhum manifesto de seed encontrado.');
 
             return;
@@ -203,29 +241,32 @@ class SeedAtividadeDev extends Command
 
         $registros = $manifesto['registros'] ?? [];
         $visitas = $manifesto['visitas'] ?? [];
+        $ordensServico = $manifesto['ordens_servico'] ?? [];
 
         $planos = PlanoAcao::whereIn('origem_registro_id', $registros)->count();
         PlanoAcao::whereIn('origem_registro_id', $registros)->delete();
 
         VisitaRegistro::whereIn('id', $registros)->delete();
         Visita::whereIn('id', $visitas)->delete();
+        OrdemServico::whereIn('id', $ordensServico)->delete();
 
         $this->info(sprintf(
-            'Limpo: %d visitas, %d registros, %d plano(s) de ação vinculado(s).',
+            'Limpo: %d visitas, %d registros, %d ordem(ns) de serviço, %d plano(s) de ação vinculado(s).',
             count($visitas),
             count($registros),
+            count($ordensServico),
             $planos,
         ));
 
-        $this->salvarManifesto(['visitas' => [], 'registros' => []]);
+        $this->salvarManifesto(['visitas' => [], 'registros' => [], 'ordens_servico' => []]);
     }
 
-    /** @return array{visitas: list<int>, registros: list<int>} */
+    /** @return array{visitas: list<int>, registros: list<int>, ordens_servico: list<int>} */
     private function lerManifesto(): array
     {
         $path = storage_path('app/'.self::MANIFESTO);
         if (! file_exists($path)) {
-            return ['visitas' => [], 'registros' => []];
+            return ['visitas' => [], 'registros' => [], 'ordens_servico' => []];
         }
 
         $dados = json_decode(file_get_contents($path), true);
@@ -233,10 +274,11 @@ class SeedAtividadeDev extends Command
         return [
             'visitas' => $dados['visitas'] ?? [],
             'registros' => $dados['registros'] ?? [],
+            'ordens_servico' => $dados['ordens_servico'] ?? [],
         ];
     }
 
-    /** @param  array{visitas: list<int>, registros: list<int>}  $manifesto */
+    /** @param  array{visitas: list<int>, registros: list<int>, ordens_servico: list<int>}  $manifesto */
     private function salvarManifesto(array $manifesto): void
     {
         $path = storage_path('app/'.self::MANIFESTO);

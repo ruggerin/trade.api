@@ -106,4 +106,17 @@ class BuscaProdutoTest extends TestCase
             'descricao' => 'Novo', 'propriedade' => 'PROPRIA', 'marca_uuid' => $outra->uuid,
         ])->assertUnprocessable()->assertJsonValidationErrors('marca_uuid');
     }
+
+    public function test_filtra_por_lista_de_codigos_colada(): void
+    {
+        $a = ProdutoAuditoria::factory()->create(['empresa_id' => $this->empresa->id, 'codigo_externo' => 'ERP-1']);
+        $b = ProdutoAuditoria::factory()->create(['empresa_id' => $this->empresa->id, 'codigo_barras' => '7891']);
+        ProdutoAuditoria::factory()->create(['empresa_id' => $this->empresa->id, 'codigo_externo' => 'ERP-9']);
+
+        // Código externo OU de barras, colado com quebra de linha/vírgula; código inexistente é ignorado.
+        $ids = collect($this->getJson('/api/produtos-auditoria?por_pagina=500&codigos='.urlencode("ERP-1\n7891, NAO-EXISTE"))
+            ->assertOk()->json('produtos'))->pluck('id')->sort()->values()->all();
+
+        $this->assertSame(collect([$a->uuid, $b->uuid])->sort()->values()->all(), $ids);
+    }
 }

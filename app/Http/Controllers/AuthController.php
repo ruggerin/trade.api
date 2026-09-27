@@ -82,7 +82,10 @@ class AuthController extends Controller
 
         return response()->json([
             'token' => $token,
-            'usuario' => new UsuarioResource($usuario),
+            // `perfil` + `empresa` carregados pra o mobile já saber as permissões e os módulos
+            // contratados (ex.: aba "Pedidos" do modo Vendedor, docs/38-PEDIDO-VENDEDOR.md §4/§12)
+            // sem esperar um /auth/me.
+            'usuario' => new UsuarioResource($usuario->loadMissing(['perfil', 'empresa'])),
         ]);
     }
 
