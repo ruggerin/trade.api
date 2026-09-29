@@ -38,6 +38,7 @@ use App\Http\Controllers\PontoVendaController;
 use App\Http\Controllers\ProdutoAuditoriaController;
 use App\Http\Controllers\RamoAtividadeController;
 use App\Http\Controllers\RedeLojaController;
+use App\Http\Controllers\RegistroController;
 use App\Http\Controllers\SecaoAuditoriaController;
 use App\Http\Controllers\SortimentoPontoVendaController;
 use App\Http\Controllers\TipoRegistroController;
@@ -121,6 +122,9 @@ Route::middleware('auth:sanctum')->group(function (): void {
     // Histórico da loja e pedidos do ERP — só leitura, qualquer autenticado (é o que o promotor vê
     // ao entrar na loja). Ver docs/28-RELATORIOS-FEEDBACK-HISTORICO.md §4.
     Route::get('/pontos-venda/{pontoVenda}/historico', [HistoricoLojaController::class, 'show']);
+    // Dias da semana com atendimento (destaque no check-in) — ver
+    // PontoVendaController::agendaSemanal e docs/45-CHECKIN-ATENDIMENTO-SEMANAL.md.
+    Route::get('/pontos-venda/{pontoVenda}/agenda-semanal', [PontoVendaController::class, 'agendaSemanal']);
     Route::get('/pontos-venda/{pontoVenda}/pedidos', [PedidoController::class, 'porPontoVenda']);
     // Escrita do integrador de ERP (§4.2.2) — idempotente por número de pedido.
     Route::middleware('permissao:pedidos.gerenciar')->group(function (): void {
@@ -175,6 +179,12 @@ Route::middleware('auth:sanctum')->group(function (): void {
     // registro/catálogo/loja/rede/ramo/promotor/ruptura — ver GaleriaFotosController::index e
     // docs/23-GALERIA-DE-FOTOS.md.
     Route::get('/galeria-fotos', [GaleriaFotosController::class, 'index']);
+
+    // Registros: lista genérica e crua de VisitaRegistro (qualquer TipoRegistro — ruptura,
+    // avaria, validade, foto, observação), filtrável por parâmetro de URL pra permitir link
+    // direto de outras telas (ex.: "Rupturas por SKU" da Operação do Dia). Cada linha tem o
+    // uuid da visita de origem. Ver RegistroController::index e docs/44-TELA-REGISTROS.md.
+    Route::get('/registros', [RegistroController::class, 'index']);
 
     // Relatórios agregados (docs/28-RELATORIOS-FEEDBACK-HISTORICO.md §2) — ADMIN/GESTOR, checado
     // no controller (mesmo padrão do Painel de Atividades).
