@@ -5,6 +5,9 @@ on:
     branches: ['**']
   pull_request:
 
+# O repositório da API tem os arquivos na RAIZ (não numa pasta api/) — por isso nenhum passo usa
+# working-directory (versões antigas deste arquivo usavam e nunca rodaram no GitHub).
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -41,25 +44,22 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.composer/cache/files
-          key: composer-${{ hashFiles('api/composer.lock') }}
+          key: composer-${{ hashFiles('composer.lock') }}
 
       - name: Instalar dependências
-        working-directory: api
         run: composer install --no-interaction --prefer-dist --no-progress
 
       - name: Gerar APP_KEY (.env mínimo pro artisan rodar fora do contexto de teste)
-        working-directory: api
         run: |
           cp .env.example .env
           php artisan key:generate
 
       # Sem passo de migration manual de propósito: phpunit.xml já injeta APP_ENV=testing +
       # DB_DATABASE=pdv_test antes do boot, e o trait RefreshDatabase (usado em todo teste de
-      # api/tests/Feature) migra o banco de teste sozinho no primeiro teste que rodar — é
+      # tests/Feature) migra o banco de teste sozinho no primeiro teste que rodar — é
       # assim que já funciona localmente, nunca precisou de "php artisan migrate --env=testing"
       # manual. Rodar isso aqui de novo (repetindo o comando manual) cairia no MESMO bug que
       # zerou o pdv_dev localmente: sem .env.testing no checkout do CI (é gitignorado),
       # "--env=testing" voltaria pro .env normal.
       - name: Rodar testes
-        working-directory: api
         run: php artisan test

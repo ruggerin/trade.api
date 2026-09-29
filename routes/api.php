@@ -258,6 +258,10 @@ Route::middleware('auth:sanctum')->group(function (): void {
         Route::get('/superadmin/empresas/{empresa}', [EmpresaController::class, 'showSuperadmin']);
         Route::put('/superadmin/empresas/{empresa}', [EmpresaController::class, 'updateSuperadmin']);
         Route::delete('/superadmin/empresas/{empresa}', [EmpresaController::class, 'destroySuperadmin']);
+        // Parâmetros padrão (App\Support\ParametrosPadrao) — ver quais faltam e completar os que
+        // faltam sem sobrescrever nada. Mesmo efeito do comando `parametros:completar`.
+        Route::get('/superadmin/empresas/{empresa}/parametros-padrao', [EmpresaController::class, 'parametrosPadrao']);
+        Route::post('/superadmin/empresas/{empresa}/parametros-padrao', [EmpresaController::class, 'completarParametrosPadrao']);
 
         // Faturas: registro manual de cobrança por empresa — ver App\Models\Fatura.
         Route::get('/superadmin/empresas/{empresa}/faturas', [FaturaController::class, 'index']);

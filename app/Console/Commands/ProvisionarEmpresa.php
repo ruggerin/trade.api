@@ -5,9 +5,9 @@ namespace App\Console\Commands;
 use App\Enums\PlanoEmpresa;
 use App\Enums\UserType;
 use App\Models\Empresa;
-use App\Models\Parametro;
 use App\Models\TipoRegistro;
 use App\Models\Usuario;
+use App\Support\ParametrosPadrao;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -31,7 +31,7 @@ use Illuminate\Validation\Rule;
  *
  * Idempotente: `--cnpj` já cadastrado não duplica a empresa (erro claro, nada é criado); rodar
  * de novo pra uma empresa que já tem alguns parâmetros só preenche os que faltam
- * (`firstOrCreate` por chave).
+ * (ver App\Support\ParametrosPadrao::completar).
  */
 class ProvisionarEmpresa extends Command
 {
@@ -45,28 +45,6 @@ class ProvisionarEmpresa extends Command
         {--admin-senha= : Senha em texto puro; se omitida, uma senha aleatória é gerada}';
 
     protected $description = 'Cria uma empresa + primeiro ADMIN + tipos de registro (fábrica + extras) + parâmetros default explícitos';
-
-    /**
-     * Default de cada Parametro conhecido pelo sistema hoje — mesmo valor que
-     * App\Support\* já usa como fallback quando a linha não existe. Mantido aqui, e não nas
-     * classes de Support, de propósito: é só um retrato pra seed, não uma fonte de verdade —
-     * a fonte de verdade do default continua em cada Support (ver docblock da classe).
-     */
-    private const PARAMETROS_DEFAULT = [
-        'CHECKIN_RAIO_METROS' => ['valor' => '200', 'descricao' => 'Raio de check-in em metros (App\Support\RaioCheckin)'],
-        'CONTRATO_AVISO_DIAS' => ['valor' => '30', 'descricao' => 'Dias de antecedência pra avisar contrato vencendo (App\Support\AvisoVencimentoContrato)'],
-        'SYNC_INTERVALO_HORAS' => ['valor' => '4', 'descricao' => 'Intervalo da sincronização silenciosa do app mobile, em horas'],
-        'PONTOS_VENDA_RESTRITO_A_VINCULO' => ['valor' => 'false', 'descricao' => 'Modo restrito de visibilidade de PDV (App\Support\VisibilidadePontosVenda) — false = modo aberto'],
-        'AGENDA_REQUER_APROVACAO' => ['valor' => 'false', 'descricao' => 'Autonomia do promotor sobre a própria agenda (App\Support\AutonomiaAgenda) — false = autônomo'],
-        'REGISTRO_CANCELAMENTO_PERMITIDO' => ['valor' => 'false', 'descricao' => 'Promotor pode cancelar o próprio registro (App\Support\CancelamentoRegistro)'],
-        'VISITA_CANCELAMENTO_PERMITIDO' => ['valor' => 'false', 'descricao' => 'Promotor pode cancelar a própria visita em andamento (App\Support\CancelamentoVisita)'],
-        'SORTIMENTO_AUTONOMIA_PROMOTOR' => ['valor' => 'AUTONOMO', 'descricao' => 'Autonomia pra vincular produto já existente ao sortimento do PDV (App\Support\AutonomiaSortimento)'],
-        'CATALOGO_AUTONOMIA_PROMOTOR' => ['valor' => 'REQUER_APROVACAO', 'descricao' => 'Autonomia pra cadastrar produto novo no catálogo (App\Support\AutonomiaSortimento)'],
-        'CODIGO_BARRAS_OBRIGATORIO' => ['valor' => 'false', 'descricao' => 'Exige código de barras ao cadastrar produto (App\Support\CodigoBarrasProduto)'],
-        'RASTREAMENTO_INTERVALO_SEGUNDOS' => ['valor' => '0', 'descricao' => 'Intervalo do rastreamento em tempo real, em segundos — 0 = desligado (App\Support\Rastreamento)'],
-        'CODIGO_BARRAS_UNICO' => ['valor' => 'false', 'descricao' => 'Código de barras precisa ser único no catálogo da empresa (App\Support\CodigoBarrasProduto)'],
-        'PEDIDO_VENDA_SEM_VISITA_PERMITIDO' => ['valor' => 'false', 'descricao' => 'Vendedor pode tirar Pedido de Venda fora de uma visita (App\Support\PedidoVendaSemVisita) — false = só durante a visita'],
-    ];
 
     /**
      * Além dos 3 "de fábrica" (`TipoRegistro::seedPadrao`), replica os tipos que uma empresa
@@ -146,19 +124,16 @@ class ProvisionarEmpresa extends Command
 
             $this->seedTiposRegistroExtras($empresa->id);
 
-            foreach (self::PARAMETROS_DEFAULT as $chave => $config) {
-                Parametro::firstOrCreate(
-                    ['empresa_id' => $empresa->id, 'chave' => $chave],
-                    ['valor' => $config['valor'], 'descricao' => $config['descricao'], 'ativo' => true],
-                );
-            }
+            // Catálogo único em App\Support\ParametrosPadrao (o mesmo do botão do superadmin e do
+            // comando parametros:completar).
+            ParametrosPadrao::completar($empresa);
 
             return [$empresa, $admin];
         });
 
         $this->info("Empresa criada: {$empresa->nome_fantasia} (uuid {$empresa->uuid})");
         $this->info("ADMIN criado: {$admin->email} (uuid {$admin->uuid})");
-        $this->info(sprintf('%d parâmetros gravados com o valor default de cada um.', count(self::PARAMETROS_DEFAULT)));
+        $this->info(sprintf('%d parâmetros gravados com o valor default de cada um.', count(ParametrosPadrao::CATALOGO)));
 
         $this->info(sprintf('%d tipos de registro extras gravados (além dos 3 de fábrica).', count(self::TIPOS_REGISTRO_EXTRAS)));
 

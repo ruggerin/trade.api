@@ -15,6 +15,7 @@ use App\Models\PontoVenda;
 use App\Models\TipoRegistro;
 use App\Models\Usuario;
 use App\Models\Visita;
+use App\Support\ParametrosPadrao;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -146,6 +147,30 @@ class EmpresaController extends Controller
     }
 
     /**
+     * Parâmetros padrão da empresa (App\Support\ParametrosPadrao) — quais já estão cadastrados e
+     * quais faltam, pro card "Parâmetros padrão" no detalhe da empresa do superadmin.
+     */
+    public function parametrosPadrao(Empresa $empresa): JsonResponse
+    {
+        return response()->json(['parametros' => ParametrosPadrao::situacao($empresa)]);
+    }
+
+    /**
+     * Botão "Completar parâmetros": cadastra só os que faltam, com o valor que o sistema já assume
+     * quando falta (não muda comportamento da empresa, só deixa visível/editável). Nunca
+     * sobrescreve nem reativa um existente. Idempotente.
+     */
+    public function completarParametrosPadrao(Empresa $empresa): JsonResponse
+    {
+        $criados = ParametrosPadrao::completar($empresa);
+
+        return response()->json([
+            'criados' => $criados,
+            'parametros' => ParametrosPadrao::situacao($empresa),
+        ]);
+    }
+
+    /**
      * Provisiona uma empresa cliente manualmente (suporte cadastrando por fora do self-serve)
      * já com o primeiro ADMIN — sem isso não haveria como logar nela depois, e o signup
      * público sempre cria uma empresa nova, nunca anexa a uma já existente.
@@ -175,6 +200,8 @@ class EmpresaController extends Controller
             ]);
 
             TipoRegistro::seedPadrao($empresa->id);
+            // Empresa cadastrada pelo suporte já nasce com todos os parâmetros visíveis na tela.
+            ParametrosPadrao::completar($empresa);
 
             return [$empresa, $usuario];
         });
