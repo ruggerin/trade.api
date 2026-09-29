@@ -2,12 +2,14 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\RecorrenciaAgendaVisita;
 use App\Enums\UserType;
 use App\Http\Requests\PontoVenda\AtualizarFachadaPontoVendaRequest;
 use App\Http\Requests\PontoVenda\StorePontoVendaRequest;
 use App\Http\Requests\PontoVenda\SyncPromotoresRequest;
 use App\Http\Requests\PontoVenda\UpdatePontoVendaRequest;
 use App\Http\Resources\PontoVendaResource;
+use App\Models\AgendaVisita;
 use App\Models\Empresa;
 use App\Models\PontoVenda;
 use App\Models\RamoAtividade;
@@ -133,6 +135,30 @@ class PontoVendaController extends Controller
         return response()->json([
             'ponto_venda' => new PontoVendaResource($pontoVenda),
         ]);
+    }
+
+    /**
+     * Dias da semana em que esta loja tem atendimento (0=domingo…6=sábado, mesma convenção de
+     * AgendaVisita::dia_semana) — o check-in mobile destaca esses dias, ver
+     * docs/45-CHECKIN-ATENDIMENTO-SEMANAL.md. Uma AgendaVisita SEMANAL por dia (não é bitmask),
+     * então é a união dos `dia_semana` de todas as regras ativas desse PDV — mais de um promotor
+     * pode ter agenda no mesmo dia, daí o `distinct()`. Só leitura, qualquer autenticado, mesmo
+     * padrão de HistoricoLojaController::show (sem checagem de visibilidade — o app só pede pelo
+     * PDV que já está mostrando na tela).
+     */
+    public function agendaSemanal(PontoVenda $pontoVenda): JsonResponse
+    {
+        $dias = AgendaVisita::query()
+            ->where('ponto_venda_id', $pontoVenda->id)
+            ->where('recorrencia', RecorrenciaAgendaVisita::SEMANAL)
+            ->where('ativo', true)
+            ->whereNotNull('dia_semana')
+            ->distinct()
+            ->orderBy('dia_semana')
+            ->pluck('dia_semana')
+            ->values();
+
+        return response()->json(['dias_atendimento' => $dias]);
     }
 
     public function store(StorePontoVendaRequest $request): JsonResponse
