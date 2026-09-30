@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\Permissao;
 use App\Enums\StatusVisita;
 use App\Enums\UserType;
 use App\Http\Resources\VisitaRegistroResource;
@@ -174,6 +175,7 @@ class AtividadeController extends Controller
     private function eventosDeVisita(Request $request, ?int $usuarioId, ?int $pontoVendaId, bool $comFoto): Collection
     {
         $raio = RaioCheckin::metros($request->user()->empresa);
+        $veAfastamento = $request->user()->temPermissao(Permissao::RASTREAMENTO_TRAJETO);
 
         $visitas = Visita::query()
             ->with([
@@ -243,6 +245,13 @@ class AtividadeController extends Controller
                         'duracao_minutos' => (int) round($visita->inicio_data->diffInMinutes($visita->fim_data, true)),
                         'total_fotos' => $totalFotos,
                     ],
+                    // Saiu da loja durante a visita (docs/49) — resumo gravado um tempo depois do
+                    // checkout; o card destaca em âmbar, como a chegada fora do raio.
+                    'afastamento' => $veAfastamento && $visita->afastamento_qtd > 0 ? [
+                        'qtd' => $visita->afastamento_qtd,
+                        'minutos' => $visita->afastamento_minutos,
+                        'max_metros' => $visita->afastamento_max_metros,
+                    ] : null,
                     // setRelation('visita', ...) evita 1 query por registro só pra montar a url da
                     // imagem (mesmo truque de VisitaController::show).
                     'imagens' => VisitaRegistroResource::collection(

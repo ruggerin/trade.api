@@ -41,6 +41,10 @@ class Visita extends Model
             'checkout_tipo' => CheckoutTipo::class,
             'inicio_data' => 'datetime',
             'fim_data' => 'datetime',
+            'afastamento_qtd' => 'integer',
+            'afastamento_minutos' => 'integer',
+            'afastamento_max_metros' => 'integer',
+            'afastamento_calculado_em' => 'datetime',
         ];
     }
 
