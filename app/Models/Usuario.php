@@ -34,6 +34,9 @@ class Usuario extends Authenticatable
         'ultima_localizacao_latitude',
         'ultima_localizacao_longitude',
         'ultima_localizacao_em',
+        'rastreamento_situacao',
+        'rastreamento_situacao_detalhe',
+        'rastreamento_situacao_em',
     ];
 
     protected $hidden = [
@@ -48,6 +51,7 @@ class Usuario extends Authenticatable
             'ultima_localizacao_latitude' => 'double',
             'ultima_localizacao_longitude' => 'double',
             'ultima_localizacao_em' => 'datetime',
+            'rastreamento_situacao_em' => 'datetime',
         ];
     }
 

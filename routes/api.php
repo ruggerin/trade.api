@@ -200,6 +200,10 @@ Route::middleware('auth:sanctum')->group(function (): void {
     // Rastreamento em tempo real (docs/11-RASTREAMENTO-TEMPO-REAL.md): o promotor manda a própria
     // posição; o mapa ao vivo do admin lê a lista, sob permissão dedicada.
     Route::patch('/localizacao', [LocalizacaoController::class, 'atualizar']);
+    // Situação do rastreamento informada pelo app (por que está ou não rastreando) e lista de
+    // irregulares pro Mapa ao vivo — docs/47-RASTREAMENTO-EXIGENCIA.md.
+    Route::patch('/localizacao/situacao', [LocalizacaoController::class, 'situacao']);
+    Route::get('/localizacoes/conformidade', [LocalizacaoController::class, 'conformidade'])->middleware('permissao:rastreamento.visualizar');
     Route::get('/localizacoes', [LocalizacaoController::class, 'index'])->middleware('permissao:rastreamento.visualizar');
 
     // Intervenção administrativa em visita (cancelar / forçar checkout com horário real /
