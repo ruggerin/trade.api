@@ -42,6 +42,9 @@ class RotaDoDiaController extends Controller
         $dados = $request->validate([
             'usuario_uuid' => ['required', 'uuid'],
             'data' => ['required', 'date_format:Y-m-d'],
+            // Fuso de quem consulta (o admin manda o do navegador) — mesmo padrão dos relatórios:
+            // o histórico é UTC, e o "dia" tem que fechar à meia-noite local, não à do servidor.
+            'tz' => ['nullable', 'timezone:all'],
         ]);
 
         // Global scope de empresa: promotor de outra empresa cai no 404.
@@ -56,7 +59,7 @@ class RotaDoDiaController extends Controller
                 'nome' => $promotor->nome,
                 'foto_url' => $promotor->foto_path ? url("/api/usuarios/{$promotor->uuid}/foto") : null,
             ],
-            ...RotaDoDia::montar($promotor, Carbon::parse($dados['data'])),
+            ...RotaDoDia::montar($promotor, Carbon::parse($dados['data'], $dados['tz'] ?? config('app.timezone'))),
         ]);
     }
 }

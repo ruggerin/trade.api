@@ -131,6 +131,25 @@ class RotaDoDiaTest extends TestCase
         $this->assertCount(2, $rota->json('linhas'));
     }
 
+    public function test_dia_fecha_a_meia_noite_do_fuso_de_quem_consulta(): void
+    {
+        // 22:00 de Manaus (UTC-4) = 02:00 UTC do dia seguinte — o histórico é UTC.
+        DB::table('localizacoes_historico')->insert([
+            'empresa_id' => $this->empresa->id,
+            'usuario_id' => $this->promotor->id,
+            'latitude' => -3.1,
+            'longitude' => -60.0,
+            'capturado_em' => Carbon::parse('2026-09-30 02:00:00', 'UTC'),
+        ]);
+        config(['services.mapbox.token' => '']);
+        Sanctum::actingAs(Usuario::factory()->admin()->create(['empresa_id' => $this->empresa->id]));
+
+        $url = "/api/rotas?usuario_uuid={$this->promotor->uuid}&data=2026-09-29";
+        $this->assertCount(1, $this->getJson($url.'&tz=America/Manaus')->assertOk()->json('pontos'));
+        $this->assertCount(0, $this->getJson($url)->assertOk()->json('pontos'));
+        $this->getJson($url.'&tz=Nao/Existe')->assertUnprocessable();
+    }
+
     public function test_linha_pelas_ruas_fica_em_cache_e_nao_chama_o_mapbox_de_novo(): void
     {
         $this->montarDia();
