@@ -22,6 +22,7 @@ use App\Http\Controllers\LocalizacaoController;
 use App\Http\Controllers\PedidoController;
 use App\Http\Controllers\PedidoVendaController;
 use App\Http\Controllers\RelatorioController;
+use App\Http\Controllers\RotaDoDiaController;
 use App\Http\Controllers\MarcaAuditoriaController;
 use App\Http\Controllers\NivelExibicaoController;
 use App\Http\Controllers\ObjetivoVisitaController;
@@ -205,6 +206,11 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::patch('/localizacao/situacao', [LocalizacaoController::class, 'situacao']);
     Route::get('/localizacoes/conformidade', [LocalizacaoController::class, 'conformidade'])->middleware('permissao:rastreamento.visualizar');
     Route::get('/localizacoes', [LocalizacaoController::class, 'index'])->middleware('permissao:rastreamento.visualizar');
+    // Rota do dia (docs/48-ROTA-DO-DIA.md) — trajeto histórico de um promotor num dia, permissão própria.
+    Route::middleware('permissao:rastreamento.trajeto')->group(function (): void {
+        Route::get('/rotas/promotores', [RotaDoDiaController::class, 'promotores']);
+        Route::get('/rotas', [RotaDoDiaController::class, 'show']);
+    });
 
     // Intervenção administrativa em visita (cancelar / forçar checkout com horário real /
     // corrigir horários) — exige a permissão dedicada visitas.intervir (ADMIN sempre; GESTOR só

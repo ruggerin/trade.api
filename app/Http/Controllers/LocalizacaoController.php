@@ -8,6 +8,7 @@ use App\Support\OperacaoDoDia;
 use App\Support\Rastreamento;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 /**
@@ -43,6 +44,16 @@ class LocalizacaoController extends Controller
         if ($capturadoEm->isFuture()) {
             $capturadoEm = now();
         }
+
+        // Rota do dia (docs/48 §4.1): toda leitura entra no histórico — inclusive um envio atrasado,
+        // que é um ponto real do trajeto. insertOrIgnore: reenvio da mesma leitura não duplica.
+        DB::table('localizacoes_historico')->insertOrIgnore([
+            'empresa_id' => $usuario->empresa_id,
+            'usuario_id' => $usuario->id,
+            'latitude' => $dados['latitude'],
+            'longitude' => $dados['longitude'],
+            'capturado_em' => $capturadoEm,
+        ]);
 
         // Um envio atrasado (rede lenta, reenvio) nunca sobrescreve uma posição mais recente.
         if ($usuario->ultima_localizacao_em && $usuario->ultima_localizacao_em->gt($capturadoEm)) {

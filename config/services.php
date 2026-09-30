@@ -35,4 +35,11 @@ return [
         ],
     ],
 
+    // Rota do dia (docs/48-ROTA-DO-DIA.md) — Map Matching encaixa as posições nas ruas. Chamado só
+    // pelo backend (o token nunca vai pro navegador); resultado guardado em `rotas_dia`.
+    'mapbox' => [
+        'token' => env('MAPBOX_TOKEN'),
+        'timeout' => 15,
+    ],
+
 ];

@@ -97,6 +97,22 @@ class Rastreamento
         return max(self::TOLERANCIA_SEM_SINAL_MINIMA_MINUTOS, (int) ceil(3 * self::intervaloSegundos($empresa) / 60));
     }
 
+    /** Rota do dia (docs/48): por quantos dias as posições ficam guardadas — default 90, mínimo 1. */
+    public static function historicoDias(Empresa $empresa): int
+    {
+        $valor = self::valor($empresa, 'RASTREAMENTO_HISTORICO_DIAS');
+
+        return is_numeric($valor) && (int) $valor >= 1 ? (int) $valor : 90;
+    }
+
+    /** Rota do dia (docs/48): minutos parado no mesmo lugar, sem loja por perto, que contam como parada — default 30. */
+    public static function paradaMinutos(Empresa $empresa): int
+    {
+        $valor = self::valor($empresa, 'RASTREAMENTO_PARADA_MINUTOS');
+
+        return is_numeric($valor) && (int) $valor >= 1 ? (int) $valor : 30;
+    }
+
     /** Valor de um parâmetro ATIVO da empresa, ou null se ausente/inativo. */
     private static function valor(Empresa $empresa, string $chave): ?string
     {

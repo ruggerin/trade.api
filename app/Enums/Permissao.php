@@ -37,6 +37,11 @@ enum Permissao: string
     // pessoal, por isso permissão própria em vez de carona em outra.
     case RASTREAMENTO_VISUALIZAR = 'rastreamento.visualizar';
 
+    // Rota do dia (docs/48-ROTA-DO-DIA.md) — trajeto histórico de um promotor num dia (por onde
+    // passou, paradas fora de loja). Separada do mapa ao vivo de propósito: ver o histórico de
+    // posição é mais sensível que ver a posição de agora.
+    case RASTREAMENTO_TRAJETO = 'rastreamento.trajeto';
+
     // Gravar pedidos do ERP (docs/28 §4.2) — pensada pro integrador externo (um usuário ADMIN de
     // serviço, ou um perfil de GESTOR dedicado), não pra digitação manual no admin.
     case PEDIDOS_GERENCIAR = 'pedidos.gerenciar';
