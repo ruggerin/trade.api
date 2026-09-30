@@ -33,3 +33,7 @@ Schedule::command('ordens-servico:gerar-por-direcionamento')->daily();
 // Rota do dia (docs/48-ROTA-DO-DIA.md): apaga posições mais velhas que RASTREAMENTO_HISTORICO_DIAS
 // de cada empresa (padrão 90 dias) — histórico de posição é dado pessoal, não fica pra sempre.
 Schedule::command('rastreamento:limpar-historico')->dailyAt('03:30');
+
+// Afastamento durante a visita (docs/49-AFASTAMENTO-DURANTE-VISITA.md §6): grava o resumo nas
+// visitas finalizadas há 30+ min (espera posição atrasada do app) — filtro da lista e feed.
+Schedule::command('visitas:calcular-afastamento')->everyTenMinutes();

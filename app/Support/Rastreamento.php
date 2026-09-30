@@ -113,6 +113,22 @@ class Rastreamento
         return is_numeric($valor) && (int) $valor >= 1 ? (int) $valor : 30;
     }
 
+    /** Afastamento durante a visita (docs/49): distância da loja que conta como "saiu" — default 300, mínimo 50. */
+    public static function afastamentoMetros(Empresa $empresa): int
+    {
+        $valor = self::valor($empresa, 'RASTREAMENTO_AFASTAMENTO_METROS');
+
+        return is_numeric($valor) && (int) $valor >= 50 ? (int) $valor : 300;
+    }
+
+    /** Afastamento durante a visita (docs/49): minutos longe da loja pra contar — default 10. */
+    public static function afastamentoMinutos(Empresa $empresa): int
+    {
+        $valor = self::valor($empresa, 'RASTREAMENTO_AFASTAMENTO_MINUTOS');
+
+        return is_numeric($valor) && (int) $valor >= 1 ? (int) $valor : 10;
+    }
+
     /** Valor de um parâmetro ATIVO da empresa, ou null se ausente/inativo. */
     private static function valor(Empresa $empresa, string $chave): ?string
     {

@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Enums\Permissao;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -62,6 +63,16 @@ class VisitaResource extends JsonResource
             // PROMOTOR (checkout normal pelo app), ADMIN (forçado por um gestor, sem GPS) ou null
             // (visita ainda ABERTA) — ver docs/15-INTERVENCAO-ADMINISTRATIVA-VISITA.md.
             'checkout_tipo' => $this->checkout_tipo,
+            // Resumo do afastamento durante a visita (docs/49) — null = ainda não calculado ou sem
+            // posição na janela. Só pra quem vê a Rota do dia (dado de localização).
+            'afastamento' => $this->when(
+                (bool) $request->user()?->temPermissao(Permissao::RASTREAMENTO_TRAJETO),
+                fn () => $this->afastamento_qtd !== null ? [
+                    'qtd' => $this->afastamento_qtd,
+                    'minutos' => $this->afastamento_minutos,
+                    'max_metros' => $this->afastamento_max_metros,
+                ] : null,
+            ),
             // Só presente quando carregado (GET /visitas/{uuid}) — log de cancelamento / checkout
             // forçado / correção de horário feito por um gestor.
             'intervencoes' => VisitaIntervencaoResource::collection($this->whenLoaded('intervencoes')),

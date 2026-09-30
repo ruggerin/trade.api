@@ -22,10 +22,12 @@ use App\Models\ProdutoAuditoria;
 use App\Models\Usuario;
 use App\Models\Visita;
 use App\Models\VisitaIntervencao;
+use App\Support\AfastamentoVisita;
 use App\Support\CancelamentoVisita;
 use App\Support\DirecionamentoParametros;
 use App\Support\Haversine;
 use App\Support\RaioCheckin;
+use App\Support\Rastreamento;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -65,6 +67,11 @@ class VisitaController extends Controller
             // docs/03-ADMIN-WEB.md §1 pede filtro por status na listagem — não estava
             // documentado em docs/02-API-BACKEND.md ainda, sincronizado junto com este código.
             ->when($request->filled('status'), fn ($query) => $query->where('status', $request->string('status')))
+            // Saiu da loja durante a visita (docs/49) — resumo gravado por visitas:calcular-afastamento.
+            ->when(
+                $request->boolean('afastamento') && $usuario->temPermissao(Permissao::RASTREAMENTO_TRAJETO),
+                fn ($query) => $query->where('afastamento_qtd', '>', 0),
+            )
             // Drill-down do "Rupturas por SKU" da Operação do Dia (docs/32-PAINEL-OPERACAO-DO-DIA.md)
             // pras visitas de origem — combináveis: só ruptura=1 já filtra qualquer ruptura aberta,
             // só produto_auditoria_uuid filtra qualquer registro daquele produto (não só ruptura).
@@ -119,9 +126,20 @@ class VisitaController extends Controller
         // desativado, ver App\Support\RaioCheckin).
         $raio = RaioCheckin::metros($visita->empresa);
 
+        // Afastamento durante a visita (docs/49), calculado na hora a partir do histórico — o
+        // detalhe mostra cada saída; o resumo gravado na visita só alimenta lista e feed.
+        $afastamento = $request->user()->temPermissao(Permissao::RASTREAMENTO_TRAJETO)
+            ? AfastamentoVisita::calcular($visita)
+            : null;
+
         return response()->json([
             'visita' => new VisitaResource($visita),
             'raio_checkin_metros' => is_finite($raio) ? $raio : null,
+            'afastamento' => $afastamento ? [
+                ...$afastamento,
+                'metros' => Rastreamento::afastamentoMetros($visita->empresa),
+                'minutos' => Rastreamento::afastamentoMinutos($visita->empresa),
+            ] : null,
         ]);
     }
 
@@ -483,6 +501,8 @@ class VisitaController extends Controller
 
         DB::transaction(function () use ($request, $visita, $novoInicio, $novoFim, $motivo, $antes, $mudancas): void {
             $visita->update(['inicio_data' => $novoInicio, 'fim_data' => $novoFim]);
+            // Janela mudou: o afastamento gravado (docs/49) não vale mais.
+            AfastamentoVisita::gravar($visita);
 
             $this->registrarIntervencao(
                 $request,

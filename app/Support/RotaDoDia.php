@@ -85,8 +85,10 @@ final class RotaDoDia
             }
         }
 
-        $visitasFormatadas = $visitas->values()->map(function (Visita $v, int $i) {
+        $visitasFormatadas = $visitas->values()->map(function (Visita $v, int $i) use ($pontos) {
             $fim = $v->fim_data;
+            // Saiu da loja no meio da visita (docs/49) — com os pontos do dia já carregados.
+            $afastamento = AfastamentoVisita::calcular($v, $pontos);
 
             return [
                 'id' => $v->uuid,
@@ -102,6 +104,9 @@ final class RotaDoDia
                 'inicio' => $v->inicio_data,
                 'fim' => $fim,
                 'minutos' => $fim ? (int) round($v->inicio_data->diffInMinutes($fim, true)) : null,
+                'afastamentos' => $afastamento['afastamentos'] ?? [],
+                'minutos_fora' => $afastamento['minutos_fora'] ?? 0,
+                'sem_sinal_minutos' => $afastamento['sem_sinal_minutos'] ?? 0,
             ];
         });
 
@@ -109,6 +114,8 @@ final class RotaDoDia
             'data' => $dia->toDateString(),
             'parametros' => [
                 'parada_minutos' => Rastreamento::paradaMinutos($empresa),
+                'afastamento_metros' => Rastreamento::afastamentoMetros($empresa),
+                'afastamento_minutos' => Rastreamento::afastamentoMinutos($empresa),
                 'tolerancia_sem_sinal_minutos' => $tolerancia,
             ],
             'pontos' => array_map(fn ($p) => ['latitude' => $p['lat'], 'longitude' => $p['lng'], 'em' => $p['em']->toIso8601String()], $pontos),
@@ -119,7 +126,9 @@ final class RotaDoDia
             'paradas' => $paradas,
             'resumo' => [
                 'visitas' => $visitasFormatadas->count(),
-                'tempo_em_loja_minutos' => (int) $visitasFormatadas->sum('minutos'),
+                // Tempo em loja honesto (docs/49 §4): desconta o tempo fora durante as visitas.
+                'tempo_em_loja_minutos' => max(0, (int) $visitasFormatadas->sum('minutos') - (int) $visitasFormatadas->sum('minutos_fora')),
+                'fora_da_loja_minutos' => (int) $visitasFormatadas->sum('minutos_fora'),
                 'distancia_km' => round($distancia / 1000, 1),
                 'parado_fora_minutos' => (int) collect($paradas)->sum('minutos'),
                 'sem_sinal_minutos' => (int) collect($semSinal)->sum('minutos'),

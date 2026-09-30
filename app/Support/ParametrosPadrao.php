@@ -40,6 +40,8 @@ final class ParametrosPadrao
         'RASTREAMENTO_PAINEL_CONFORMIDADE' => ['valor' => 'false', 'descricao' => 'Mostra no Mapa ao vivo a lista de promotores com rastreamento irregular e o motivo (docs/47)'],
         'RASTREAMENTO_HISTORICO_DIAS' => ['valor' => '90', 'descricao' => 'Por quantos dias as posições do promotor ficam guardadas pra Rota do dia (docs/48) — o mais antigo é apagado todo dia'],
         'RASTREAMENTO_PARADA_MINUTOS' => ['valor' => '30', 'descricao' => 'A partir de quantos minutos parado no mesmo lugar, sem loja por perto, conta como parada fora de loja na Rota do dia (docs/48)'],
+        'RASTREAMENTO_AFASTAMENTO_METROS' => ['valor' => '300', 'descricao' => 'Distância da loja, em metros, a partir da qual o promotor conta como "saiu da loja" durante a visita (docs/49) — deixe acima do CHECKIN_RAIO_METROS'],
+        'RASTREAMENTO_AFASTAMENTO_MINUTOS' => ['valor' => '10', 'descricao' => 'Minutos longe da loja durante a visita pra contar como afastamento (docs/49)'],
         'PEDIDO_VENDA_SEM_VISITA_PERMITIDO' => ['valor' => 'false', 'descricao' => 'Vendedor pode tirar Pedido de Venda fora de uma visita (App\Support\PedidoVendaSemVisita) — false = só durante a visita'],
         'ATIVIDADES_POLLING_SEGUNDOS' => ['valor' => '30', 'descricao' => 'Intervalo de atualização automática do Painel de Atividades, em segundos (docs/19)'],
         'ATIVIDADES_ALERTA_REQUER_RESOLUCAO' => ['valor' => 'false', 'descricao' => 'Alertas do Painel de Atividades ficam pendentes até alguém resolver (docs/19) — false = só informativos'],
