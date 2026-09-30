@@ -84,6 +84,8 @@ class LocalizacaoController extends Controller
                 'ultima_localizacao_em' => $u->ultima_localizacao_em,
                 // Calculado na exibição, nunca gravado (doc 11 §3.1).
                 'ativo_agora' => $u->ultima_localizacao_em->gte($limiteAtivo),
+                // Situação informada pelo próprio app (docs/47 §5.1) — por que está ou não rastreando.
+                'situacao' => $u->rastreamento_situacao,
             ])->values(),
         ]);
     }
