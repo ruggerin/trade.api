@@ -29,3 +29,7 @@ Schedule::command('ordens-servico:gerar-por-contrato')->dailyAt('05:00');
 // App\Console\Commands\GerarOrdensServicoPorDirecionamento e
 // docs/25-DIRECIONAMENTO-ORDEM-SERVICO.md §4.
 Schedule::command('ordens-servico:gerar-por-direcionamento')->daily();
+
+// Rota do dia (docs/48-ROTA-DO-DIA.md): apaga posições mais velhas que RASTREAMENTO_HISTORICO_DIAS
+// de cada empresa (padrão 90 dias) — histórico de posição é dado pessoal, não fica pra sempre.
+Schedule::command('rastreamento:limpar-historico')->dailyAt('03:30');
