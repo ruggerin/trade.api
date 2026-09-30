@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\Permissao;
 use App\Enums\StatusOrdemServico;
 use App\Enums\UserType;
 use App\Models\Empresa;
@@ -60,7 +61,11 @@ class OperacaoDoDiaController extends Controller
         $rupturasAbertas = $this->rupturasAbertasPorPromotor($empresa);
         $tolerancia = SuporteOperacaoDoDia::toleranciaAtrasoMinutos($empresa);
 
-        $equipe = $porPromotor->map(function (array $linha) use ($janelaSinal, $rupturasAbertas, $agora, $tolerancia, $historico) {
+        // Clique no "Sinal" da equipe abre o mapa com a última posição — dado de localização, só
+        // pra quem já vê o Mapa ao vivo.
+        $veLocalizacao = $usuario->temPermissao(Permissao::RASTREAMENTO_VISUALIZAR);
+
+        $equipe = $porPromotor->map(function (array $linha) use ($janelaSinal, $rupturasAbertas, $agora, $tolerancia, $historico, $veLocalizacao) {
             $promotor = $linha['usuario'];
             $visita = $linha['visita_aberta'];
             $ordens = $linha['ordens'];
@@ -84,6 +89,13 @@ class OperacaoDoDiaController extends Controller
                 ],
                 'rupturas' => $rupturasAbertas->get($promotor->id, 0),
                 'ultima_localizacao_em' => $promotor->ultima_localizacao_em,
+                // null = sem permissão rastreamento.visualizar, ou nunca mandou posição.
+                'ultima_localizacao' => $veLocalizacao && $promotor->ultima_localizacao_latitude !== null ? [
+                    'latitude' => (float) $promotor->ultima_localizacao_latitude,
+                    'longitude' => (float) $promotor->ultima_localizacao_longitude,
+                    // Por que está (ou não) rastreando, informado pelo app (docs/47 §5.1).
+                    'situacao' => $promotor->rastreamento_situacao,
+                ] : null,
                 'sem_sinal' => $semSinal && $linha['status'] !== SuporteOperacaoDoDia::STATUS_ENCERRADO,
                 'blocos_jornada' => $this->blocosJornada($ordens, $agora, $tolerancia),
             ];
