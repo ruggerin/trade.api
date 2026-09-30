@@ -200,6 +200,10 @@ Route::middleware('auth:sanctum')->group(function (): void {
     // Rastreamento em tempo real (docs/11-RASTREAMENTO-TEMPO-REAL.md): o promotor manda a própria
     // posição; o mapa ao vivo do admin lê a lista, sob permissão dedicada.
     Route::patch('/localizacao', [LocalizacaoController::class, 'atualizar']);
+    // Situação do rastreamento informada pelo app (por que está ou não rastreando) e lista de
+    // irregulares pro Mapa ao vivo — docs/47-RASTREAMENTO-EXIGENCIA.md.
+    Route::patch('/localizacao/situacao', [LocalizacaoController::class, 'situacao']);
+    Route::get('/localizacoes/conformidade', [LocalizacaoController::class, 'conformidade'])->middleware('permissao:rastreamento.visualizar');
     Route::get('/localizacoes', [LocalizacaoController::class, 'index'])->middleware('permissao:rastreamento.visualizar');
 
     // Intervenção administrativa em visita (cancelar / forçar checkout com horário real /
@@ -258,6 +262,10 @@ Route::middleware('auth:sanctum')->group(function (): void {
         Route::get('/superadmin/empresas/{empresa}', [EmpresaController::class, 'showSuperadmin']);
         Route::put('/superadmin/empresas/{empresa}', [EmpresaController::class, 'updateSuperadmin']);
         Route::delete('/superadmin/empresas/{empresa}', [EmpresaController::class, 'destroySuperadmin']);
+        // Parâmetros padrão (App\Support\ParametrosPadrao) — ver quais faltam e completar os que
+        // faltam sem sobrescrever nada. Mesmo efeito do comando `parametros:completar`.
+        Route::get('/superadmin/empresas/{empresa}/parametros-padrao', [EmpresaController::class, 'parametrosPadrao']);
+        Route::post('/superadmin/empresas/{empresa}/parametros-padrao', [EmpresaController::class, 'completarParametrosPadrao']);
 
         // Faturas: registro manual de cobrança por empresa — ver App\Models\Fatura.
         Route::get('/superadmin/empresas/{empresa}/faturas', [FaturaController::class, 'index']);

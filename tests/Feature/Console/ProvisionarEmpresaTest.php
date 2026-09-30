@@ -6,6 +6,7 @@ use App\Enums\PlanoEmpresa;
 use App\Enums\UserType;
 use App\Models\Empresa;
 use App\Models\Parametro;
+use App\Support\ParametrosPadrao;
 use App\Models\TipoRegistro;
 use App\Models\Usuario;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -46,7 +47,7 @@ class ProvisionarEmpresaTest extends TestCase
         $this->assertTrue(Hash::check('senhaSegura123', $admin->senha_hash));
 
         $this->assertSame(8, TipoRegistro::where('empresa_id', $empresa->id)->count());
-        $this->assertSame(13, Parametro::where('empresa_id', $empresa->id)->count());
+        $this->assertSame(count(ParametrosPadrao::CATALOGO), Parametro::where('empresa_id', $empresa->id)->count());
 
         $alertas = TipoRegistro::where('empresa_id', $empresa->id)->where('eh_alerta', true)->pluck('descricao')->sort()->values();
         $this->assertSame(['Avaria', 'Proximo Vencimento'], $alertas->all());
