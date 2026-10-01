@@ -12,6 +12,14 @@ class Empresa extends Model
 {
     use HasFactory, HasUuid;
 
+    /**
+     * Adesão da empresa pra carteira do SUPERADMIN (docs/52) — preenchida por
+     * App\Support\Adesao::anexarEmpresas, nunca gravada.
+     *
+     * @var array<string, mixed>|null
+     */
+    public ?array $adesao = null;
+
     protected $fillable = [
         'razao_social',
         'nome_fantasia',
