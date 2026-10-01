@@ -63,6 +63,10 @@ class VisitaResource extends JsonResource
             // PROMOTOR (checkout normal pelo app), ADMIN (forçado por um gestor, sem GPS) ou null
             // (visita ainda ABERTA) — ver docs/15-INTERVENCAO-ADMINISTRATIVA-VISITA.md.
             'checkout_tipo' => $this->checkout_tipo,
+            // Quando o servidor recebeu cada passo (docs/51) — a diferença pra inicio_data/fim_data
+            // é o atraso de envio do app. null = visita de antes desta versão.
+            'checkin_recebido_em' => $this->checkin_recebido_em,
+            'checkout_recebido_em' => $this->checkout_recebido_em,
             // Resumo do afastamento durante a visita (docs/49) — null = ainda não calculado ou sem
             // posição na janela. Só pra quem vê a Rota do dia (dado de localização).
             'afastamento' => $this->when(

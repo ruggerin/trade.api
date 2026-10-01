@@ -27,6 +27,8 @@ class EmpresaResource extends JsonResource
             // pedidos_venda.* no Perfil e o mobile esconde a aba Pedidos quando false.
             'pedidos_venda_habilitado' => (bool) $this->pedidos_venda_habilitado,
             'ativo' => $this->ativo,
+            // Fuso (IANA) que define o corte de "dia" da empresa (docs/50 §4.3).
+            'fuso' => $this->fuso,
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];

@@ -26,12 +26,14 @@ final class RotaDoDia
     /** Folga nas bordas da visita (check-in um pouco depois de chegar, checkout antes de sair). */
     private const FOLGA_VISITA_MINUTOS = 5;
 
-    /** `$dia` no fuso de quem consulta: o dia vai da meia-noite à meia-noite desse fuso. */
+    /**
+     * `$dia` no fuso da empresa (docs/50 §4.3): o dia vai da meia-noite à meia-noite desse fuso.
+     * O recorte vira UTC — é como o instante está no banco, independente do fuso do servidor.
+     */
     public static function montar(Usuario $promotor, Carbon $dia): array
     {
         $empresa = $promotor->empresa;
-        $inicioDia = $dia->copy()->startOfDay()->setTimezone(config('app.timezone'));
-        $fimDia = $dia->copy()->endOfDay()->setTimezone(config('app.timezone'));
+        [$inicioDia, $fimDia] = Fuso::intervaloDoDia($dia->toDateString(), $dia->tzName);
 
         /** @var list<array{lat: float, lng: float, em: Carbon}> $pontos */
         $pontos = DB::table('localizacoes_historico')

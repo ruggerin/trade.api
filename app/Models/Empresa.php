@@ -23,6 +23,8 @@ class Empresa extends Model
         // Módulo pago, só SUPERADMIN edita (docs/38-PEDIDO-VENDEDOR.md §12).
         'pedidos_venda_habilitado',
         'ativo',
+        // docs/50 §4.3 — fuso (IANA) que define o corte de "dia" da empresa inteira.
+        'fuso',
     ];
 
     protected function casts(): array

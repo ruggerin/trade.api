@@ -34,6 +34,8 @@ class PontoVenda extends Model
         'telefone',
         'email',
         'numero_checkouts',
+        // docs/50 §4.2 — fuso da loja (IANA); nulo = herda o da empresa (App\Support\Fuso::daLoja).
+        'fuso',
         'fachada_path',
         'ativo',
     ];

@@ -28,6 +28,8 @@ class PontoVendaResource extends JsonResource
             'telefone' => $this->telefone,
             'email' => $this->email,
             'numero_checkouts' => $this->numero_checkouts,
+            // Fuso próprio da loja (docs/50 §4.2) — null = herda o da empresa.
+            'fuso' => $this->fuso,
             // Rota autenticada, mesmo padrão de UsuarioResource::foto_url — nunca a URL direta
             // do disco (privado nos dois casos, local ou s3, ver config('filesystems.default')).
             'fachada_url' => $this->fachada_path ? url("/api/pontos-venda/{$this->uuid}/fachada") : null,

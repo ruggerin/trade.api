@@ -41,6 +41,8 @@ class StorePontoVendaRequest extends FormRequest
                 Rule::exists('ramos_atividade', 'uuid')->where('empresa_id', $this->user()->empresa_id),
             ],
             'numero_checkouts' => ['nullable', 'integer', 'min:0'],
+            // IANA (America/Manaus...) — null = herda o fuso da empresa (docs/50 §4.2).
+            'fuso' => ['nullable', 'timezone:all'],
         ];
     }
 }

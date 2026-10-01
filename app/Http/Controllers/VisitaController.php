@@ -26,11 +26,12 @@ use App\Support\AfastamentoVisita;
 use App\Support\CancelamentoVisita;
 use App\Support\DirecionamentoParametros;
 use App\Support\Haversine;
+use App\Support\HorarioDoCampo;
+use App\Support\Instante;
 use App\Support\RaioCheckin;
 use App\Support\Rastreamento;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
@@ -242,7 +243,10 @@ class VisitaController extends Controller
             'ordem_servico_id' => $ordemServico?->id,
             'idempotency_key' => $dados['idempotency_key'] ?? null,
             'status' => StatusVisita::ABERTA,
-            'inicio_data' => now(),
+            // Hora do campo, não da chegada (docs/51 §3.5) — check-in feito offline e enviado
+            // depois mantém o horário real. Sem `inicio_em` (APK antigo) = agora, como antes.
+            'inicio_data' => HorarioDoCampo::resolver($dados['inicio_em'] ?? null),
+            'checkin_recebido_em' => now(),
             'inicio_latitude' => $dados['latitude'],
             'inicio_longitude' => $dados['longitude'],
             'inicio_distancia_metros' => $distancia,
@@ -260,6 +264,15 @@ class VisitaController extends Controller
     public function checkout(CheckoutVisitaRequest $request, Visita $visita): JsonResponse
     {
         $this->autorizarAcesso($request, $visita);
+
+        // Reenvio do checkout de uma visita que já foi encerrada (a resposta anterior se perdeu no
+        // caminho, ou o gestor encerrou/cancelou pelo admin): devolve como está em vez de 422 —
+        // senão a fila do app tentava de novo pra sempre (docs/51 Fase 1, retentativa periódica).
+        if ($visita->status !== StatusVisita::ABERTA && $visita->usuario_id === $request->user()->id) {
+            return response()->json([
+                'visita' => new VisitaResource($visita->load(['pontoVenda', 'campanha', 'ordemServico'])),
+            ]);
+        }
 
         if ($visita->status !== StatusVisita::ABERTA) {
             return response()->json([
@@ -298,7 +311,9 @@ class VisitaController extends Controller
         // Distância de saída é só registrada — a regra de raio (negócio 1) vale só pro
         // check-in, não bloqueia o checkout.
         $visita->update([
-            'fim_data' => now(),
+            // Hora do campo (docs/51 §3.5), nunca antes do check-in.
+            'fim_data' => HorarioDoCampo::resolver($dados['fim_em'] ?? null, $visita->inicio_data),
+            'checkout_recebido_em' => now(),
             'fim_latitude' => $dados['latitude'],
             'fim_longitude' => $dados['longitude'],
             'fim_distancia_metros' => $distancia,
@@ -410,7 +425,7 @@ class VisitaController extends Controller
         }
 
         $dados = $request->validated();
-        $fimData = Carbon::parse($dados['fim_data']);
+        $fimData = Instante::normalizar($dados['fim_data']);
 
         if ($fimData->lt($visita->inicio_data)) {
             return response()->json(['message' => 'O horário de saída não pode ser antes do horário de entrada.'], 422);
@@ -465,8 +480,9 @@ class VisitaController extends Controller
         }
 
         $dados = $request->validated();
-        $novoInicio = isset($dados['inicio_data']) ? Carbon::parse($dados['inicio_data']) : $visita->inicio_data;
-        $novoFim = isset($dados['fim_data']) ? Carbon::parse($dados['fim_data']) : $visita->fim_data;
+        // O admin manda ISO com offset; o instante vai pro banco em UTC (docs/50).
+        $novoInicio = isset($dados['inicio_data']) ? Instante::normalizar($dados['inicio_data']) : $visita->inicio_data;
+        $novoFim = isset($dados['fim_data']) ? Instante::normalizar($dados['fim_data']) : $visita->fim_data;
 
         if ($novoFim->lt($novoInicio)) {
             return response()->json(['message' => 'O horário de saída não pode ser antes do horário de entrada.'], 422);

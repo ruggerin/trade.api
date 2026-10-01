@@ -483,9 +483,9 @@ class RelatorioController extends Controller
             abort(422, 'O período máximo de um relatório é de '.self::MAX_DIAS.' dias.');
         }
 
-        $appTz = config('app.timezone');
-
-        return [$inicio->setTimezone($appTz), $fim->setTimezone($appTz), $tz];
+        // Instante no banco é sempre UTC (docs/50 §2) — converter pro fuso do servidor, como era
+        // antes, quebraria no dia em que o servidor não estivesse em UTC.
+        return [$inicio->utc(), $fim->utc(), $tz];
     }
 
     private function exigirAdminOuGestor(Request $request): void

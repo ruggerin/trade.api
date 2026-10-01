@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Enums\UserType;
 use App\Models\Usuario;
+use App\Support\Instante;
 use App\Support\OperacaoDoDia;
 use App\Support\Rastreamento;
 use Illuminate\Http\JsonResponse;
@@ -39,7 +40,9 @@ class LocalizacaoController extends Controller
             'capturado_em' => ['nullable', 'date'],
         ]);
 
-        $capturadoEm = isset($dados['capturado_em']) ? now()->parse($dados['capturado_em']) : now();
+        // Instante sempre UTC (docs/50): um capturado_em com offset (-04:00) seria gravado com a
+        // hora "de parede" daquele fuso se fosse direto pro banco.
+        $capturadoEm = Instante::normalizar($dados['capturado_em'] ?? null) ?? now()->utc();
         // Relógio do aparelho adiantado não pode fazer a posição parecer "do futuro".
         if ($capturadoEm->isFuture()) {
             $capturadoEm = now();
