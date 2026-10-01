@@ -42,6 +42,7 @@ class UpdatePontoVendaRequest extends FormRequest
                 Rule::exists('ramos_atividade', 'uuid')->where('empresa_id', $this->route('pontoVenda')?->empresa_id),
             ],
             'numero_checkouts' => ['sometimes', 'nullable', 'integer', 'min:0'],
+            'fuso' => ['sometimes', 'nullable', 'timezone:all'],
             'ativo' => ['sometimes', 'boolean'],
         ];
     }

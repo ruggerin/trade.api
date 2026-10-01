@@ -22,6 +22,8 @@ class UpdateEmpresaRequest extends FormRequest
         return [
             'razao_social' => ['sometimes', 'string', 'max:255'],
             'nome_fantasia' => ['sometimes', 'string', 'max:255'],
+            // O ADMIN também acerta o fuso da própria empresa (docs/50 §4.3) — não é billing.
+            'fuso' => ['sometimes', 'timezone:all'],
         ];
     }
 }

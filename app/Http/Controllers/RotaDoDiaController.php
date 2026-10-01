@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Enums\UserType;
 use App\Models\Usuario;
+use App\Support\Fuso;
 use App\Support\RotaDoDia;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -42,9 +43,6 @@ class RotaDoDiaController extends Controller
         $dados = $request->validate([
             'usuario_uuid' => ['required', 'uuid'],
             'data' => ['required', 'date_format:Y-m-d'],
-            // Fuso de quem consulta (o admin manda o do navegador) — mesmo padrão dos relatórios:
-            // o histórico é UTC, e o "dia" tem que fechar à meia-noite local, não à do servidor.
-            'tz' => ['nullable', 'timezone:all'],
         ]);
 
         // Global scope de empresa: promotor de outra empresa cai no 404.
@@ -59,7 +57,9 @@ class RotaDoDiaController extends Controller
                 'nome' => $promotor->nome,
                 'foto_url' => $promotor->foto_path ? url("/api/usuarios/{$promotor->uuid}/foto") : null,
             ],
-            ...RotaDoDia::montar($promotor, Carbon::parse($dados['data'], $dados['tz'] ?? config('app.timezone'))),
+            // "Dia" = meia-noite a meia-noite no fuso da EMPRESA (docs/50 §4.3) — não de quem olha
+            // nem do servidor: o histórico é UTC e o corte precisa ser o mesmo pra todo gestor.
+            ...RotaDoDia::montar($promotor, Carbon::parse($dados['data'], Fuso::daEmpresa($promotor->empresa))),
         ]);
     }
 }

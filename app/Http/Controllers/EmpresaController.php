@@ -15,6 +15,7 @@ use App\Models\PontoVenda;
 use App\Models\TipoRegistro;
 use App\Models\Usuario;
 use App\Models\Visita;
+use App\Support\Fuso;
 use App\Support\ParametrosPadrao;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -189,6 +190,7 @@ class EmpresaController extends Controller
                 'limite_pontos_venda' => $dados['limite_pontos_venda'] ?? null,
                 'limite_licencas' => $dados['limite_licencas'] ?? null,
                 'pedidos_venda_habilitado' => $dados['pedidos_venda_habilitado'] ?? false,
+                'fuso' => $dados['fuso'] ?? Fuso::PADRAO,
             ]);
 
             $usuario = Usuario::create([

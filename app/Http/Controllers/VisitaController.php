@@ -26,11 +26,11 @@ use App\Support\AfastamentoVisita;
 use App\Support\CancelamentoVisita;
 use App\Support\DirecionamentoParametros;
 use App\Support\Haversine;
+use App\Support\Instante;
 use App\Support\RaioCheckin;
 use App\Support\Rastreamento;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
@@ -410,7 +410,7 @@ class VisitaController extends Controller
         }
 
         $dados = $request->validated();
-        $fimData = Carbon::parse($dados['fim_data']);
+        $fimData = Instante::normalizar($dados['fim_data']);
 
         if ($fimData->lt($visita->inicio_data)) {
             return response()->json(['message' => 'O horário de saída não pode ser antes do horário de entrada.'], 422);
@@ -465,8 +465,9 @@ class VisitaController extends Controller
         }
 
         $dados = $request->validated();
-        $novoInicio = isset($dados['inicio_data']) ? Carbon::parse($dados['inicio_data']) : $visita->inicio_data;
-        $novoFim = isset($dados['fim_data']) ? Carbon::parse($dados['fim_data']) : $visita->fim_data;
+        // O admin manda ISO com offset; o instante vai pro banco em UTC (docs/50).
+        $novoInicio = isset($dados['inicio_data']) ? Instante::normalizar($dados['inicio_data']) : $visita->inicio_data;
+        $novoFim = isset($dados['fim_data']) ? Instante::normalizar($dados['fim_data']) : $visita->fim_data;
 
         if ($novoFim->lt($novoInicio)) {
             return response()->json(['message' => 'O horário de saída não pode ser antes do horário de entrada.'], 422);

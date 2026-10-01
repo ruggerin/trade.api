@@ -131,9 +131,9 @@ class RotaDoDiaTest extends TestCase
         $this->assertCount(2, $rota->json('linhas'));
     }
 
-    public function test_dia_fecha_a_meia_noite_do_fuso_de_quem_consulta(): void
+    public function test_dia_fecha_a_meia_noite_do_fuso_da_empresa(): void
     {
-        // 22:00 de Manaus (UTC-4) = 02:00 UTC do dia seguinte — o histórico é UTC.
+        // 22:00 de Manaus (UTC-4) = 02:00 UTC do dia seguinte — o histórico é UTC (docs/50 §4.3).
         DB::table('localizacoes_historico')->insert([
             'empresa_id' => $this->empresa->id,
             'usuario_id' => $this->promotor->id,
@@ -143,11 +143,19 @@ class RotaDoDiaTest extends TestCase
         ]);
         config(['services.mapbox.token' => '']);
         Sanctum::actingAs(Usuario::factory()->admin()->create(['empresa_id' => $this->empresa->id]));
-
         $url = "/api/rotas?usuario_uuid={$this->promotor->uuid}&data=2026-09-29";
-        $this->assertCount(1, $this->getJson($url.'&tz=America/Manaus')->assertOk()->json('pontos'));
-        $this->assertCount(0, $this->getJson($url)->assertOk()->json('pontos'));
-        $this->getJson($url.'&tz=Nao/Existe')->assertUnprocessable();
+
+        // Empresa em Manaus: 22:00 local ainda é dia 29.
+        $this->empresa->update(['fuso' => 'America/Manaus']);
+        $this->assertCount(1, $this->getJson($url)->assertOk()->json('pontos'));
+
+        // Empresa em São Paulo (UTC-3): 02:00 UTC = 23:00 do dia 29 — também entra.
+        $this->empresa->update(['fuso' => 'America/Sao_Paulo']);
+        $this->assertCount(1, $this->getJson($url)->assertOk()->json('pontos'));
+
+        // Empresa em UTC: já é dia 30. O `tz` do navegador não muda o corte (é da empresa).
+        $this->empresa->update(['fuso' => 'UTC']);
+        $this->assertCount(0, $this->getJson($url.'&tz=America/Manaus')->assertOk()->json('pontos'));
     }
 
     public function test_linha_pelas_ruas_fica_em_cache_e_nao_chama_o_mapbox_de_novo(): void
