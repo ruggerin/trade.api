@@ -37,6 +37,9 @@ class EmpresaFactory extends Factory
             'limite_usuarios' => 3,
             'limite_pontos_venda' => 3,
             'ativo' => true,
+            // UTC nos testes: mantém neutros os que montam horário com now() (servidor em UTC).
+            // Quem testa fuso (docs/50) informa o fuso da empresa explicitamente.
+            'fuso' => 'UTC',
         ];
     }
 

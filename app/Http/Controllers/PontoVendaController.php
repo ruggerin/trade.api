@@ -15,6 +15,7 @@ use App\Models\PontoVenda;
 use App\Models\RamoAtividade;
 use App\Models\RedeLoja;
 use App\Models\Usuario;
+use App\Support\Fuso;
 use App\Support\ImportacaoPontosVenda;
 use App\Support\VisibilidadePontosVenda;
 use Illuminate\Http\JsonResponse;
@@ -58,8 +59,8 @@ class PontoVendaController extends Controller
             ->when($request->filled('cidade'), fn ($query) => $query->where('cidade', 'ilike', '%'.addcslashes($request->string('cidade'), '%_\\').'%'))
             // Loja sem nenhum promotor atribuído — pendência de configuração da carteira.
             ->when($request->boolean('sem_promotor'), fn ($query) => $query->doesntHave('promotores'))
-            ->when($request->filled('data_inicio'), fn ($query) => $query->whereDate($campoData, '>=', $request->string('data_inicio')))
-            ->when($request->filled('data_fim'), fn ($query) => $query->whereDate($campoData, '<=', $request->string('data_fim')))
+            // Período por data local no fuso da empresa (docs/50 §4.3), não meia-noite UTC.
+            ->tap(fn ($q) => Fuso::filtrarPeriodo($q, $campoData, $request->input('data_inicio'), $request->input('data_fim'), Fuso::daEmpresa($request->user()->empresa)))
             // Filtros refinados pra além do "busca" genérico acima — usados pelo modal de busca
             // avançada do admin web (selecionar PDV certo entre vários parecidos), ver
             // docs/03-ADMIN-WEB.md#6-usuários. Cada um é independente, dá pra combinar.

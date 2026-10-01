@@ -8,6 +8,7 @@ use App\Enums\StatusOrdemServico;
 use App\Models\AgendaVisita;
 use App\Models\Empresa;
 use App\Models\OrdemServico;
+use App\Support\Fuso;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
 
@@ -26,9 +27,11 @@ class GerarOrdensServicoPorAgenda extends Command
     public function handle(): int
     {
         $totalCriadas = 0;
-        $hoje = now()->startOfDay();
 
-        Empresa::withoutGlobalScopes()->where('ativo', true)->each(function (Empresa $empresa) use (&$totalCriadas, $hoje): void {
+        Empresa::withoutGlobalScopes()->where('ativo', true)->each(function (Empresa $empresa) use (&$totalCriadas): void {
+            // "Hoje" é o dia local da EMPRESA (docs/50 §4.3) — dia da semana e data única
+            // também. Com o agendador rodando em UTC, isso evita gerar o roteiro do dia errado.
+            $hoje = Fuso::hoje(Fuso::daEmpresa($empresa));
             $agendas = AgendaVisita::withoutGlobalScopes()
                 ->where('empresa_id', $empresa->id)
                 ->where('ativo', true)
@@ -36,7 +39,7 @@ class GerarOrdensServicoPorAgenda extends Command
                 ->where(function ($query) use ($hoje) {
                     $query
                         ->where(fn ($q) => $q->where('recorrencia', RecorrenciaAgendaVisita::SEMANAL)->where('dia_semana', $hoje->dayOfWeek))
-                        ->orWhere(fn ($q) => $q->where('recorrencia', RecorrenciaAgendaVisita::DATA_UNICA)->whereDate('data', $hoje));
+                        ->orWhere(fn ($q) => $q->where('recorrencia', RecorrenciaAgendaVisita::DATA_UNICA)->whereDate('data', $hoje->toDateString()));
                 })
                 ->get();
 
@@ -58,7 +61,7 @@ class GerarOrdensServicoPorAgenda extends Command
         $jaCriadaHoje = OrdemServico::withoutGlobalScopes()
             ->where('agenda_visita_id', $agenda->id)
             ->whereIn('status', [StatusOrdemServico::PENDENTE, StatusOrdemServico::EM_ANDAMENTO])
-            ->whereDate('prazo_inicio', $hoje)
+            ->whereBetween('prazo_inicio', Fuso::intervaloDoDia($hoje->toDateString(), $hoje->tzName))
             ->exists();
 
         if ($jaCriadaHoje) {
@@ -76,8 +79,9 @@ class GerarOrdensServicoPorAgenda extends Command
             'prioridade' => $agenda->prioridade,
             'horario_previsto' => $agenda->horario_previsto,
             'obrigatoria' => $agenda->obrigatoria,
-            'prazo_inicio' => $hoje->copy(),
-            'prazo_fim' => $hoje->copy()->endOfDay(),
+            // O dia local inteiro, gravado como instante UTC (docs/50 §2).
+            'prazo_inicio' => $hoje->copy()->utc(),
+            'prazo_fim' => $hoje->copy()->endOfDay()->utc(),
             'status' => StatusOrdemServico::PENDENTE,
             'observacao' => $agenda->observacao,
         ]);

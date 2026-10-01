@@ -4,6 +4,7 @@ namespace App\Http\Resources;
 
 use App\Enums\StatusEtapaPlanoAcao;
 use App\Models\PlanoAcaoEtapa;
+use App\Support\Fuso;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -20,7 +21,7 @@ class PlanoAcaoResource extends JsonResource
     {
         $etapas = $this->relationLoaded('etapas') ? $this->etapas : null;
         $etapaAtrasada = $etapas?->contains(fn (PlanoAcaoEtapa $e) => $e->atrasada()) ?? false;
-        $prazoVencido = $this->prazo !== null && $this->status->ativo() && $this->prazo->copy()->endOfDay()->isPast();
+        $prazoVencido = $this->prazo !== null && $this->status->ativo() && Fuso::diaJaPassou($this->prazo, Fuso::daEmpresaId($this->empresa_id));
 
         return [
             'id' => $this->uuid,

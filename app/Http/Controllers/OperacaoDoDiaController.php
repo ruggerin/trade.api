@@ -8,6 +8,7 @@ use App\Enums\UserType;
 use App\Models\Empresa;
 use App\Models\OrdemServico;
 use App\Models\VisitaRegistro;
+use App\Support\Fuso;
 use App\Support\OperacaoDoDia as SuporteOperacaoDoDia;
 use App\Support\Rastreamento;
 use Carbon\Carbon;
@@ -38,7 +39,9 @@ class OperacaoDoDiaController extends Controller
         ]);
 
         $empresa = $usuario->empresa;
-        $dia = $request->filled('data') ? Carbon::parse($request->string('data'))->startOfDay() : now();
+        // Dia local no fuso da EMPRESA (docs/50 §4.3) — o "hoje" do dashboard inteiro.
+        $fusoEmpresa = Fuso::daEmpresa($empresa);
+        $dia = $request->filled('data') ? Carbon::parse($request->string('data'), $fusoEmpresa)->startOfDay() : Fuso::hoje($fusoEmpresa);
 
         if ($dia->isFuture()) {
             abort(422, 'A Operação do Dia não existe pra uma data futura.');
@@ -49,7 +52,7 @@ class OperacaoDoDiaController extends Controller
         // continuam sempre no estado atual, nunca filtrados por `$dia` (ver kpis()/filaAcoes()/
         // rupturas_por_sku abaixo); o front esconde essas seções quando `historico` é true, pra
         // não parecer que são "daquele dia".
-        $historico = ! $dia->isToday();
+        $historico = ! $dia->isSameDay(Fuso::hoje($fusoEmpresa));
         // Blocos ainda "em aberto" (visita ATUAL, OS pendente sem visita) e a comparação de
         // atraso precisam de um teto — hoje é "agora" de verdade; num dia passado, o teto é o
         // fim daquele próprio dia (senão uma visita esquecida aberta desde ontem esticaria a
@@ -65,7 +68,7 @@ class OperacaoDoDiaController extends Controller
         // pra quem já vê o Mapa ao vivo.
         $veLocalizacao = $usuario->temPermissao(Permissao::RASTREAMENTO_VISUALIZAR);
 
-        $equipe = $porPromotor->map(function (array $linha) use ($janelaSinal, $rupturasAbertas, $agora, $tolerancia, $historico, $veLocalizacao) {
+        $equipe = $porPromotor->map(function (array $linha) use ($janelaSinal, $rupturasAbertas, $dia, $agora, $tolerancia, $historico, $veLocalizacao) {
             $promotor = $linha['usuario'];
             $visita = $linha['visita_aberta'];
             $ordens = $linha['ordens'];
@@ -97,7 +100,7 @@ class OperacaoDoDiaController extends Controller
                     'situacao' => $promotor->rastreamento_situacao,
                 ] : null,
                 'sem_sinal' => $semSinal && $linha['status'] !== SuporteOperacaoDoDia::STATUS_ENCERRADO,
-                'blocos_jornada' => $this->blocosJornada($ordens, $agora, $tolerancia),
+                'blocos_jornada' => $this->blocosJornada($ordens, $dia, $agora, $tolerancia),
             ];
         })->sortBy(fn ($linha) => $linha['usuario']['nome'])->values();
 
@@ -108,7 +111,7 @@ class OperacaoDoDiaController extends Controller
             'kpis' => $this->kpis($empresa, $porPromotor, $equipe, $dia),
             'equipe' => $equipe,
             // Sempre o estado atual — nunca "daquele dia" (ver comentário acima de $historico).
-            'fila_acoes' => $historico ? [] : $this->filaAcoes($empresa, $porPromotor, $agora),
+            'fila_acoes' => $historico ? [] : $this->filaAcoes($empresa, $porPromotor, $dia, $agora),
             'rupturas_por_sku' => $historico ? [] : SuporteOperacaoDoDia::rupturasAbertasPorSku($empresa)->map(fn ($linha) => [
                 'produto' => [
                     'id' => $linha['produto']->uuid,
@@ -126,7 +129,7 @@ class OperacaoDoDiaController extends Controller
      */
     private function kpis(Empresa $empresa, Collection $porPromotor, Collection $equipe, Carbon $dia): array
     {
-        $historico = ! $dia->isToday();
+        $historico = ! $dia->isSameDay(Fuso::hoje(Fuso::daEmpresa($empresa)));
         $ordensHoje = $porPromotor->flatMap(fn ($linha) => $linha['ordens']);
         $planejadas = $ordensHoje->whereNotIn('status', [StatusOrdemServico::CANCELADA, StatusOrdemServico::AGUARDANDO_APROVACAO]);
 
@@ -157,7 +160,7 @@ class OperacaoDoDiaController extends Controller
      *
      * @return list<array{inicio: Carbon, fim: Carbon, status: string}>
      */
-    private function blocosJornada(Collection $ordens, Carbon $agora, int $tolerancia): array
+    private function blocosJornada(Collection $ordens, Carbon $dia, Carbon $agora, int $tolerancia): array
     {
         $blocos = [];
 
@@ -185,7 +188,7 @@ class OperacaoDoDiaController extends Controller
                 continue;
             }
 
-            $previsto = SuporteOperacaoDoDia::horarioPrevistoEm($agora, $os->horario_previsto);
+            $previsto = SuporteOperacaoDoDia::horarioPrevistoDaOs($os, $dia);
             $atrasado = $previsto->copy()->addMinutes($tolerancia)->lt($agora);
 
             $blocos[] = [
@@ -245,7 +248,7 @@ class OperacaoDoDiaController extends Controller
      *
      * @param  Collection<int, array{usuario: \App\Models\Usuario, status: string, visita_aberta: mixed, ordens: Collection}>  $porPromotor
      */
-    private function filaAcoes(Empresa $empresa, Collection $porPromotor, Carbon $agora): Collection
+    private function filaAcoes(Empresa $empresa, Collection $porPromotor, Carbon $dia, Carbon $agora): Collection
     {
         $tolerancia = SuporteOperacaoDoDia::toleranciaAtrasoMinutos($empresa);
         $janelaSinal = now()->subMinutes(Rastreamento::JANELA_ATIVO_MINUTOS);
@@ -286,13 +289,13 @@ class OperacaoDoDiaController extends Controller
 
         $deAtraso = $porPromotor
             ->filter(fn ($linha) => $linha['status'] === SuporteOperacaoDoDia::STATUS_ATRASADO)
-            ->map(function ($linha) use ($tolerancia, $agora) {
+            ->map(function ($linha) use ($tolerancia, $dia, $agora) {
                 $osAtrasada = $linha['ordens']
                     ->whereIn('status', [StatusOrdemServico::PENDENTE, StatusOrdemServico::EM_ANDAMENTO])
                     ->first(fn (OrdemServico $os) => $os->horario_previsto
-                        && SuporteOperacaoDoDia::horarioPrevistoEm($agora, $os->horario_previsto)->addMinutes($tolerancia)->lt($agora));
+                        && SuporteOperacaoDoDia::horarioPrevistoDaOs($os, $dia)->addMinutes($tolerancia)->lt($agora));
 
-                $previsto = $osAtrasada ? SuporteOperacaoDoDia::horarioPrevistoEm($agora, $osAtrasada->horario_previsto) : null;
+                $previsto = $osAtrasada ? SuporteOperacaoDoDia::horarioPrevistoDaOs($osAtrasada, $dia) : null;
 
                 return [
                     'tipo' => 'ATRASO',

@@ -25,6 +25,7 @@ use App\Models\VisitaIntervencao;
 use App\Support\AfastamentoVisita;
 use App\Support\CancelamentoVisita;
 use App\Support\DirecionamentoParametros;
+use App\Support\Fuso;
 use App\Support\Haversine;
 use App\Support\HorarioDoCampo;
 use App\Support\Instante;
@@ -63,8 +64,8 @@ class VisitaController extends Controller
             ->when($request->filled('ponto_venda_uuid'), function ($query) use ($request) {
                 $query->where('ponto_venda_id', PontoVenda::where('uuid', $request->string('ponto_venda_uuid'))->value('id'));
             })
-            ->when($request->filled('data_inicio'), fn ($query) => $query->whereDate('inicio_data', '>=', $request->string('data_inicio')))
-            ->when($request->filled('data_fim'), fn ($query) => $query->whereDate('inicio_data', '<=', $request->string('data_fim')))
+            // Período por data local no fuso da empresa (docs/50 §4.3), não meia-noite UTC.
+            ->tap(fn ($q) => Fuso::filtrarPeriodo($q, 'inicio_data', $request->input('data_inicio'), $request->input('data_fim'), Fuso::daEmpresa($request->user()->empresa)))
             // docs/03-ADMIN-WEB.md §1 pede filtro por status na listagem — não estava
             // documentado em docs/02-API-BACKEND.md ainda, sincronizado junto com este código.
             ->when($request->filled('status'), fn ($query) => $query->where('status', $request->string('status')))

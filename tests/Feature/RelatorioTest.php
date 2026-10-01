@@ -143,7 +143,15 @@ class RelatorioTest extends TestCase
             ->assertJsonPath('total.planejadas', 1)
             ->assertJsonPath('linhas.0.data', '2026-09-18');
 
-        // Sem tz vale o fuso da aplicação (UTC): a mesma OS é do dia 19.
+        // Sem tz vale o fuso da EMPRESA (docs/50 §4.3), não o do servidor: com a empresa em São
+        // Paulo a OS continua no dia 18; com a empresa em UTC, a mesma OS passa pro dia 19.
+        $this->empresa->update(['fuso' => 'America/Sao_Paulo']);
+        auth()->user()->unsetRelation('empresa');
+        $this->getJson('/api/relatorios/visitas-planejadas-x-executadas?data_inicio=2026-09-18&data_fim=2026-09-18')
+            ->assertOk()->assertJsonPath('total.planejadas', 1);
+
+        $this->empresa->update(['fuso' => 'UTC']);
+        auth()->user()->unsetRelation('empresa');
         $this->getJson('/api/relatorios/visitas-planejadas-x-executadas?data_inicio=2026-09-18&data_fim=2026-09-18')
             ->assertOk()->assertJsonPath('total.planejadas', 0);
     }

@@ -16,6 +16,7 @@ use App\Models\PontoVenda;
 use App\Models\ProdutoAuditoria;
 use App\Models\Usuario;
 use App\Models\Visita;
+use App\Support\Fuso;
 use App\Support\PedidoVendaSemVisita;
 use App\Support\PermissaoPedidoVenda;
 use App\Support\VisibilidadePontosVenda;
@@ -63,8 +64,8 @@ class PedidoVendaController extends Controller
                 'visita',
                 fn ($v) => $v->where('uuid', $request->input('visita_uuid')),
             ))
-            ->when($request->filled('data_inicio'), fn ($q) => $q->whereDate('created_at', '>=', $request->input('data_inicio')))
-            ->when($request->filled('data_fim'), fn ($q) => $q->whereDate('created_at', '<=', $request->input('data_fim')))
+            // Período por data local no fuso da empresa (docs/50 §4.3), não meia-noite UTC.
+            ->tap(fn ($q) => Fuso::filtrarPeriodo($q, 'created_at', $request->input('data_inicio'), $request->input('data_fim'), Fuso::daEmpresa($request->user()->empresa)))
             ->when($request->filled('busca'), function ($q) use ($request) {
                 $termo = '%'.addcslashes($request->string('busca'), '%_\\').'%';
                 // Agrupado pra o OR não escapar da correlação do whereHas.

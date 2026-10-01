@@ -17,6 +17,7 @@ use App\Models\TipoRegistro;
 use App\Models\TipoVisita;
 use App\Models\Usuario;
 use App\Support\AutonomiaAgenda;
+use App\Support\Fuso;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -46,8 +47,8 @@ class OrdemServicoController extends Controller
             })
             // Janela de data pra tela Agenda (Hoje = só hoje; Semana = hoje + 6 dias) — compara
             // contra prazo_fim, mesmo campo já usado pra calcular "Atrasada".
-            ->when($request->filled('prazo_de'), fn ($q) => $q->whereDate('prazo_fim', '>=', $request->date('prazo_de')))
-            ->when($request->filled('prazo_ate'), fn ($q) => $q->whereDate('prazo_fim', '<=', $request->date('prazo_ate')))
+            // Período por data local no fuso da empresa (docs/50 §4.3), não meia-noite UTC.
+            ->tap(fn ($q) => Fuso::filtrarPeriodo($q, 'prazo_fim', $request->input('prazo_de'), $request->input('prazo_ate'), Fuso::daEmpresa($request->user()->empresa)))
             ->when(
                 $request->filled('ponto_venda_uuid'),
                 fn ($q) => $q->whereHas(

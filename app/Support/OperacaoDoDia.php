@@ -33,9 +33,23 @@ class OperacaoDoDia
      * cair no dia seguinte e o parse sem data reconstruiria a hora de volta em "hoje" — ou seja,
      * no passado.
      */
-    public static function horarioPrevistoEm(Carbon $dia, string $horarioPrevisto): Carbon
+    public static function horarioPrevistoEm(Carbon $dia, string $horarioPrevisto, ?string $fuso = null): Carbon
     {
-        return Carbon::parse($dia->toDateString().' '.$horarioPrevisto);
+        // docs/50 §4.2: o horário marcado é da loja — `$dia` é a data local (fuso da empresa) e
+        // o resultado volta em UTC, pra comparar com `now()`.
+        return Fuso::instanteLocal($dia->toDateString(), $horarioPrevisto, $fuso ?? $dia->tzName);
+    }
+
+    /** Horário previsto de uma OS naquele dia, no fuso da loja dela (sem loja, o de `$dia`). */
+    public static function horarioPrevistoDaOs(OrdemServico $os, Carbon $dia): Carbon
+    {
+        return self::horarioPrevistoEm($dia, $os->horario_previsto, $os->pontoVenda ? Fuso::daLoja($os->pontoVenda) : null);
+    }
+
+    /** O dia local (00:00 no fuso da empresa) — o "hoje" do dashboard (docs/50 §4.3). */
+    public static function hoje(Empresa $empresa): Carbon
+    {
+        return Fuso::hoje(Fuso::daEmpresa($empresa));
     }
 
     /**
@@ -88,14 +102,14 @@ class OperacaoDoDia
      */
     public static function statusPorPromotor(Empresa $empresa, ?Carbon $dia = null): Collection
     {
-        $dia ??= now();
+        $dia ??= self::hoje($empresa);
         $tolerancia = self::toleranciaAtrasoMinutos($empresa);
         $agora = now();
 
         return OrdemServico::query()
             ->where('empresa_id', $empresa->id)
             ->whereNotNull('usuario_id')
-            ->whereDate('prazo_fim', $dia->toDateString())
+            ->whereBetween('prazo_fim', Fuso::intervaloDoDia($dia->toDateString(), Fuso::daEmpresa($empresa)))
             ->with(['usuario', 'pontoVenda', 'visita'])
             ->get()
             ->groupBy('usuario_id')
@@ -117,7 +131,7 @@ class OperacaoDoDia
                     } else {
                         $temAtraso = $pendentes->contains(
                             fn (OrdemServico $os) => $os->horario_previsto
-                                && self::horarioPrevistoEm($dia, $os->horario_previsto)->addMinutes($tolerancia)->lt($agora),
+                                && self::horarioPrevistoDaOs($os, $dia)->addMinutes($tolerancia)->lt($agora),
                         );
                         $status = $temAtraso ? self::STATUS_ATRASADO : self::STATUS_DESLOCAMENTO;
                     }
@@ -172,12 +186,12 @@ class OperacaoDoDia
      */
     public static function formulariosEmitidosHoje(Empresa $empresa, ?Carbon $dia = null): array
     {
-        $dia ??= now();
+        $dia ??= self::hoje($empresa);
 
         $linha = DB::table('ordem_servico_formularios')
             ->join('ordens_servico', 'ordens_servico.id', '=', 'ordem_servico_formularios.ordem_servico_id')
             ->where('ordens_servico.empresa_id', $empresa->id)
-            ->whereDate('ordens_servico.prazo_fim', $dia->toDateString())
+            ->whereBetween('ordens_servico.prazo_fim', Fuso::intervaloDoDia($dia->toDateString(), Fuso::daEmpresa($empresa)))
             ->selectRaw('count(*) as expedidos, count(ordem_servico_formularios.respondido_em) as preenchidos')
             ->first();
 

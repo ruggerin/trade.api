@@ -15,6 +15,7 @@ use App\Models\TipoRegistro;
 use App\Models\Usuario;
 use App\Models\Visita;
 use App\Models\VisitaRegistro;
+use App\Support\Fuso;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
@@ -474,7 +475,8 @@ class RelatorioController extends Controller
             'tz' => ['nullable', 'timezone:all'],
         ]);
 
-        $tz = $request->input('tz') ?: config('app.timezone');
+        // Sem `tz` do navegador, vale o fuso da empresa (docs/50 §4.3) — não o do servidor.
+        $tz = $request->input('tz') ?: Fuso::daEmpresa($request->user()?->empresa);
 
         $fim = $request->filled('data_fim') ? Carbon::parse($request->string('data_fim'), $tz)->endOfDay() : now($tz)->endOfDay();
         $inicio = $request->filled('data_inicio') ? Carbon::parse($request->string('data_inicio'), $tz)->startOfDay() : $fim->copy()->subDays(6)->startOfDay();

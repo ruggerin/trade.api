@@ -14,6 +14,7 @@ use App\Models\SecaoAuditoria;
 use App\Models\TipoRegistro;
 use App\Models\Usuario;
 use App\Models\VisitaRegistro;
+use App\Support\Fuso;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -88,14 +89,8 @@ class GaleriaFotosController extends Controller
                         fn ($q) => $q->whereHas('pontoVenda', fn ($q) => $q->where('ramo_atividade_id', $ramoAtividadeId)),
                     );
             })
-            ->when(
-                $request->filled('data_inicio'),
-                fn ($q) => $q->whereDate('created_at', '>=', $request->string('data_inicio')),
-            )
-            ->when(
-                $request->filled('data_fim'),
-                fn ($q) => $q->whereDate('created_at', '<=', $request->string('data_fim')),
-            )
+            // Período por data local no fuso da empresa (docs/50 §4.3), não meia-noite UTC.
+            ->tap(fn ($q) => Fuso::filtrarPeriodo($q, 'created_at', $request->input('data_inicio'), $request->input('data_fim'), Fuso::daEmpresa($request->user()->empresa)))
             ->when($tipoRegistroId, fn ($q) => $q->where('tipo_registro_id', $tipoRegistroId))
             ->when($departamentoId, fn ($q) => $q->where('departamento_id', $departamentoId))
             ->when($secaoId, fn ($q) => $q->where('secao_id', $secaoId))

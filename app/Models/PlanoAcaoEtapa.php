@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\StatusEtapaPlanoAcao;
 use App\Models\Concerns\HasUuid;
+use App\Support\Fuso;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -54,7 +55,8 @@ class PlanoAcaoEtapa extends Model
     {
         return $this->prazo !== null
             && ! $this->status->finalizada()
-            && $this->prazo->copy()->endOfDay()->isPast();
+            // Vence no fim do dia local da empresa (docs/50 §4.3), não à meia-noite UTC.
+            && Fuso::diaJaPassou($this->prazo, Fuso::daEmpresaId($this->planoAcao?->empresa_id));
     }
 
     public function planoAcao(): BelongsTo

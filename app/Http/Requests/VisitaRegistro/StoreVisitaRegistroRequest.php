@@ -10,6 +10,7 @@ use App\Models\ProdutoAuditoria;
 use App\Models\SecaoAuditoria;
 use App\Models\TipoRegistro;
 use App\Models\Visita;
+use App\Support\Fuso;
 use App\Support\GranularidadeChecklist;
 use App\Support\ResolverSortimentoCampo;
 use Carbon\Carbon;
@@ -235,8 +236,10 @@ class StoreVisitaRegistroRequest extends FormRequest
      */
     private function dentroDoLimiteRetroativo(string $valor, int $limiteDias): bool
     {
-        $data = Carbon::createFromFormat('d/m/Y', $valor)->startOfDay();
-        $maisAntigaAceita = Carbon::now()->startOfDay()->subDays($limiteDias);
+        // Data de calendário x "hoje" local da empresa do promotor (docs/50 §4.3).
+        $fuso = Fuso::daEmpresa($this->user()?->empresa);
+        $data = Carbon::createFromFormat('d/m/Y', $valor, $fuso)->startOfDay();
+        $maisAntigaAceita = Fuso::hoje($fuso)->subDays($limiteDias);
 
         return ! $data->lt($maisAntigaAceita);
     }

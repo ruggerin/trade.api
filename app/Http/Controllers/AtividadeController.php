@@ -13,6 +13,7 @@ use App\Models\Usuario;
 use App\Models\Visita;
 use App\Models\VisitaRegistro;
 use App\Models\VisitaRegistroComentario;
+use App\Support\Fuso;
 use App\Support\RaioCheckin;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -117,8 +118,10 @@ class AtividadeController extends Controller
         $this->autorizar($request);
         $usuario = $request->user();
 
-        $inicio = $request->filled('data_inicio') ? $request->string('data_inicio')->toString() : now()->subDay()->toDateString();
-        $fim = $request->filled('data_fim') ? $request->string('data_fim')->toString() : now()->toDateString();
+        // Datas locais no fuso da empresa (docs/50 §4.3) — default ontem+hoje desse fuso.
+        $fuso = Fuso::daEmpresa($usuario->empresa);
+        $inicio = $request->filled('data_inicio') ? $request->string('data_inicio')->toString() : Fuso::hoje($fuso)->subDay()->toDateString();
+        $fim = $request->filled('data_fim') ? $request->string('data_fim')->toString() : Fuso::hoje($fuso)->toDateString();
 
         $emLoja = Visita::query()
             ->where('status', StatusVisita::ABERTA)
@@ -140,8 +143,7 @@ class AtividadeController extends Controller
             ->whereHas('tipoRegistro', fn ($q) => $q->where('eh_alerta', true))
             ->whereHas('visita')
             ->whereDoesntHave('planoAcaoAtivo')
-            ->whereDate('created_at', '>=', $inicio)
-            ->whereDate('created_at', '<=', $fim)
+            ->tap(fn ($q) => Fuso::filtrarPeriodo($q, 'created_at', $inicio, $fim, $fuso))
             ->with(['visita.pontoVenda', 'tipoRegistro', 'produtoAuditoria'])
             ->orderByDesc('created_at')
             ->get();
@@ -193,8 +195,8 @@ class AtividadeController extends Controller
             ])
             ->when($request->filled('usuario_uuid'), fn ($q) => $q->where('usuario_id', $usuarioId))
             ->when($request->filled('ponto_venda_uuid'), fn ($q) => $q->where('ponto_venda_id', $pontoVendaId))
-            ->when($request->filled('data_inicio'), fn ($q) => $q->whereDate('inicio_data', '>=', $request->string('data_inicio')))
-            ->when($request->filled('data_fim'), fn ($q) => $q->whereDate('inicio_data', '<=', $request->string('data_fim')))
+            // Período por data local no fuso da empresa (docs/50 §4.3), não meia-noite UTC.
+            ->tap(fn ($q) => Fuso::filtrarPeriodo($q, 'inicio_data', $request->input('data_inicio'), $request->input('data_fim'), Fuso::daEmpresa($request->user()->empresa)))
             ->get();
 
         $eventos = collect();
@@ -279,8 +281,8 @@ class AtividadeController extends Controller
                 $q->when($request->filled('usuario_uuid'), fn ($q) => $q->where('usuario_id', $usuarioId))
                     ->when($request->filled('ponto_venda_uuid'), fn ($q) => $q->where('ponto_venda_id', $pontoVendaId));
             })
-            ->when($request->filled('data_inicio'), fn ($q) => $q->whereDate('created_at', '>=', $request->string('data_inicio')))
-            ->when($request->filled('data_fim'), fn ($q) => $q->whereDate('created_at', '<=', $request->string('data_fim')))
+            // Período por data local no fuso da empresa (docs/50 §4.3), não meia-noite UTC.
+            ->tap(fn ($q) => Fuso::filtrarPeriodo($q, 'created_at', $request->input('data_inicio'), $request->input('data_fim'), Fuso::daEmpresa($request->user()->empresa)))
             ->with([
                 'usuario',
                 'registro' => fn ($q) => $q->comContagemComentarios($request->user()->id),
@@ -389,8 +391,8 @@ class AtividadeController extends Controller
             })
             ->when($request->filled('tipo_registro_uuid'), fn ($q) => $q->where('tipo_registro_id', $tipoRegistroId))
             ->when($comFoto, fn ($q) => $q->whereHas('imagens'))
-            ->when($request->filled('data_inicio'), fn ($q) => $q->whereDate('created_at', '>=', $request->string('data_inicio')))
-            ->when($request->filled('data_fim'), fn ($q) => $q->whereDate('created_at', '<=', $request->string('data_fim')))
+            // Período por data local no fuso da empresa (docs/50 §4.3), não meia-noite UTC.
+            ->tap(fn ($q) => Fuso::filtrarPeriodo($q, 'created_at', $request->input('data_inicio'), $request->input('data_fim'), Fuso::daEmpresa($request->user()->empresa)))
             ->comContagemComentarios($request->user()->id)
             ->with([
                 'visita.pontoVenda', 'visita.usuario', 'tipoRegistro.campos', 'produtoAuditoria',

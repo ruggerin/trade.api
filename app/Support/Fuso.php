@@ -4,6 +4,7 @@ namespace App\Support;
 
 use App\Models\Empresa;
 use App\Models\PontoVenda;
+use Illuminate\Contracts\Database\Query\Builder;
 use Illuminate\Support\Carbon;
 
 /**
@@ -22,6 +23,14 @@ final class Fuso
     public static function daEmpresa(?Empresa $empresa): string
     {
         return self::valido($empresa?->fuso) ?? self::PADRAO;
+    }
+
+    /** Mesmo que daEmpresa(), a partir do id — pra model sem a relação `empresa` carregada. */
+    public static function daEmpresaId(?int $empresaId): string
+    {
+        static $cache = [];
+
+        return $cache[$empresaId ?? 0] ??= self::daEmpresa($empresaId ? Empresa::withoutGlobalScopes()->find($empresaId) : null);
     }
 
     /** O fuso da loja; sem um próprio, o da empresa dela. */
@@ -57,6 +66,31 @@ final class Fuso
     public static function instanteLocal(string $data, ?string $hora, string $fuso): Carbon
     {
         return Carbon::parse(trim(substr($data, 0, 10).' '.($hora ?? '00:00')), $fuso)->utc();
+    }
+
+    /**
+     * Filtro "de/até" por data local (`YYYY-MM-DD`, como os seletores de período mandam) contra
+     * uma coluna de instante — o dia vai da meia-noite à meia-noite do fuso, em UTC. Substitui o
+     * `whereDate`, que cortava o dia na meia-noite UTC.
+     */
+    public static function filtrarPeriodo(Builder $query, string $coluna, ?string $de, ?string $ate, string $fuso): Builder
+    {
+        if ($de !== null && $de !== '') {
+            $query->where($coluna, '>=', self::intervaloDoDia($de, $fuso)[0]);
+        }
+        if ($ate !== null && $ate !== '') {
+            $query->where($coluna, '<=', self::intervaloDoDia($ate, $fuso)[1]);
+        }
+
+        return $query;
+    }
+
+    /** O dia de uma data de calendário (`DATE`, sem hora) já terminou no fuso informado? */
+    public static function diaJaPassou(Carbon|string $data, string $fuso): bool
+    {
+        $dia = $data instanceof Carbon ? $data->toDateString() : substr($data, 0, 10);
+
+        return self::intervaloDoDia($dia, $fuso)[1]->isPast();
     }
 
     private static function valido(?string $fuso): ?string

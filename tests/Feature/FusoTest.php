@@ -24,7 +24,9 @@ class FusoTest extends TestCase
 
     public function test_empresa_nasce_em_sao_paulo_e_loja_herda_da_empresa(): void
     {
+        // Default do BANCO (a fábrica de testes fixa UTC pra manter neutros os testes antigos).
         $empresa = Empresa::factory()->create();
+        DB::table('empresas')->where('id', $empresa->id)->update(['fuso' => DB::raw('DEFAULT')]);
         $this->assertSame('America/Sao_Paulo', $empresa->refresh()->fuso);
 
         $empresa->update(['fuso' => 'America/Manaus']);

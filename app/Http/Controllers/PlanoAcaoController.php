@@ -18,6 +18,7 @@ use App\Models\PontoVenda;
 use App\Models\RedeLoja;
 use App\Models\Usuario;
 use App\Models\VisitaRegistro;
+use App\Support\Fuso;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
@@ -472,13 +473,16 @@ class PlanoAcaoController extends Controller
      */
     private function filtrarAtrasados(Builder $query): Builder
     {
+        // `prazo` é data de calendário: "hoje" é o dia local da empresa (docs/50 §4.3).
+        $hoje = Fuso::hoje(Fuso::daEmpresa(request()->user()?->empresa))->toDateString();
+
         return $query
             ->whereIn('status', StatusPlanoAcao::ativos())
             ->where(fn ($q) => $q
-                ->whereDate('prazo', '<', today())
+                ->whereDate('prazo', '<', $hoje)
                 ->orWhereHas('etapas', fn ($e) => $e
                     ->whereNotIn('status', [StatusEtapaPlanoAcao::FEITA, StatusEtapaPlanoAcao::CANCELADA])
-                    ->whereDate('prazo', '<', today())));
+                    ->whereDate('prazo', '<', $hoje)));
     }
 
     /**

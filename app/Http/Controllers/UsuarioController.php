@@ -12,6 +12,7 @@ use App\Models\Empresa;
 use App\Models\Perfil;
 use App\Models\Usuario;
 use App\Models\VisitaRegistro;
+use App\Support\Fuso;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -69,8 +70,8 @@ class UsuarioController extends Controller
                 ? $query->whereNull('perfil_id')->whereIn('user_type', [UserType::GESTOR, UserType::PROMOTOR])
                 : $query->whereHas('perfil', fn ($p) => $p->where('uuid', $request->string('perfil_uuid'))))
             // Período por data de cadastro (quem entrou na base) ou de última alteração do cadastro.
-            ->when($request->filled('data_inicio'), fn ($query) => $query->whereDate($campoData, '>=', $request->string('data_inicio')))
-            ->when($request->filled('data_fim'), fn ($query) => $query->whereDate($campoData, '<=', $request->string('data_fim')))
+            // Período por data local no fuso da empresa (docs/50 §4.3), não meia-noite UTC.
+            ->tap(fn ($q) => Fuso::filtrarPeriodo($q, $campoData, $request->input('data_inicio'), $request->input('data_fim'), Fuso::daEmpresa($request->user()->empresa)))
             ->with(['perfil', 'centroCusto', 'dispositivo', 'empresa'])
             ->when(
                 $request->input('ordenar') === 'recentes',
@@ -285,8 +286,10 @@ class UsuarioController extends Controller
         $limitePorFonte = 100;
 
         $tiposFiltro = $request->filled('tipos') ? explode(',', $request->string('tipos')) : null;
-        $dataInicio = $request->filled('data_inicio') ? Carbon::parse($request->string('data_inicio'))->startOfDay() : null;
-        $dataFim = $request->filled('data_fim') ? Carbon::parse($request->string('data_fim'))->endOfDay() : null;
+        // Datas locais no fuso da empresa, em UTC pra comparar com o banco (docs/50 §4.3).
+        $fuso = Fuso::daEmpresa($usuario->empresa);
+        $dataInicio = $request->filled('data_inicio') ? Fuso::intervaloDoDia($request->string('data_inicio'), $fuso)[0] : null;
+        $dataFim = $request->filled('data_fim') ? Fuso::intervaloDoDia($request->string('data_fim'), $fuso)[1] : null;
 
         $eventos = collect();
 

@@ -8,6 +8,7 @@ use App\Models\ProdutoAuditoria;
 use App\Models\RedeLoja;
 use App\Models\TipoRegistro;
 use App\Models\VisitaRegistro;
+use App\Support\Fuso;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -60,14 +61,8 @@ class RegistroController extends Controller
                         fn ($q) => $q->whereHas('pontoVenda', fn ($q) => $q->where('rede_loja_id', $redeLojaId)),
                     );
             })
-            ->when(
-                $request->filled('data_inicio'),
-                fn ($q) => $q->whereDate('created_at', '>=', $request->string('data_inicio')),
-            )
-            ->when(
-                $request->filled('data_fim'),
-                fn ($q) => $q->whereDate('created_at', '<=', $request->string('data_fim')),
-            )
+            // Período por data local no fuso da empresa (docs/50 §4.3), não meia-noite UTC.
+            ->tap(fn ($q) => Fuso::filtrarPeriodo($q, 'created_at', $request->input('data_inicio'), $request->input('data_fim'), Fuso::daEmpresa($request->user()->empresa)))
             ->when($tipoRegistroId, fn ($q) => $q->where('tipo_registro_id', $tipoRegistroId))
             ->when($produtoId, fn ($q) => $q->where('produto_auditoria_id', $produtoId))
             ->when($request->has('ruptura'), fn ($q) => $q->where('ruptura', $request->boolean('ruptura')))
