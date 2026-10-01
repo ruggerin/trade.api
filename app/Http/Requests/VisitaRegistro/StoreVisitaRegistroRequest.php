@@ -61,6 +61,8 @@ class StoreVisitaRegistroRequest extends FormRequest
             // envio retransmitindo depois de perder a resposta), tratado no controller devolvendo
             // o registro já criado em vez de rejeitar ou duplicar.
             'idempotency_key' => ['nullable', 'string', 'uuid'],
+            // Hora em que o promotor salvou o registro no campo (docs/51 Fase 2) — opcional.
+            'criado_em' => ['nullable', 'date'],
             // Vínculo opcional a um recorte mais amplo do catálogo (seção/departamento/marca
             // inteira) — mesmo discriminador de CampanhaItem.tipo_item. Sem isso, o registro
             // continua podendo vincular só a um produto específico via produto_auditoria_uuid

@@ -16,6 +16,7 @@ use App\Models\TipoRegistro;
 use App\Models\Visita;
 use App\Models\VisitaRegistro;
 use App\Support\CancelamentoRegistro;
+use App\Support\HorarioDoCampo;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -73,7 +74,12 @@ class VisitaRegistroController extends Controller
             };
         }
 
-        $registro = VisitaRegistro::create([
+        // Hora do campo (docs/51 §3.5): o registro feito offline mantém a hora em que foi salvo no
+        // celular — é o created_at que o feed, a galeria e os relatórios usam. `new` + save (em vez
+        // de create) porque o Eloquent respeita um created_at já preenchido.
+        $criadoEm = HorarioDoCampo::resolver($dados['criado_em'] ?? null, $visita->inicio_data);
+
+        $registro = new VisitaRegistro([
             'visita_id' => $visita->id,
             'idempotency_key' => $dados['idempotency_key'] ?? null,
             'produto_auditoria_id' => $produtoAuditoriaId,
@@ -86,6 +92,9 @@ class VisitaRegistroController extends Controller
             'observacao' => $dados['observacao'] ?? null,
             'valores_campos' => $dados['valores_campos'] ?? null,
         ]);
+        $registro->created_at = $criadoEm;
+        $registro->recebido_em = now();
+        $registro->save();
 
         // Marca o formulário como respondido na Ordem de Serviço desta visita, se houver uma —
         // é a peça que dá o controle de progresso "N expedidos, M preenchidos", ver
@@ -96,7 +105,7 @@ class VisitaRegistroController extends Controller
                 ->where('ordem_servico_id', $visita->ordem_servico_id)
                 ->where('tipo_registro_id', $tipoRegistroId)
                 ->whereNull('respondido_em')
-                ->update(['respondido_em' => now(), 'updated_at' => now()]);
+                ->update(['respondido_em' => $criadoEm, 'updated_at' => now()]);
         }
 
         // Duas formas de anexar foto, combináveis — ver docs/21-EVIDENCIA-EM-FOTOS.md. `ordem`

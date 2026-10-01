@@ -32,6 +32,9 @@ class Visita extends Model
         'fim_longitude',
         'fim_distancia_metros',
         'checkout_tipo',
+        // docs/51 Fase 2 — quando o servidor recebeu cada passo (a hora do campo vem do app).
+        'checkin_recebido_em',
+        'checkout_recebido_em',
     ];
 
     protected function casts(): array
@@ -45,6 +48,8 @@ class Visita extends Model
             'afastamento_minutos' => 'integer',
             'afastamento_max_metros' => 'integer',
             'afastamento_calculado_em' => 'datetime',
+            'checkin_recebido_em' => 'datetime',
+            'checkout_recebido_em' => 'datetime',
         ];
     }
 

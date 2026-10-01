@@ -33,6 +33,9 @@ class CheckinVisitaRequest extends FormRequest
             // de envio retransmitindo depois de perder a resposta), tratado no controller
             // devolvendo a visita já criada em vez de rejeitar.
             'idempotency_key' => ['nullable', 'string', 'uuid'],
+            // Hora em que o promotor fez o check-in no campo (docs/51 Fase 2) — opcional: APK
+            // antigo não manda e o servidor usa a hora da chegada. Ver App\Support\HorarioDoCampo.
+            'inicio_em' => ['nullable', 'date'],
         ];
     }
 

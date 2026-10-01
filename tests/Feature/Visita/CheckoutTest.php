@@ -41,7 +41,12 @@ class CheckoutTest extends TestCase
         $this->assertGreaterThan(0, $visita->fim_distancia_metros);
     }
 
-    public function test_checkout_de_visita_ja_finalizada_retorna_422(): void
+    /**
+     * Reenvio do checkout pelo próprio promotor (a resposta anterior se perdeu e a fila do app
+     * tenta de novo) responde 200 com a visita como está — antes era 422 e a fila ficava presa
+     * tentando pra sempre (docs/51-ENVIO-DA-FILA-EM-TEMPO-REAL.md). Não mexe em nada.
+     */
+    public function test_checkout_repetido_pelo_promotor_responde_ok_sem_alterar(): void
     {
         $empresa = Empresa::factory()->create();
         $pdv = PontoVenda::factory()->create(['empresa_id' => $empresa->id]);
@@ -58,10 +63,14 @@ class CheckoutTest extends TestCase
             'latitude' => $pdv->latitude,
             'longitude' => $pdv->longitude,
         ])->assertOk();
+        $fimOriginal = \App\Models\Visita::where('uuid', $visitaUuid)->value('fim_data');
 
+        $this->travel(10)->minutes();
         $this->patchJson("/api/visitas/{$visitaUuid}/checkout", [
             'latitude' => $pdv->latitude,
             'longitude' => $pdv->longitude,
-        ])->assertStatus(422);
+        ])->assertOk()->assertJsonPath('visita.status', 'FINALIZADA');
+
+        $this->assertEquals($fimOriginal, \App\Models\Visita::where('uuid', $visitaUuid)->value('fim_data'));
     }
 }

@@ -54,6 +54,7 @@ class VisitaRegistro extends Model
             'valores_campos' => 'array',
             'cancelado_em' => 'datetime',
             'alerta_resolvido_em' => 'datetime',
+            'recebido_em' => 'datetime',
         ];
     }
 
