@@ -58,6 +58,9 @@ class UsuarioResource extends JsonResource
                     'ultimo_acesso_em' => $this->dispositivo->ultimo_acesso_em,
                 ] : null,
             ),
+            // Uso do sistema (docs/52 §4.1): último acesso por app, dias ativos em 30, "sumiu".
+            // Só nas telas de usuários (App\Support\Adesao::anexar).
+            'acesso' => $this->when($this->resource->acessoResumo !== null, fn () => $this->resource->acessoResumo),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];

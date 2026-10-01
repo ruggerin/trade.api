@@ -18,6 +18,14 @@ class Usuario extends Authenticatable
 {
     use BelongsToEmpresa, HasApiTokens, HasFactory, HasUuid;
 
+    /**
+     * Resumo de uso (docs/52) — preenchido por App\Support\Adesao::anexar só nas telas que
+     * mostram, nunca gravado (propriedade comum, não atributo do Eloquent).
+     *
+     * @var array<string, mixed>|null
+     */
+    public ?array $acessoResumo = null;
+
     protected $fillable = [
         'empresa_id',
         'nome',

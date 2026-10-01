@@ -24,6 +24,10 @@ return Application::configure(basePath: dirname(__DIR__))
         // correto faz o AuthenticationException tentar redirecionar pra uma rota `login` que
         // não existe (`route('login')`), virando 500 em vez de 401.
         $middleware->redirectGuestsTo(fn () => null);
+
+        // Uso do dia por usuário/app pra medir adesão (docs/52) — roda depois da resposta, quando
+        // o auth:sanctum da rota já identificou o usuário.
+        $middleware->api(append: [\App\Http\Middleware\RegistrarAcessoDiario::class]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         // Garante resposta em JSON pra qualquer exceção em /api/*, independente do header

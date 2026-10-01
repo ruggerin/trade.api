@@ -15,6 +15,7 @@ use App\Models\PontoVenda;
 use App\Models\TipoRegistro;
 use App\Models\Usuario;
 use App\Models\Visita;
+use App\Support\Adesao;
 use App\Support\Fuso;
 use App\Support\ParametrosPadrao;
 use Illuminate\Http\JsonResponse;
@@ -101,6 +102,9 @@ class EmpresaController extends Controller
     public function indexSuperadmin(): JsonResponse
     {
         $empresas = Empresa::orderBy('nome_fantasia')->get();
+        // Última atividade e usuários ativos em 7/30/90 dias (docs/52 §4.2) — a carteira inteira
+        // numa tela, sem abrir empresa por empresa.
+        Adesao::anexarEmpresas($empresas);
 
         return response()->json([
             'empresas' => EmpresaResource::collection($empresas),
@@ -143,6 +147,8 @@ class EmpresaController extends Controller
                 'visitas_ultimos_30_dias' => (clone $visitasQuery)->where('inicio_data', '>=', now()->subDays(30))->count(),
                 'pontos_venda_visitados' => (clone $visitasQuery)->distinct('ponto_venda_id')->count('ponto_venda_id'),
                 'ultima_atividade_em' => (clone $visitasQuery)->max('inicio_data'),
+                // Uso do sistema (não só visita) — docs/52 §4.2.
+                'adesao' => Adesao::porEmpresa([$empresa->id])[$empresa->id],
             ],
         ]);
     }

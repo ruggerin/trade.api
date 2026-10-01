@@ -29,6 +29,8 @@ class EmpresaResource extends JsonResource
             'ativo' => $this->ativo,
             // Fuso (IANA) que define o corte de "dia" da empresa (docs/50 §4.3).
             'fuso' => $this->fuso,
+            // Só na lista/detalhe de empresas do SUPERADMIN (docs/52 §4.2).
+            'adesao' => $this->when($this->resource->adesao !== null, fn () => $this->resource->adesao),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];

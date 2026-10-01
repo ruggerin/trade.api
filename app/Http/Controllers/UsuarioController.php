@@ -13,6 +13,7 @@ use App\Models\Perfil;
 use App\Models\Usuario;
 use App\Models\VisitaRegistro;
 use Carbon\Carbon;
+use App\Support\Adesao;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -81,6 +82,9 @@ class UsuarioController extends Controller
             // Visitas pra listar todos os promotores de uma vez no seletor, sem paginação real.
             ->paginate($request->filled('por_pagina') ? min($request->integer('por_pagina'), 200) : null);
 
+        // Último acesso / frequência / "sumiu" de cada um (docs/52 §4.1) — uma consulta pra página toda.
+        Adesao::anexar($usuarios->items());
+
         return response()->json([
             'usuarios' => UsuarioResource::collection($usuarios->items()),
             'meta' => [
@@ -95,6 +99,7 @@ class UsuarioController extends Controller
     public function show(Usuario $usuario): JsonResponse
     {
         $usuario->load(['perfil', 'centroCusto', 'dispositivo', 'empresa']);
+        Adesao::anexar([$usuario]);
 
         return response()->json([
             'usuario' => new UsuarioResource($usuario),
