@@ -44,6 +44,10 @@ class VisitaRegistro extends Model
         // ATIVIDADES_ALERTA_REQUER_RESOLUCAO. Ver VisitaRegistroController::resolverAlerta.
         'alerta_resolvido_em',
         'alerta_resolvido_por_id',
+        // Motivo do fechamento (docs/56) — motivo_texto complementa motivo_id (ou substitui
+        // quando nenhum do catálogo serve), ver ResolverAlertaRequest.
+        'alerta_motivo_id',
+        'alerta_motivo_texto',
     ];
 
     protected function casts(): array
@@ -91,6 +95,11 @@ class VisitaRegistro extends Model
     public function resolvidoPor(): BelongsTo
     {
         return $this->belongsTo(Usuario::class, 'alerta_resolvido_por_id');
+    }
+
+    public function motivoResolucao(): BelongsTo
+    {
+        return $this->belongsTo(MotivoResolucaoAlerta::class, 'alerta_motivo_id');
     }
 
     /**

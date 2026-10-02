@@ -90,6 +90,13 @@ class VisitaRegistroResource extends JsonResource
                 'resolvidoPor',
                 fn () => $this->resolvidoPor ? ['id' => $this->resolvidoPor->uuid, 'nome' => $this->resolvidoPor->nome] : null,
             ),
+            // Motivo do fechamento (docs/56) — motivo_texto complementa ou substitui o
+            // catálogo, ver ResolverAlertaRequest.
+            'alerta_motivo' => $this->whenLoaded(
+                'motivoResolucao',
+                fn () => $this->motivoResolucao ? ['id' => $this->motivoResolucao->uuid, 'descricao' => $this->motivoResolucao->descricao] : null,
+            ),
+            'alerta_motivo_texto' => $this->alerta_motivo_texto,
             // Plano de Ação em andamento nascido deste alerta (docs/37 §5) — o card do Painel de
             // Atividades troca "Abrir Plano de Ação" por "Ver plano" quando existe.
             'plano_acao_ativo' => $this->whenLoaded(

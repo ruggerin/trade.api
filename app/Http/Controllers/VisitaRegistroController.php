@@ -5,11 +5,13 @@ namespace App\Http\Controllers;
 use App\Enums\UserType;
 use App\Enums\StatusVisita;
 use App\Enums\TipoItemCampanha;
+use App\Http\Requests\VisitaRegistro\ResolverAlertaRequest;
 use App\Http\Requests\VisitaRegistro\StoreVisitaRegistroRequest;
 use App\Http\Resources\VisitaRegistroResource;
 use App\Models\DepartamentoAuditoria;
 use App\Models\ImagemRegistro;
 use App\Models\MarcaAuditoria;
+use App\Models\MotivoResolucaoAlerta;
 use App\Models\ProdutoAuditoria;
 use App\Models\SecaoAuditoria;
 use App\Models\TipoRegistro;
@@ -209,7 +211,7 @@ class VisitaRegistroController extends Controller
      * só mantém o estado atual — não é ação destrutiva que precise travar repetição. Ver
      * docs/17-PAINEL-ATIVIDADES.md.
      */
-    public function resolverAlerta(Request $request, Visita $visita, VisitaRegistro $registro): JsonResponse
+    public function resolverAlerta(ResolverAlertaRequest $request, Visita $visita, VisitaRegistro $registro): JsonResponse
     {
         if (! in_array($request->user()->user_type, [UserType::ADMIN, UserType::GESTOR], true)) {
             abort(403, 'Esta ação é só para ADMIN/GESTOR.');
@@ -218,11 +220,19 @@ class VisitaRegistroController extends Controller
         abort_if($registro->visita_id !== $visita->id, 404);
 
         if ($registro->alerta_resolvido_em === null) {
-            $registro->update(['alerta_resolvido_em' => now(), 'alerta_resolvido_por_id' => $request->user()->id]);
+            $dados = $request->validated();
+            $registro->update([
+                'alerta_resolvido_em' => now(),
+                'alerta_resolvido_por_id' => $request->user()->id,
+                'alerta_motivo_id' => isset($dados['motivo_uuid'])
+                    ? MotivoResolucaoAlerta::where('uuid', $dados['motivo_uuid'])->value('id')
+                    : null,
+                'alerta_motivo_texto' => $dados['motivo_texto'] ?? null,
+            ]);
         }
 
         $registro->setRelation('visita', $visita);
-        $registro->load(['produtoAuditoria', 'tipoRegistro.campos', 'secao', 'departamento', 'marca', 'resolvidoPor', 'imagens']);
+        $registro->load(['produtoAuditoria', 'tipoRegistro.campos', 'secao', 'departamento', 'marca', 'resolvidoPor', 'motivoResolucao', 'imagens']);
 
         return response()->json([
             'registro' => new VisitaRegistroResource($registro),

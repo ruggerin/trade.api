@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Empresa;
+use App\Models\MotivoResolucaoAlerta;
 use App\Models\PontoVenda;
 use App\Models\ProdutoAuditoria;
 use App\Models\RedeLoja;
@@ -57,6 +58,8 @@ class RegistroTest extends TestCase
             'observacao' => $atributos['observacao'] ?? null,
             'cancelado_em' => $atributos['cancelado_em'] ?? null,
             'alerta_resolvido_em' => $atributos['alerta_resolvido_em'] ?? null,
+            'alerta_motivo_id' => $atributos['alerta_motivo_id'] ?? null,
+            'alerta_motivo_texto' => $atributos['alerta_motivo_texto'] ?? null,
         ]);
 
         if (isset($atributos['created_at'])) {
@@ -190,6 +193,24 @@ class RegistroTest extends TestCase
         $linhas = $this->getJson('/api/registros')->assertOk()->json('registros');
         $this->assertCount(1, $linhas);
         $this->assertSame('valido', $linhas[0]['observacao']);
+    }
+
+    public function test_motivo_de_resolucao_aparece_na_listagem(): void
+    {
+        $motivo = MotivoResolucaoAlerta::create(['empresa_id' => $this->empresa->id, 'descricao' => 'Ruptura da indústria']);
+        $this->criarRegistro([
+            'observacao' => 'resolvida com motivo do catalogo',
+            'alerta_resolvido_em' => now(),
+            'alerta_motivo_id' => $motivo->id,
+            'alerta_motivo_texto' => 'Fornecedor sem estoque essa semana',
+        ]);
+
+        $admin = Usuario::factory()->admin()->create(['empresa_id' => $this->empresa->id]);
+        Sanctum::actingAs($admin);
+
+        $linha = $this->getJson('/api/registros')->assertOk()->json('registros.0');
+        $this->assertSame('Ruptura da indústria', $linha['motivo']['descricao']);
+        $this->assertSame('Fornecedor sem estoque essa semana', $linha['motivo_texto']);
     }
 
     public function test_isolamento_por_empresa(): void

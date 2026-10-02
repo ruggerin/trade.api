@@ -42,6 +42,7 @@ use App\Http\Controllers\RedeLojaController;
 use App\Http\Controllers\RegistroController;
 use App\Http\Controllers\SecaoAuditoriaController;
 use App\Http\Controllers\SortimentoPontoVendaController;
+use App\Http\Controllers\MotivoResolucaoAlertaController;
 use App\Http\Controllers\TipoRegistroController;
 use App\Http\Controllers\TipoVisitaController;
 use App\Http\Controllers\UsuarioController;
@@ -78,6 +79,9 @@ Route::middleware('auth:sanctum')->group(function (): void {
     // mesmo padrão de leitura aberta/escrita por permissão do resto do catálogo.
     Route::get('/redes-lojas', [RedeLojaController::class, 'index']);
     Route::get('/ramos-atividade', [RamoAtividadeController::class, 'index']);
+    // Catálogo de motivos de fechamento rápido de alerta (docs/56) — mesmo padrão de leitura
+    // aberta/escrita por permissão do resto do catálogo.
+    Route::get('/motivos-resolucao-alerta', [MotivoResolucaoAlertaController::class, 'index']);
     Route::get('/tipos-registro', [TipoRegistroController::class, 'index']);
     // Checklist resolvido de um campo SORTIMENTO pra um PDV — ver docs/20-FORMULARIO-DINAMICO-CAMPANHA.md
     // decisão 3. Precisa vir antes de qualquer /tipos-registro/{tipoRegistro} se um dia existir
@@ -347,6 +351,10 @@ Route::middleware('auth:sanctum')->group(function (): void {
         Route::post('/ramos-atividade', [RamoAtividadeController::class, 'store']);
         Route::put('/ramos-atividade/{ramoAtividade}', [RamoAtividadeController::class, 'update']);
         Route::delete('/ramos-atividade/{ramoAtividade}', [RamoAtividadeController::class, 'destroy']);
+
+        Route::post('/motivos-resolucao-alerta', [MotivoResolucaoAlertaController::class, 'store']);
+        Route::put('/motivos-resolucao-alerta/{motivoResolucaoAlerta}', [MotivoResolucaoAlertaController::class, 'update']);
+        Route::delete('/motivos-resolucao-alerta/{motivoResolucaoAlerta}', [MotivoResolucaoAlertaController::class, 'destroy']);
 
         Route::post('/tipos-registro', [TipoRegistroController::class, 'store']);
         Route::put('/tipos-registro/{tipoRegistro}', [TipoRegistroController::class, 'update']);
