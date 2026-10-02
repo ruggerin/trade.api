@@ -7,7 +7,10 @@ use App\Http\Requests\Pedido\StorePedidoRequest;
 use App\Models\Pedido;
 use App\Models\PontoVenda;
 use App\Models\ProdutoAuditoria;
+use App\Support\NotificacoesPedido;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -28,12 +31,15 @@ class PedidoController extends Controller
         $empresaId = $request->user()->empresa_id;
         $pontoVendaId = PontoVenda::where('uuid', $dados['ponto_venda_uuid'])->value('id');
 
-        $pedido = DB::transaction(function () use ($dados, $empresaId, $pontoVendaId) {
+        $previsaoAnterior = null;
+        $pedido = DB::transaction(function () use ($dados, $empresaId, $pontoVendaId, &$previsaoAnterior) {
             $pedido = Pedido::where('numero_pedido', $dados['numero_pedido'])->first();
+            $previsaoAnterior = $pedido?->data_previsao_entrega?->toDateString();
             $atributos = [
                 'ponto_venda_id' => $pontoVendaId,
                 'numero_nf' => $dados['numero_nf'] ?? null,
                 'data_pedido' => $dados['data_pedido'],
+                'data_previsao_entrega' => $dados['data_previsao_entrega'] ?? null,
                 'observacao' => $dados['observacao'] ?? null,
             ];
 
@@ -61,8 +67,17 @@ class PedidoController extends Controller
             return $pedido;
         });
 
+        $pedido->load(['itens.produto', 'entregas', 'pontoVenda']);
+
+        // Aviso "pedido a caminho" (docs/54 §5 Fase 3): quando a previsão aparece ou muda (o ERP
+        // revisou a data) — reenvio igual não avisa de novo; pedido já entregue não avisa.
+        $previsaoNova = $pedido->data_previsao_entrega?->toDateString();
+        if ($previsaoNova !== null && $previsaoNova !== $previsaoAnterior && $pedido->entregas->isEmpty()) {
+            NotificacoesPedido::avisar($pedido, NotificacoesPedido::PREVISTO);
+        }
+
         return response()->json(
-            ['pedido' => $this->formatar($pedido->load(['itens.produto', 'entregas', 'pontoVenda']))],
+            ['pedido' => $this->formatar($pedido)],
             $pedido->wasRecentlyCreated ? 201 : 200,
         );
     }
@@ -76,6 +91,11 @@ class PedidoController extends Controller
             ['data_entrega' => $dados['data_entrega']],
             ['observacao' => $dados['observacao'] ?? null],
         );
+
+        // Aviso "pedido entregue" — só na primeira vez (reenvio da mesma entrega não avisa).
+        if ($entrega->wasRecentlyCreated) {
+            NotificacoesPedido::avisar($pedido, NotificacoesPedido::ENTREGUE);
+        }
 
         return response()->json(
             ['pedido' => $this->formatar($pedido->load(['itens.produto', 'entregas', 'pontoVenda']))],
@@ -104,6 +124,54 @@ class PedidoController extends Controller
         ]);
     }
 
+    /** Um pedido só — detalhe no app, aberto pela lista da loja ou pelo sino (docs/54 §5). */
+    public function show(Pedido $pedido): JsonResponse
+    {
+        return response()->json(['pedido' => $this->formatar($pedido->load(['itens.produto', 'entregas', 'pontoVenda']))]);
+    }
+
+    /**
+     * Avisos de pedido não lidos do usuário logado (docs/54 §5 Fase 3) — o sino do app soma com os
+     * comentários não lidos e mostra os dois juntos.
+     */
+    public function notificacoes(Request $request): JsonResponse
+    {
+        $avisos = DB::table('notificacoes_pedido as n')
+            ->join('pedidos as p', 'p.id', '=', 'n.pedido_id')
+            ->leftJoin('pontos_venda as pv', 'pv.id', '=', 'p.ponto_venda_id')
+            ->where('n.usuario_id', $request->user()->id)
+            ->whereNull('n.lida_em')
+            ->orderByDesc('n.created_at')
+            ->orderByDesc('n.id')
+            ->limit(50)
+            ->get(['n.uuid', 'n.tipo', 'n.data_previsao', 'n.created_at', 'p.uuid as pedido_uuid', 'p.numero_pedido', 'pv.fantasia']);
+
+        return response()->json([
+            'total' => $avisos->count(),
+            'avisos' => $avisos->map(fn ($a) => [
+                'id' => $a->uuid,
+                'tipo' => $a->tipo,
+                'pedido_id' => $a->pedido_uuid,
+                'numero_pedido' => $a->numero_pedido,
+                'ponto_venda' => $a->fantasia,
+                'data_previsao' => $a->data_previsao ? substr((string) $a->data_previsao, 0, 10) : null,
+                'em' => Carbon::parse($a->created_at)->toIso8601String(),
+            ])->values(),
+        ]);
+    }
+
+    /** Abriu o detalhe do pedido: os avisos dele (desse usuário) viram lidos. */
+    public function marcarLido(Request $request, Pedido $pedido): JsonResponse
+    {
+        DB::table('notificacoes_pedido')
+            ->where('usuario_id', $request->user()->id)
+            ->where('pedido_id', $pedido->id)
+            ->whereNull('lida_em')
+            ->update(['lida_em' => now()]);
+
+        return response()->json(status: 204);
+    }
+
     private function formatar(Pedido $pedido): array
     {
         $ultimaEntrega = $pedido->entregas->last();
@@ -113,10 +181,14 @@ class PedidoController extends Controller
             'numero_pedido' => $pedido->numero_pedido,
             'numero_nf' => $pedido->numero_nf,
             'data_pedido' => $pedido->data_pedido->toDateString(),
+            // Previsão de chegada na loja (ERP, docs/54 §4) — null quando o ERP não mandou.
+            'data_previsao_entrega' => $pedido->data_previsao_entrega?->toDateString(),
             'observacao' => $pedido->observacao,
             'ponto_venda_id' => $pedido->relationLoaded('pontoVenda') ? $pedido->pontoVenda->uuid : null,
-            // Nunca persistido — pelo menos uma entrega = entregue (mesmo raciocínio de StatusApuracaoMeta).
-            'status' => $pedido->entregas->isEmpty() ? 'PENDENTE' : 'ENTREGUE',
+            'ponto_venda' => $pedido->relationLoaded('pontoVenda') ? $pedido->pontoVenda->fantasia : null,
+            // Nunca persistido (mesmo raciocínio de StatusApuracaoMeta): ENTREGUE com pelo menos uma
+            // entrega; senão A_CAMINHO, ou ATRASADO se a previsão já passou (docs/54 §4).
+            'status' => NotificacoesPedido::status($pedido),
             'entregue_em' => $ultimaEntrega?->data_entrega,
             'itens' => $pedido->itens->map(fn ($i) => [
                 'id' => $i->uuid,

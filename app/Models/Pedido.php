@@ -19,11 +19,12 @@ class Pedido extends Model
 
     protected $table = 'pedidos';
 
-    protected $fillable = ['empresa_id', 'ponto_venda_id', 'numero_pedido', 'numero_nf', 'data_pedido', 'observacao'];
+    // data_previsao_entrega: previsão de chegada na loja mandada pelo ERP (docs/54 §4).
+    protected $fillable = ['empresa_id', 'ponto_venda_id', 'numero_pedido', 'numero_nf', 'data_pedido', 'data_previsao_entrega', 'observacao'];
 
     protected function casts(): array
     {
-        return ['data_pedido' => 'date'];
+        return ['data_pedido' => 'date', 'data_previsao_entrega' => 'date'];
     }
 
     public function pontoVenda(): BelongsTo
