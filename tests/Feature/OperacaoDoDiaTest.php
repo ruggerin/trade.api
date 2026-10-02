@@ -290,8 +290,9 @@ class OperacaoDoDiaTest extends TestCase
         Sanctum::actingAs($admin);
         $item = collect($this->getJson('/api/operacao-do-dia')->json('fila_acoes'))->firstWhere('tipo', 'ALERTA');
 
-        $this->postJson("/api/visitas/{$item['registro']['visita_id']}/registros/{$item['registro']['id']}/resolver-alerta")
-            ->assertOk();
+        $this->postJson("/api/visitas/{$item['registro']['visita_id']}/registros/{$item['registro']['id']}/resolver-alerta", [
+            'motivo_texto' => 'Resolvido em campo',
+        ])->assertOk();
 
         $depois = $this->getJson('/api/operacao-do-dia')->assertOk();
         $this->assertSame(0, $depois->json('kpis.rupturas_abertas.total'));

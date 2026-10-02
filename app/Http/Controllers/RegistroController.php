@@ -77,7 +77,7 @@ class RegistroController extends Controller
                         fn ($q) => $q->whereNotNull('alerta_resolvido_em'),
                     ),
             )
-            ->with(['visita.pontoVenda.redeLoja', 'visita.usuario', 'tipoRegistro', 'produtoAuditoria'])
+            ->with(['visita.pontoVenda.redeLoja', 'visita.usuario', 'tipoRegistro', 'produtoAuditoria', 'motivoResolucao'])
             ->latest('created_at')
             ->paginate();
 
@@ -110,6 +110,11 @@ class RegistroController extends Controller
             'status' => $registro->tipoRegistro->eh_alerta
                 ? ($registro->alerta_resolvido_em ? 'resolvido' : 'aberto')
                 : null,
+            // Motivo do fechamento (docs/56) — só relevante quando status = 'resolvido'.
+            'motivo' => $registro->motivoResolucao
+                ? ['id' => $registro->motivoResolucao->uuid, 'descricao' => $registro->motivoResolucao->descricao]
+                : null,
+            'motivo_texto' => $registro->alerta_motivo_texto,
             // Uuid da visita de origem — a razão de ser desta tela (ver docs/44-TELA-REGISTROS.md).
             'visita_id' => $registro->visita->uuid,
         ]);

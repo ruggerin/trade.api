@@ -149,7 +149,9 @@ class PainelAtividadesTest extends TestCase
 
         $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
         Sanctum::actingAs($admin);
-        $this->postJson("/api/visitas/{$visitaUuid}/registros/{$registroResolvidoUuid}/resolver-alerta")->assertOk();
+        $this->postJson("/api/visitas/{$visitaUuid}/registros/{$registroResolvidoUuid}/resolver-alerta", [
+            'motivo_texto' => 'Resolvido em campo',
+        ])->assertOk();
 
         $response = $this->getJson('/api/atividades?pendentes=1')->assertOk();
         $eventos = collect($response->json('eventos'));
