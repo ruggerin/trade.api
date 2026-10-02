@@ -12,15 +12,18 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
-    # Credenciais precisam bater exatamente com o bloco <php> do phpunit.xml — ele sempre
-    # vence sobre variável de ambiente do shell durante "php artisan test" (testado: um
-    # DB_DATABASE exportado no shell é ignorado), então não adianta sobrescrever por aqui.
+    # phpunit.xml define DB_HOST/PORT/DATABASE/USERNAME (e vence sobre variável de ambiente do
+    # shell pra essas, testado: um DB_DATABASE exportado no shell é ignorado) mas de propósito
+    # NÃO define DB_PASSWORD — é a única credencial que o phpunit.xml deixa pro ambiente externo
+    # (local: api/.env.testing, gitignorado; aqui: a env: do passo "Rodar testes", abaixo). Senha
+    # do container é efêmera, criada e destruída a cada run — nunca precisou ser a senha real de
+    # ninguém, só precisa bater com o DB_PASSWORD passado pro artisan.
     services:
       postgres:
         image: postgres:16
         env:
           POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: vpceb33fm
+          POSTGRES_PASSWORD: ci_apenas_efemero
           POSTGRES_DB: pdv_test
         ports:
           - 5432:5432
@@ -62,4 +65,6 @@ jobs:
       # zerou o pdv_dev localmente: sem .env.testing no checkout do CI (é gitignorado),
       # "--env=testing" voltaria pro .env normal.
       - name: Rodar testes
+        env:
+          DB_PASSWORD: ci_apenas_efemero
         run: php artisan test

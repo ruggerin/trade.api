@@ -127,6 +127,11 @@ Route::middleware('auth:sanctum')->group(function (): void {
     // PontoVendaController::agendaSemanal e docs/45-CHECKIN-ATENDIMENTO-SEMANAL.md.
     Route::get('/pontos-venda/{pontoVenda}/agenda-semanal', [PontoVendaController::class, 'agendaSemanal']);
     Route::get('/pontos-venda/{pontoVenda}/pedidos', [PedidoController::class, 'porPontoVenda']);
+    // Detalhe do pedido e avisos ao promotor (docs/54) — leitura de qualquer autenticado da empresa.
+    // Rota estática antes da dinâmica.
+    Route::get('/pedidos/notificacoes', [PedidoController::class, 'notificacoes']);
+    Route::get('/pedidos/{pedido}', [PedidoController::class, 'show']);
+    Route::post('/pedidos/{pedido}/lido', [PedidoController::class, 'marcarLido']);
     // Escrita do integrador de ERP (§4.2.2) — idempotente por número de pedido.
     Route::middleware('permissao:pedidos.gerenciar')->group(function (): void {
         Route::post('/pedidos', [PedidoController::class, 'store']);

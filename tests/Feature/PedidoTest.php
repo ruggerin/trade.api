@@ -64,7 +64,8 @@ class PedidoTest extends TestCase
 
         $r = $this->postJson('/api/pedidos', $this->payload())->assertCreated();
 
-        $r->assertJsonPath('pedido.status', 'PENDENTE')
+        // Sem entrega e sem previsão = a caminho (docs/54 §4; antes era PENDENTE).
+        $r->assertJsonPath('pedido.status', 'A_CAMINHO')
             ->assertJsonCount(2, 'pedido.itens')
             // Casou com o catálogo: usa a descrição do catálogo e expõe o vínculo.
             ->assertJsonPath('pedido.itens.0.descricao_produto', 'Amaciante Catálogo')
