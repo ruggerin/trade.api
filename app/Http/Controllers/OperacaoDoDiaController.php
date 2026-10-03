@@ -8,6 +8,7 @@ use App\Enums\UserType;
 use App\Models\Empresa;
 use App\Models\OrdemServico;
 use App\Models\VisitaRegistro;
+use App\Support\Fuso;
 use App\Support\OperacaoDoDia as SuporteOperacaoDoDia;
 use App\Support\Rastreamento;
 use Carbon\Carbon;
@@ -38,9 +39,14 @@ class OperacaoDoDiaController extends Controller
         ]);
 
         $empresa = $usuario->empresa;
-        $dia = $request->filled('data') ? Carbon::parse($request->string('data'))->startOfDay() : now();
+        // "Hoje" é o dia da EMPRESA (docs/50 §4.3), igual pra todo usuário dela — não o do
+        // navegador de quem olha. Sem `data`, devolve o dia corrente da empresa e o front navega
+        // a partir dele.
+        $fuso = Fuso::daEmpresa($empresa);
+        $hoje = Fuso::hoje($fuso);
+        $dia = $request->filled('data') ? Carbon::parse($request->string('data'), $fuso)->startOfDay() : $hoje->copy();
 
-        if ($dia->isFuture()) {
+        if ($dia->gt($hoje)) {
             abort(422, 'A Operação do Dia não existe pra uma data futura.');
         }
 
@@ -49,7 +55,7 @@ class OperacaoDoDiaController extends Controller
         // continuam sempre no estado atual, nunca filtrados por `$dia` (ver kpis()/filaAcoes()/
         // rupturas_por_sku abaixo); o front esconde essas seções quando `historico` é true, pra
         // não parecer que são "daquele dia".
-        $historico = ! $dia->isToday();
+        $historico = ! $dia->isSameDay($hoje);
         // Blocos ainda "em aberto" (visita ATUAL, OS pendente sem visita) e a comparação de
         // atraso precisam de um teto — hoje é "agora" de verdade; num dia passado, o teto é o
         // fim daquele próprio dia (senão uma visita esquecida aberta desde ontem esticaria a
@@ -103,6 +109,8 @@ class OperacaoDoDiaController extends Controller
 
         return response()->json([
             'data' => $dia->toDateString(),
+            // "Hoje" no fuso da empresa — o front usa como teto do seletor e pra voltar pra hoje.
+            'hoje' => $hoje->toDateString(),
             'historico' => $historico,
             'jornada' => SuporteOperacaoDoDia::jornada($empresa),
             'kpis' => $this->kpis($empresa, $porPromotor, $equipe, $dia),
@@ -126,7 +134,7 @@ class OperacaoDoDiaController extends Controller
      */
     private function kpis(Empresa $empresa, Collection $porPromotor, Collection $equipe, Carbon $dia): array
     {
-        $historico = ! $dia->isToday();
+        $historico = ! $dia->isSameDay(Fuso::hoje(Fuso::daEmpresa($empresa)));
         $ordensHoje = $porPromotor->flatMap(fn ($linha) => $linha['ordens']);
         $planejadas = $ordensHoje->whereNotIn('status', [StatusOrdemServico::CANCELADA, StatusOrdemServico::AGUARDANDO_APROVACAO]);
 
