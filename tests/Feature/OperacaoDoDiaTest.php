@@ -474,6 +474,24 @@ class OperacaoDoDiaTest extends TestCase
         $this->getJson('/api/operacao-do-dia?data=2026-09-24')->assertStatus(422);
     }
 
+    public function test_hoje_e_o_dia_do_fuso_da_empresa_nao_o_do_servidor(): void
+    {
+        // 02:00 UTC de 24/09 = 22:00 de 23/09 em Manaus (UTC-4).
+        Carbon::setTestNow(Carbon::parse('2026-09-24 02:00:00', 'UTC'));
+        $empresa = Empresa::factory()->create(['fuso' => 'America/Manaus']);
+        $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
+        Sanctum::actingAs($admin);
+
+        // Sem `data`: devolve o dia corrente da empresa.
+        $this->getJson('/api/operacao-do-dia')
+            ->assertOk()
+            ->assertJsonPath('data', '2026-09-23')
+            ->assertJsonPath('historico', false);
+
+        // 24/09 ainda é futuro pra essa empresa, mesmo já sendo 24/09 em UTC.
+        $this->getJson('/api/operacao-do-dia?data=2026-09-24')->assertStatus(422);
+    }
+
     public function test_historico_esconde_sinal_fila_de_acoes_e_rupturas_por_sku(): void
     {
         $empresa = Empresa::factory()->create();
