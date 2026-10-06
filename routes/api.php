@@ -11,6 +11,7 @@ use App\Http\Controllers\CentroCustoController;
 use App\Http\Controllers\ContratoController;
 use App\Http\Controllers\ContratoMetaController;
 use App\Http\Controllers\DepartamentoAuditoriaController;
+use App\Http\Controllers\DocumentoLegalController;
 use App\Http\Controllers\EmpresaController;
 use App\Http\Controllers\FaturaController;
 use App\Http\Controllers\GaleriaFotosController;
@@ -53,11 +54,16 @@ use Illuminate\Support\Facades\Route;
 // Público — signup de empresa (cria o tenant) e login.
 Route::post('/empresas/signup', [EmpresaController::class, 'signup']);
 Route::post('/auth/login', [AuthController::class, 'login']);
+// Termos de Uso / Política de Privacidade (docs/58 §5.2) — leitura pública, sem login.
+Route::get('/documentos-legais/{slug}', [DocumentoLegalController::class, 'show'])
+    ->where('slug', 'termos-de-uso|politica-de-privacidade');
 
 // Autenticado (qualquer user_type).
 Route::middleware('auth:sanctum')->group(function (): void {
     Route::post('/auth/logout', [AuthController::class, 'logout']);
     Route::get('/auth/me', [AuthController::class, 'me']);
+    // Aceite dos Termos/Política pelo próprio usuário (docs/58 §5.4).
+    Route::post('/auth/me/aceites', [DocumentoLegalController::class, 'aceitar']);
     // Self-service de foto de perfil — qualquer autenticado troca a própria, sem exigir
     // usuarios.gerenciar (ver AuthController::atualizarFoto). A rota de leitura (servir o
     // arquivo) fica fora do grupo `permissao:usuarios.gerenciar` abaixo de propósito: o próprio
@@ -402,6 +408,7 @@ Route::middleware('auth:sanctum')->group(function (): void {
         Route::get('/usuarios', [UsuarioController::class, 'index']);
         Route::get('/usuarios/{usuario}', [UsuarioController::class, 'show']);
         Route::get('/usuarios/{usuario}/historico', [UsuarioController::class, 'historico']);
+        Route::get('/usuarios/{usuario}/aceites', [DocumentoLegalController::class, 'historico']);
         Route::post('/usuarios', [UsuarioController::class, 'store']);
         Route::put('/usuarios/{usuario}', [UsuarioController::class, 'update']);
         Route::delete('/usuarios/{usuario}', [UsuarioController::class, 'destroy']);

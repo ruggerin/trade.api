@@ -61,6 +61,11 @@ class UsuarioResource extends JsonResource
             // Uso do sistema (docs/52 §4.1): último acesso por app, dias ativos em 30, "sumiu".
             // Só nas telas de usuários (App\Support\Adesao::anexar).
             'acesso' => $this->when($this->resource->acessoResumo !== null, fn () => $this->resource->acessoResumo),
+            // Termos/Política pendentes de aceite (docs/58 §5.3) — só no login, /auth/me e aceite.
+            'documentos_pendentes' => $this->when(
+                $this->resource->documentosPendentes !== null,
+                fn () => $this->resource->documentosPendentes,
+            ),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];

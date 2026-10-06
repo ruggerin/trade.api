@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\DocumentoLegalController;
 use App\Http\Controllers\ManualController;
 use Illuminate\Support\Facades\Route;
 
@@ -17,3 +18,9 @@ Route::redirect('/manual', '/manual/README.md')->name('manual.index');
 Route::get('/manual/{arquivo}', [ManualController::class, 'show'])
     ->where('arquivo', '[A-Za-z0-9\-]+\.md')
     ->name('manual.show');
+
+// Termos de Uso e Política de Privacidade públicos (docs/58 §5.2) — URL da Play Store e dos
+// links nos logins. `?versao=2026-10-06` abre uma versão anterior.
+Route::get('/{slug}', [DocumentoLegalController::class, 'pagina'])
+    ->where('slug', 'termos-de-uso|politica-de-privacidade')
+    ->name('documentos-legais.pagina');
