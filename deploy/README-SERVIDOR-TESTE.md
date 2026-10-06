@@ -61,6 +61,13 @@ dentro do container já manda — senão o cabeçalho sairia duplicado.
    alguns dias com o console aberto (F12). Sem aviso `Content-Security-Policy-Report-Only`, trocar
    o nome do cabeçalho para `Content-Security-Policy` nos dois arquivos. Com aviso, incluir a
    origem que faltou na diretiva indicada.
+   **Atenção na API:** desde o docs/58 a API também serve páginas HTML públicas
+   (`/termos-de-uso` e `/politica-de-privacidade`, com `<style>` e Google Fonts). O
+   `default-src 'none'` da API quebra o visual delas quando ativado. Antes de ativar, criar no site
+   da API um `location ~ ^/(termos-de-uso|politica-de-privacidade)$` com CSP própria (liberando
+   `style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com`)
+   — lembrando que um `add_header` dentro do `location` faz ele não herdar os demais cabeçalhos do
+   snippet, então repetir o `include` lá dentro.
 2. **HSTS começou curto.** Depois de validar, subir para `max-age=31536000` (1 ano). Não usar
    `includeSubDomains` sem conferir todos os subdomínios de `prossigatec.com.br`.
 
