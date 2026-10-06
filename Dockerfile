@@ -52,6 +52,9 @@ RUN mkdir -p storage/framework/cache storage/framework/sessions storage/framewor
     && php artisan package:discover --ansi
 
 COPY deploy/nginx.conf /etc/nginx/http.d/default.conf
+# Mesmo php.ini da main (docker/php.ini): upload até 20M, memory_limit 256M (a documentação
+# /docs/api passa de 128M ao gerar), opcache. Sem ele o PHP rodava com os defaults (2M/128M).
+COPY docker/php.ini /usr/local/etc/php/conf.d/99-app.ini
 COPY deploy/supervisord.conf /etc/supervisor.d/supervisord.ini
 COPY deploy/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh

@@ -100,6 +100,23 @@ Se o admin/API forem para outro servidor, ou o TLS passar para outro proxy (Trae
 Cloudflare), estes cabeçalhos precisam ir junto: no proxy que faz o TLS (obrigatório para o
 HSTS) ou nos `nginx.conf` das imagens do admin e da API.
 
+## Documentação da API (`/docs/api`)
+
+Gerada pelo `dedoc/scramble` a partir do código. Fora do `APP_ENV=local` ela só abre com
+`API_DOCS_PUBLICA=true` no `.env` (gate `viewApiDocs`, ver `AppServiceProvider`). Neste servidor
+está ligada; em produção, manter `false`.
+
+- A geração leva ~10 s e usa ~120 MB de memória a cada acesso — por isso o `php.ini` abaixo.
+- A página carrega scripts de CDN: com a CSP da API ativada de verdade (hoje em Report-Only), ela
+  também precisa de exceção, igual às páginas dos termos.
+
+## PHP do container
+
+O `Dockerfile` desta branch copia `docker/php.ini` (o mesmo da `main`) para
+`/usr/local/etc/php/conf.d/99-app.ini`: `memory_limit = 256M`, `upload_max_filesize = 20M`,
+`post_max_size = 21M`, `max_execution_time = 60`, OPcache ligado. Antes (até 06/10/2026) a imagem
+rodava com os defaults do PHP (128M de memória, upload de no máximo 2M).
+
 ## Outros pontos deste servidor
 
 - **Fuso horário:** o servidor roda em **UTC** (sem `APP_TIMEZONE` no `.env`). O fuso de cada

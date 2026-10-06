@@ -4,6 +4,12 @@ use Dedoc\Scramble\Http\Middleware\RestrictedDocsAccess;
 
 return [
     /*
+     * Abre /docs/api fora do APP_ENV=local (gate `viewApiDocs`, ver AppServiceProvider).
+     * Desligado por padrão — ligar só onde a documentação pode ser pública (ex.: teste).
+     */
+    'publica' => (bool) env('API_DOCS_PUBLICA', false),
+
+    /*
      * Which routes to document. String or array form; use Scramble::routes() for custom selection.
      *
      * 'api_path' => [
