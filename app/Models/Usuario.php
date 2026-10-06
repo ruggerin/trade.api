@@ -26,6 +26,14 @@ class Usuario extends Authenticatable
      */
     public ?array $acessoResumo = null;
 
+    /**
+     * Versões de Termos/Política ainda não aceitas (docs/58 §5.3) — preenchido só no login, no
+     * /auth/me e no aceite (App\Support\DocumentosLegais::pendentes), nunca gravado.
+     *
+     * @var list<array{tipo: string, versao: string}>|null
+     */
+    public ?array $documentosPendentes = null;
+
     protected $fillable = [
         'empresa_id',
         'nome',

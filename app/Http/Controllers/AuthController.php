@@ -9,6 +9,7 @@ use App\Http\Resources\UsuarioResource;
 use App\Models\Dispositivo;
 use App\Models\Usuario;
 use App\Models\UsuarioLoginLog;
+use App\Support\DocumentosLegais;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -79,6 +80,8 @@ class AuthController extends Controller
         ]);
 
         $token = $usuario->createToken('acesso-api')->plainTextToken;
+        // Termos/Política pendentes (docs/58 §5.3) — os apps mostram a tela de aceite antes de entrar.
+        $usuario->documentosPendentes = DocumentosLegais::pendentes($usuario);
 
         return response()->json([
             'token' => $token,
@@ -99,6 +102,7 @@ class AuthController extends Controller
     public function me(Request $request): JsonResponse
     {
         $usuario = $request->user()->loadMissing(['empresa', 'perfil', 'dispositivo']);
+        $usuario->documentosPendentes = DocumentosLegais::pendentes($usuario);
 
         return response()->json([
             'usuario' => new UsuarioResource($usuario),

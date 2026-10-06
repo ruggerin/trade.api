@@ -16,6 +16,7 @@ use App\Models\TipoRegistro;
 use App\Models\Usuario;
 use App\Models\Visita;
 use App\Support\Adesao;
+use App\Support\DocumentosLegais;
 use App\Support\Fuso;
 use App\Support\ParametrosPadrao;
 use Illuminate\Http\JsonResponse;
@@ -32,6 +33,17 @@ class EmpresaController extends Controller
     public function signup(SignupEmpresaRequest $request): JsonResponse
     {
         $dados = $request->validated();
+
+        // Confere antes de criar qualquer coisa: versão desatualizada = 409, nada gravado.
+        $documentosAceitos = [];
+        if (! empty($dados['documentos'])) {
+            $documentosAceitos = DocumentosLegais::vigentesConferidos($dados['documentos']);
+            if ($documentosAceitos === null) {
+                return response()->json([
+                    'message' => 'Os documentos foram atualizados. Leia a versão atual antes de aceitar.',
+                ], 409);
+            }
+        }
 
         [$empresa, $usuario] = DB::transaction(function () use ($dados) {
             $empresa = Empresa::create([
@@ -57,6 +69,9 @@ class EmpresaController extends Controller
 
             return [$empresa, $usuario];
         });
+
+        DocumentosLegais::registrarAceite($usuario, $documentosAceitos, $request);
+        $usuario->documentosPendentes = DocumentosLegais::pendentes($usuario);
 
         $token = $usuario->createToken('acesso-api')->plainTextToken;
 
