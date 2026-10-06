@@ -166,7 +166,7 @@
     @endforelse
 
     <div class="rodape">
-        PDV App — Relatório gerado automaticamente a partir do Planejador de Visitas.
+        Horus — Relatório gerado automaticamente a partir do Planejador de Visitas.
     </div>
 </body>
 </html>

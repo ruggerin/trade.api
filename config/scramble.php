@@ -50,11 +50,11 @@ return [
         /*
          * Description rendered on the home page of the API documentation (`/docs/api`).
          */
-        'description' => 'API do PDV App — coleta de auditoria em ponto de venda (admin web + app mobile do promotor). Autenticação via Sanctum: faça login em `/auth/login`, pegue o `token` da resposta e mande em `Authorization: Bearer <token>` nas demais chamadas.',
+        'description' => 'API do Horus — coleta de auditoria em ponto de venda (admin web + app mobile do promotor). Autenticação via Sanctum: faça login em `/auth/login`, pegue o `token` da resposta e mande em `Authorization: Bearer <token>` nas demais chamadas.',
     ],
 
     'ui' => [
-        'title' => 'PDV Trade API',
+        'title' => 'Horus API',
     ],
 
     /*
