@@ -47,6 +47,8 @@ class Usuario extends Authenticatable
         'ativo',
         'avatar_url',
         'foto_path',
+        // Preferência de tema do admin (docs/65): claro | escuro | sistema; null = claro.
+        'tema',
         'ultima_localizacao_latitude',
         'ultima_localizacao_longitude',
         'ultima_localizacao_em',
@@ -92,6 +94,13 @@ class Usuario extends Authenticatable
      * o usuário é GESTOR; pra PROMOTOR ele nunca é usado pra liberar rota de admin. ADMIN
      * sempre tem acesso total, SUPERADMIN não usa perfil.
      */
+    /** Relatórios do gerador que o usuário fixou no próprio menu (docs/63 §1.7). */
+    public function relatoriosFixados(): BelongsToMany
+    {
+        return $this->belongsToMany(RelatorioPersonalizado::class, 'relatorios_fixados_usuario', 'usuario_id', 'relatorio_personalizado_id')
+            ->withPivot('ordem');
+    }
+
     public function perfil(): BelongsTo
     {
         return $this->belongsTo(Perfil::class);

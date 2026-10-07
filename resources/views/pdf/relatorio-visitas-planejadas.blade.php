@@ -29,7 +29,7 @@
         <thead>
             <tr>
                 <th class="esq">Dia</th><th class="esq">Promotor</th><th>Planejadas</th><th>Cumpridas</th>
-                <th>Em andamento</th><th>Atrasadas</th><th>A vencer</th><th>Espontâneas</th><th>Cumprimento</th>
+                <th>Em andamento</th><th>Atrasadas</th><th>A vencer</th><th>Canceladas</th><th>Espontâneas</th><th>Cumprimento</th>
             </tr>
         </thead>
         <tbody>
@@ -42,17 +42,18 @@
                     <td>{{ $l['em_andamento'] }}</td>
                     <td class="{{ $l['atrasadas'] > 0 ? 'atraso' : '' }}">{{ $l['atrasadas'] }}</td>
                     <td>{{ $l['a_vencer'] }}</td>
+                    <td>{{ $l['canceladas'] }}</td>
                     <td>{{ $l['espontaneas'] }}</td>
                     <td>{{ $l['percentual_cumprimento'] === null ? '—' : $l['percentual_cumprimento'].'%' }}</td>
                 </tr>
             @empty
-                <tr><td class="esq" colspan="9">Nada planejado nem executado nesse período.</td></tr>
+                <tr><td class="esq" colspan="10">Nada planejado nem executado nesse período.</td></tr>
             @endforelse
             @php($t = $dados['total'])
             <tr class="total">
                 <td class="esq" colspan="2">Total</td>
                 <td>{{ $t['planejadas'] }}</td><td>{{ $t['cumpridas'] }}</td><td>{{ $t['em_andamento'] }}</td>
-                <td>{{ $t['atrasadas'] }}</td><td>{{ $t['a_vencer'] }}</td><td>{{ $t['espontaneas'] }}</td>
+                <td>{{ $t['atrasadas'] }}</td><td>{{ $t['a_vencer'] }}</td><td>{{ $t['canceladas'] }}</td><td>{{ $t['espontaneas'] }}</td>
                 <td>{{ $t['percentual_cumprimento'] === null ? '—' : $t['percentual_cumprimento'].'%' }}</td>
             </tr>
         </tbody>

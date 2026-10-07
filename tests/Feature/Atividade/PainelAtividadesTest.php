@@ -66,7 +66,7 @@ class PainelAtividadesTest extends TestCase
             'latitude' => $pdv->latitude, 'longitude' => $pdv->longitude,
         ])->assertOk();
 
-        $gestor = Usuario::factory()->gestor()->create(['empresa_id' => $empresa->id]);
+        $gestor = Usuario::factory()->gestor()->comPerfil(['tela.atividades'])->create(['empresa_id' => $empresa->id]);
         Sanctum::actingAs($gestor);
 
         $response = $this->getJson('/api/atividades')->assertOk();

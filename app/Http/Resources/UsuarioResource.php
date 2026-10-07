@@ -28,6 +28,8 @@ class UsuarioResource extends JsonResource
             // do blob em componentes como UsuarioAvatar), mas garante que trocar a foto invalida
             // o cache do browser mesmo a URL sendo sempre a mesma rota.
             'foto_url' => $this->foto_path ? url("/api/usuarios/{$this->uuid}/foto") . '?v=' . $this->updated_at?->timestamp : null,
+            // Tema do admin escolhido pelo próprio usuário (docs/65) — null = nunca escolheu (claro).
+            'tema' => $this->tema,
             // SUPERADMIN não pertence a nenhuma empresa — empresa_id é null nesse caso.
             'empresa' => $this->whenLoaded('empresa', fn () => new EmpresaResource($this->empresa)),
             // GESTOR (permissões de admin) ou PROMOTOR (visibilidade no mobile) — ver

@@ -492,6 +492,33 @@ class OperacaoDoDiaTest extends TestCase
         $this->getJson('/api/operacao-do-dia?data=2026-09-24')->assertStatus(422);
     }
 
+    public function test_virada_do_dia_so_acontece_a_meia_noite_da_empresa(): void
+    {
+        $empresa = Empresa::factory()->create(['fuso' => 'America/Manaus']);
+        $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
+        Sanctum::actingAs($admin);
+
+        // 03:59 UTC = 23:59 em Manaus: ainda é o dia 23.
+        Carbon::setTestNow(Carbon::parse('2026-09-24 03:59:00', 'UTC'));
+        $this->getJson('/api/operacao-do-dia')->assertOk()->assertJsonPath('hoje', '2026-09-23');
+
+        // 04:00 UTC = 00:00 em Manaus: virou o dia 24, e o 23 passa a ser histórico.
+        Carbon::setTestNow(Carbon::parse('2026-09-24 04:00:00', 'UTC'));
+        $this->getJson('/api/operacao-do-dia')->assertOk()->assertJsonPath('hoje', '2026-09-24');
+        $this->getJson('/api/operacao-do-dia?data=2026-09-23')->assertOk()->assertJsonPath('historico', true);
+    }
+
+    public function test_empresa_com_fuso_invalido_cai_no_padrao_sem_quebrar(): void
+    {
+        // 02:00 UTC de 24/09 = 23/09 22:00 em São Paulo (padrão, UTC-3).
+        Carbon::setTestNow(Carbon::parse('2026-09-24 02:00:00', 'UTC'));
+        $empresa = Empresa::factory()->create(['fuso' => 'Nao/Existe']);
+        $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
+        Sanctum::actingAs($admin);
+
+        $this->getJson('/api/operacao-do-dia')->assertOk()->assertJsonPath('hoje', '2026-09-23');
+    }
+
     public function test_historico_esconde_sinal_fila_de_acoes_e_rupturas_por_sku(): void
     {
         $empresa = Empresa::factory()->create();

@@ -298,6 +298,8 @@ class DirecionamentoTest extends TestCase
 
         $response = $this->postJson('/api/ordens-servico/cancelar-em-lote', [
             'uuids' => [$os1->uuid, $os2->uuid],
+            'responsavel_nao_execucao' => 'EMPRESA',
+            'motivo_texto' => 'Replanejamento de rota',
         ]);
 
         $response->assertOk()->assertJsonPath('canceladas', 1);

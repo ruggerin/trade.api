@@ -65,6 +65,23 @@ class Doc52AdesaoTest extends TestCase
         $this->assertSame(['ADMIN 2026-10-01', 'MOBILE 2026-10-01'], $this->linhas($admin));
     }
 
+    public function test_horario_do_ultimo_acesso_avanca_de_5_em_5_minutos(): void
+    {
+        $admin = Usuario::factory()->admin()->create(['empresa_id' => $this->empresa->id]);
+        Sanctum::actingAs($admin);
+        $horario = fn () => $this->getJson('/api/usuarios', ['X-Client' => 'admin'])->json('usuarios.0.acesso.admin_horario');
+
+        $this->getJson('/api/auth/me', ['X-Client' => 'admin'])->assertOk(); // 15:00
+        Carbon::setTestNow(Carbon::parse('2026-10-01 15:03:00', 'UTC'));
+        $this->assertSame('2026-10-01T15:00:00+00:00', $horario(), 'dentro de 5 min não regrava');
+
+        Carbon::setTestNow(Carbon::parse('2026-10-01 15:09:00', 'UTC'));
+        $this->getJson('/api/auth/me', ['X-Client' => 'admin'])->assertOk();
+        $this->assertSame('2026-10-01T15:09:00+00:00', $horario());
+        $this->assertSame('2026-10-01T15:09:00+00:00', $this->getJson('/api/usuarios')->json('usuarios.0.acesso.ultimo_horario'));
+        $this->assertSame(['ADMIN 2026-10-01'], $this->linhas($admin), 'continua uma linha por dia');
+    }
+
     public function test_sem_header_o_promotor_conta_como_app(): void
     {
         $promotor = Usuario::factory()->promotor()->create(['empresa_id' => $this->empresa->id]);

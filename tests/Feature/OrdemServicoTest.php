@@ -146,7 +146,7 @@ class OrdemServicoTest extends TestCase
         $os = OrdemServico::factory()->create(['empresa_id' => $empresa->id, 'ponto_venda_id' => $pdv->id]);
         Sanctum::actingAs($admin);
 
-        $this->putJson("/api/ordens-servico/{$os->uuid}", ['status' => 'CANCELADA'])
+        $this->putJson("/api/ordens-servico/{$os->uuid}", ['status' => 'CANCELADA', 'responsavel_nao_execucao' => 'LOJA', 'motivo_texto' => 'Loja fechada'])
             ->assertOk()
             ->assertJsonPath('ordem_servico.status', 'CANCELADA');
     }

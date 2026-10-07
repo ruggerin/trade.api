@@ -29,6 +29,9 @@ final class Adesao
 
     public const SUMIDO_DIAS_CORRIDOS_GESTAO = 7;
 
+    /** De quanto em quanto tempo o horário do último acesso é regravado (evita escrita por requisição). */
+    public const INTERVALO_ULTIMO_EM_MINUTOS = 5;
+
     /** Frequência do usuário: em quantos dias dos últimos 30 ele usou o sistema. */
     public const JANELA_FREQUENCIA = 30;
 
@@ -45,17 +48,30 @@ final class Adesao
         };
     }
 
-    /** Marca que o usuário usou o sistema hoje (no fuso da empresa) nesse app. Idempotente. */
+    /**
+     * Marca que o usuário usou o sistema hoje (no fuso da empresa) nesse app. Idempotente: a
+     * primeira requisição do dia cria a linha; as seguintes só avançam `ultimo_em`, e no máximo a
+     * cada INTERVALO_ULTIMO_EM_MINUTOS (uma query só, como antes).
+     */
     public static function registrar(Usuario $usuario, string $app): void
     {
-        DB::table('acessos_diarios')->insertOrIgnore([
-            'usuario_id' => $usuario->id,
-            'empresa_id' => $usuario->empresa_id,
-            'user_type' => $usuario->user_type->value,
-            'app' => $app,
-            'data' => Fuso::hoje(Fuso::daEmpresa($usuario->empresa))->toDateString(),
-            'created_at' => now(),
-        ]);
+        $agora = now();
+        DB::statement(
+            'INSERT INTO acessos_diarios (usuario_id, empresa_id, user_type, app, data, created_at, ultimo_em)
+             VALUES (?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT (usuario_id, data, app) DO UPDATE SET ultimo_em = EXCLUDED.ultimo_em
+             WHERE acessos_diarios.ultimo_em IS NULL OR acessos_diarios.ultimo_em < ?',
+            [
+                $usuario->id,
+                $usuario->empresa_id,
+                $usuario->user_type->value,
+                $app,
+                Fuso::hoje(Fuso::daEmpresa($usuario->empresa))->toDateString(),
+                $agora,
+                $agora,
+                $agora->copy()->subMinutes(self::INTERVALO_ULTIMO_EM_MINUTOS),
+            ],
+        );
     }
 
     /**
@@ -74,7 +90,7 @@ final class Adesao
         $ultimos = DB::table('acessos_diarios')
             ->whereIn('usuario_id', $porId->keys())
             ->groupBy('usuario_id', 'app')
-            ->get(['usuario_id', 'app', DB::raw('MAX(data) as ultima')])
+            ->get(['usuario_id', 'app', DB::raw('MAX(data) as ultima'), DB::raw('MAX(ultimo_em) as ultimo_horario')])
             ->groupBy('usuario_id');
 
         $frequencia = DB::table('acessos_diarios')
@@ -86,6 +102,8 @@ final class Adesao
 
         foreach ($porId as $id => $usuario) {
             $porApp = collect($ultimos->get($id, []))->pluck('ultima', 'app');
+            $horarioPorApp = collect($ultimos->get($id, []))->pluck('ultimo_horario', 'app')->filter();
+            $horario = fn (?string $valor) => $valor ? Carbon::parse($valor, 'UTC')->toIso8601String() : null;
             $ultimo = $porApp->max();
             $hoje = Fuso::hoje(Fuso::daEmpresa($usuario->empresa));
             $ultimoDia = $ultimo ? Carbon::parse($ultimo, $hoje->tzName)->startOfDay() : null;
@@ -94,6 +112,10 @@ final class Adesao
                 'ultimo_em' => $ultimo,
                 'mobile_em' => $porApp->get(self::APP_MOBILE),
                 'admin_em' => $porApp->get(self::APP_ADMIN),
+                // Data e hora (UTC, ISO) do último acesso — a lista de Usuários mostra isso.
+                'ultimo_horario' => $horario($horarioPorApp->max()),
+                'mobile_horario' => $horario($horarioPorApp->get(self::APP_MOBILE)),
+                'admin_horario' => $horario($horarioPorApp->get(self::APP_ADMIN)),
                 'dias_ativos_30d' => (int) ($frequencia[$id] ?? 0),
                 'dias_sem_acesso' => $ultimoDia ? (int) $ultimoDia->diffInDays($hoje) : null,
                 'sumido' => self::sumido($usuario->user_type, $ultimoDia, $hoje),

@@ -64,6 +64,71 @@ enum Permissao: string
     case PEDIDOS_VENDA_VISUALIZAR = 'pedidos_venda.visualizar';
     case PEDIDOS_VENDA_CRIAR = 'pedidos_venda.criar';
     case PEDIDOS_VENDA_APROVAR = 'pedidos_venda.aprovar';
+
+    // Gerador de relatórios (docs/60 §3.3): criar/editar/excluir/duplicar relatório salvo. Ver e
+    // executar continua no gate dos relatórios atuais (ADMIN/GESTOR).
+    case RELATORIOS_PERSONALIZADOS_GERENCIAR = 'relatorios.personalizados.gerenciar';
+
+    // Acesso a tela (docs/64-CONTROLE-DE-ACESSO-POR-TELA.md): "vê a tela no menu e lê os dados
+    // dela". Só existem pras telas que não tinham permissão de leitura — onde já existe uma
+    // (planos_acao.visualizar, rastreamento.*, usuarios.gerenciar, contratos.gerenciar...), é ela
+    // que faz o papel de tela. A API só barra as rotas exclusivas da tela; as de leitura aberta
+    // (lojas, catálogo, OS, parâmetros) seguem abertas porque o app e os filtros de outras telas
+    // dependem delas — nessas, a tela some do menu e a URL mostra "sem acesso".
+    case TELA_OPERACAO_DIA = 'tela.operacao_dia';
+    case TELA_ATIVIDADES = 'tela.atividades';
+    case TELA_VISITAS = 'tela.visitas';
+    case TELA_REGISTROS = 'tela.registros';
+    case TELA_ORDENS_SERVICO = 'tela.ordens_servico';
+    case TELA_CAMPANHAS = 'tela.campanhas';
+    case TELA_RELATORIOS = 'tela.relatorios';
+    case TELA_LOJAS = 'tela.lojas';
+    case TELA_CATALOGO = 'tela.catalogo';
+    case TELA_FORMULARIOS = 'tela.formularios';
+    case TELA_CONFIGURACOES = 'tela.configuracoes';
+
+    /** @return list<self> */
+    public static function telas(): array
+    {
+        return array_values(array_filter(self::cases(), fn (self $p) => str_starts_with($p->value, 'tela.')));
+    }
+
+    /**
+     * Mensagens de ação marcada sem a tela dela (docs/64 §3) — vazio = perfil consistente.
+     * Valores desconhecidos são ignorados aqui (o `Rule::in` do request já os recusa).
+     *
+     * @param  array<int, mixed>  $valores
+     * @return list<string>
+     */
+    public static function semTela(array $valores): array
+    {
+        $erros = [];
+        foreach ($valores as $valor) {
+            $tela = is_string($valor) ? self::tryFrom($valor)?->telaExigida() : null;
+            if ($tela !== null && ! in_array($tela->value, $valores, true)) {
+                $erros[] = "A permissão {$valor} exige o acesso à tela ({$tela->value}).";
+            }
+        }
+
+        return $erros;
+    }
+
+    /**
+     * Ação que só faz sentido com a tela marcada (docs/64 §3, regra de consistência): o perfil
+     * não salva `catalogo.gerenciar` sem `tela.catalogo`.
+     */
+    public function telaExigida(): ?self
+    {
+        return match ($this) {
+            self::ORDENS_SERVICO_GERENCIAR => self::TELA_ORDENS_SERVICO,
+            self::CAMPANHAS_GERENCIAR => self::TELA_CAMPANHAS,
+            self::RELATORIOS_PERSONALIZADOS_GERENCIAR => self::TELA_RELATORIOS,
+            self::PONTOS_VENDA_GERENCIAR => self::TELA_LOJAS,
+            self::CATALOGO_GERENCIAR => self::TELA_CATALOGO,
+            self::PARAMETROS_GERENCIAR => self::TELA_CONFIGURACOES,
+            default => null,
+        };
+    }
 }
 
 // Tipo de visita (tag colorida) e agenda de visita reaproveitam ORDENS_SERVICO_GERENCIAR — são

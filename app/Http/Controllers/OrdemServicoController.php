@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Enums\OrigemOrdemServico;
+use App\Enums\ResponsavelNaoExecucao;
 use App\Enums\StatusOrdemServico;
 use App\Enums\UserType;
 use App\Http\Requests\OrdemServico\ReagendarOrdemServicoRequest;
@@ -17,12 +18,15 @@ use App\Models\TipoRegistro;
 use App\Models\TipoVisita;
 use App\Models\Usuario;
 use App\Support\AutonomiaAgenda;
+use App\Support\CancelamentoOrdemServico;
+use App\Support\Fuso;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class OrdemServicoController extends Controller
 {
-    private const RELACOES = ['pontoVenda', 'usuario', 'campanha', 'direcionamento', 'tipoVisita', 'objetivoVisita', 'agendaVisita', 'contrato', 'visita', 'formularios'];
+    private const RELACOES = ['pontoVenda', 'usuario', 'campanha', 'direcionamento', 'tipoVisita', 'objetivoVisita', 'agendaVisita', 'contrato', 'visita', 'formularios', 'canceladaPor', 'motivoCancelamento'];
 
     public function index(Request $request): JsonResponse
     {
@@ -46,6 +50,12 @@ class OrdemServicoController extends Controller
             })
             // Janela de data pra tela Agenda (Hoje = só hoje; Semana = hoje + 6 dias) — compara
             // contra prazo_fim, mesmo campo já usado pra calcular "Atrasada".
+            // "Visitas não realizadas" (docs/59): PENDENTE cujo prazo terminou em dia anterior a hoje
+            // NO FUSO DA EMPRESA — a mesma regra pra todo usuário dela, não a do navegador.
+            ->when($request->boolean('vencidas'), fn ($q) => $q
+                ->where('status', StatusOrdemServico::PENDENTE->value)
+                ->where('prazo_fim', '<', Fuso::hoje(Fuso::daEmpresa($usuario->empresa))->utc()))
+            ->when($request->filled('origem'), fn ($q) => $q->where('origem', $request->string('origem')))
             ->when($request->filled('prazo_de'), fn ($q) => $q->whereDate('prazo_fim', '>=', $request->date('prazo_de')))
             ->when($request->filled('prazo_ate'), fn ($q) => $q->whereDate('prazo_fim', '<=', $request->date('prazo_ate')))
             ->when(
@@ -160,7 +170,27 @@ class OrdemServicoController extends Controller
             unset($dados['objetivo_visita_uuid']);
         }
 
+        $cancelar = ($dados['status'] ?? null) === StatusOrdemServico::CANCELADA->value
+            && $ordemServico->status !== StatusOrdemServico::CANCELADA;
+        $justificativa = [
+            $dados['responsavel_nao_execucao'] ?? null,
+            $dados['motivo_uuid'] ?? null,
+            $dados['motivo_texto'] ?? null,
+        ];
+        unset($dados['status'], $dados['responsavel_nao_execucao'], $dados['motivo_uuid'], $dados['motivo_texto']);
+
         $ordemServico->update($dados);
+
+        if ($cancelar) {
+            CancelamentoOrdemServico::aplicar(
+                $ordemServico,
+                $request->user(),
+                ResponsavelNaoExecucao::from($justificativa[0]),
+                $justificativa[1],
+                $justificativa[2],
+            );
+        }
+
         $ordemServico->load(self::RELACOES);
 
         return response()->json([
@@ -252,13 +282,21 @@ class OrdemServicoController extends Controller
             return response()->json(['message' => 'Esta ordem de serviço não está pendente.'], 422);
         }
 
-        $ordemServico->update([
-            'status' => AutonomiaAgenda::requerAprovacao($usuario->empresa)
-                ? StatusOrdemServico::CANCELAMENTO_SOLICITADO
-                : StatusOrdemServico::CANCELADA,
-            // Uma tentativa nova não deve carregar o motivo de uma rejeição anterior.
-            'motivo_rejeicao' => null,
-        ]);
+        $request->validate(['motivo_texto' => ['nullable', 'string', 'max:2000']]);
+        $motivoTexto = $request->filled('motivo_texto') ? $request->string('motivo_texto')->trim()->value() : null;
+
+        if (AutonomiaAgenda::requerAprovacao($usuario->empresa)) {
+            $ordemServico->update([
+                'status' => StatusOrdemServico::CANCELAMENTO_SOLICITADO,
+                // Uma tentativa nova não deve carregar o motivo de uma rejeição anterior.
+                'motivo_rejeicao' => null,
+                'motivo_cancelamento_texto' => $motivoTexto,
+            ]);
+            CancelamentoOrdemServico::registrar($ordemServico, $usuario, 'CANCELAMENTO_SOLICITADO', ['motivo_texto' => $motivoTexto]);
+        } else {
+            $ordemServico->update(['motivo_rejeicao' => null]);
+            CancelamentoOrdemServico::aplicar($ordemServico, $usuario, ResponsavelNaoExecucao::PROMOTOR, null, $motivoTexto);
+        }
         $ordemServico->load(self::RELACOES);
 
         return response()->json(['ordem_servico' => new OrdemServicoResource($ordemServico)]);
@@ -268,8 +306,20 @@ class OrdemServicoController extends Controller
      * Gestor aprova uma solicitação pendente (`ordens_servico.gerenciar`) — o resultado depende
      * de qual dos três status de solicitação a OS está. Ver docs/13-AGENDA-MOBILE-E-AUTONOMIA.md §4.3.
      */
-    public function aprovar(OrdemServico $ordemServico): JsonResponse
+    public function aprovar(Request $request, OrdemServico $ordemServico): JsonResponse
     {
+        if ($ordemServico->status === StatusOrdemServico::CANCELAMENTO_SOLICITADO) {
+            // O pedido veio do promotor — quem causou é ele; o texto que ele deu fica.
+            CancelamentoOrdemServico::aplicar(
+                $ordemServico, $request->user(), ResponsavelNaoExecucao::PROMOTOR,
+                null, $ordemServico->motivo_cancelamento_texto, 'CANCELAMENTO_APROVADO',
+            );
+            $ordemServico->update(['motivo_rejeicao' => null]);
+            $ordemServico->load(self::RELACOES);
+
+            return response()->json(['ordem_servico' => new OrdemServicoResource($ordemServico)]);
+        }
+
         match ($ordemServico->status) {
             StatusOrdemServico::AGUARDANDO_APROVACAO => $ordemServico->update([
                 'status' => StatusOrdemServico::PENDENTE, 'motivo_rejeicao' => null,
@@ -303,9 +353,7 @@ class OrdemServicoController extends Controller
 
         match ($ordemServico->status) {
             // O compromisso existiu, foi negado, fica registrado — não é apagado.
-            StatusOrdemServico::AGUARDANDO_APROVACAO => $ordemServico->update([
-                'status' => StatusOrdemServico::CANCELADA, 'motivo_rejeicao' => $motivo,
-            ]),
+            StatusOrdemServico::AGUARDANDO_APROVACAO => $this->rejeitarCompromisso($request, $ordemServico, $motivo),
             StatusOrdemServico::REAGENDAMENTO_SOLICITADO => $ordemServico->update([
                 'status' => StatusOrdemServico::PENDENTE,
                 'prazo_inicio_proposto' => null,
@@ -331,16 +379,35 @@ class OrdemServicoController extends Controller
      */
     public function cancelarEmLote(Request $request): JsonResponse
     {
-        $request->validate([
-            'uuids' => ['required', 'array', 'min:1'],
+        $empresaId = $request->user()->empresa_id;
+        $dados = $request->validate([
+            'uuids' => ['required', 'array', 'min:1', 'max:200'],
             'uuids.*' => ['string'],
+            // Justificativa única pro lote inteiro (docs/59 §3.2) — não existe lote "sem motivo".
+            'responsavel_nao_execucao' => ['required', Rule::enum(ResponsavelNaoExecucao::class)],
+            'motivo_uuid' => ['nullable', 'required_without:motivo_texto', 'string', Rule::exists('motivos_nao_execucao', 'uuid')->where('empresa_id', $empresaId)],
+            'motivo_texto' => ['nullable', 'required_without:motivo_uuid', 'string', 'max:2000'],
         ]);
 
-        $canceladas = OrdemServico::whereIn('uuid', $request->input('uuids'))
-            ->where('status', StatusOrdemServico::PENDENTE)
-            ->update(['status' => StatusOrdemServico::CANCELADA]);
+        $canceladas = 0;
+        foreach (OrdemServico::whereIn('uuid', $dados['uuids'])->where('status', StatusOrdemServico::PENDENTE)->get() as $os) {
+            CancelamentoOrdemServico::aplicar(
+                $os, $request->user(), ResponsavelNaoExecucao::from($dados['responsavel_nao_execucao']),
+                $dados['motivo_uuid'] ?? null, $dados['motivo_texto'] ?? null, 'CANCELADA_EM_LOTE',
+            );
+            $canceladas++;
+        }
 
         return response()->json(['canceladas' => $canceladas]);
+    }
+
+    /** Compromisso criado pelo promotor e negado pelo gestor: cancela deixando o rastro. */
+    private function rejeitarCompromisso(Request $request, OrdemServico $ordemServico, ?string $motivo): void
+    {
+        $ordemServico->update(['motivo_rejeicao' => $motivo]);
+        CancelamentoOrdemServico::aplicar(
+            $ordemServico, $request->user(), ResponsavelNaoExecucao::EMPRESA, null, $motivo, 'COMPROMISSO_REJEITADO',
+        );
     }
 
     /**

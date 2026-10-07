@@ -288,10 +288,14 @@ class GaleriaFotosTest extends TestCase
         $promotor = Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]);
         $this->criarRegistroComFoto($empresa, $pdv, $promotor);
 
-        $gestor = Usuario::factory()->gestor()->create(['empresa_id' => $empresa->id]);
+        $gestor = Usuario::factory()->gestor()->comPerfil(['tela.registros'])->create(['empresa_id' => $empresa->id]);
         Sanctum::actingAs($gestor);
 
         $this->getJson('/api/galeria-fotos')->assertOk();
+
+        // docs/64 — sem a tela, a galeria é recusada.
+        Sanctum::actingAs(Usuario::factory()->gestor()->comPerfil([])->create(['empresa_id' => $empresa->id]));
+        $this->getJson('/api/galeria-fotos')->assertForbidden();
     }
 
     public function test_isolado_por_empresa(): void

@@ -15,6 +15,7 @@ use App\Models\TipoRegistro;
 use App\Models\Usuario;
 use App\Models\Visita;
 use App\Models\VisitaRegistro;
+use App\Relatorios\Periodo;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
@@ -46,14 +47,15 @@ class RelatorioController extends Controller
      *
      * Categorias, por OS: `cumprida` (CONCLUIDA), `em_andamento`, `atrasada` (ainda em aberto e o
      * prazo já passou) e `a_vencer` (em aberto, prazo ainda no futuro). CANCELADA e
-     * AGUARDANDO_APROVACAO não entram no planejado — a primeira nunca valeu, a segunda ainda não
-     * foi aceita pela empresa. `espontaneas` é o inverso: visita sem OS, contada à parte pra não
+     * AGUARDANDO_APROVACAO não entram no planejado — mas CANCELADA agora é contada à parte, com
+     * quebra por responsável e motivo (docs/59), pra cancelar não "limpar" o atraso sem rastro. `espontaneas` é o inverso: visita sem OS, contada à parte pra não
      * inflar o cumprimento.
      */
     public function visitasPlanejadasXExecutadas(Request $request): JsonResponse
     {
         $this->exigirAdminOuGestor($request);
         [$inicio, $fim, $tz] = $this->periodo($request);
+        $request->validate(['comparar' => ['nullable', 'in:anterior,ano_anterior']]);
 
         $usuarioId = $request->filled('usuario_uuid')
             ? Usuario::where('uuid', $request->string('usuario_uuid'))->value('id')
@@ -62,12 +64,39 @@ class RelatorioController extends Controller
             ? PontoVenda::where('uuid', $request->string('ponto_venda_uuid'))->value('id')
             : null;
 
+        $atual = $this->calcularVisitasPlanejadas($inicio, $fim, $tz, $usuarioId, $pontoVendaId);
+
+        $resposta = [
+            'periodo' => $this->periodoLocal($inicio, $fim, $tz),
+            'linhas' => $atual['linhas'],
+            'total' => $atual['total'],
+        ];
+
+        // Comparativo de períodos (docs/59 §4.3): o backend calcula o período equivalente e devolve
+        // os dois blocos — o front só mostra a variação, não refaz a conta.
+        if ($request->filled('comparar')) {
+            [$compInicio, $compFim] = $this->periodoDeComparacao($inicio, $fim, $tz, $request->string('comparar')->toString());
+            $resposta['comparativo'] = [
+                'tipo' => $request->string('comparar')->toString(),
+                'periodo' => $this->periodoLocal($compInicio, $compFim, $tz),
+                'total' => $this->calcularVisitasPlanejadas($compInicio, $compFim, $tz, $usuarioId, $pontoVendaId)['total'],
+            ];
+        }
+
+        return response()->json($resposta);
+    }
+
+    /**
+     * @return array{linhas: Collection, total: array<string, mixed>}
+     */
+    private function calcularVisitasPlanejadas(Carbon $inicio, Carbon $fim, string $tz, ?int $usuarioId, ?int $pontoVendaId): array
+    {
         $agora = now();
 
         $ordens = OrdemServico::query()
-            ->with(['usuario:id,uuid,nome', 'visita:id,usuario_id', 'visita.usuario:id,uuid,nome'])
+            ->with(['usuario:id,uuid,nome', 'visita:id,usuario_id', 'visita.usuario:id,uuid,nome', 'motivoCancelamento:id,descricao'])
             ->whereBetween('prazo_fim', [$inicio, $fim])
-            ->whereNotIn('status', [StatusOrdemServico::CANCELADA->value, StatusOrdemServico::AGUARDANDO_APROVACAO->value])
+            ->where('status', '!=', StatusOrdemServico::AGUARDANDO_APROVACAO->value)
             ->when($pontoVendaId, fn ($q) => $q->where('ponto_venda_id', $pontoVendaId))
             ->when($usuarioId, fn ($q) => $q->where(
                 fn ($sub) => $sub->where('usuario_id', $usuarioId)
@@ -92,9 +121,13 @@ class RelatorioController extends Controller
                 'data' => $dia->toDateString(),
                 'promotor' => $promotor ? ['id' => $promotor->uuid, 'nome' => $promotor->nome] : null,
                 'planejadas' => 0, 'cumpridas' => 0, 'em_andamento' => 0, 'atrasadas' => 0, 'a_vencer' => 0,
+                'canceladas' => 0, 'canceladas_promotor' => 0,
                 'espontaneas' => 0,
             ];
         };
+
+        $porResponsavel = [];
+        $porMotivo = [];
 
         foreach ($ordens as $os) {
             // Quem executou manda; sem visita, vale o promotor a quem a OS foi direcionada (null =
@@ -103,6 +136,21 @@ class RelatorioController extends Controller
             $dia = $os->prazo_fim->copy()->setTimezone($tz)->startOfDay();
             $linha($dia, $promotor);
             $chave = $dia->toDateString().'|'.($promotor?->uuid ?? '-');
+
+            // Cancelada fica fora do "planejado" (nunca valeu) mas AGORA é contada à parte — antes
+            // cancelar uma visita vencida limpava o atraso sem deixar rastro (docs/59 §3.4).
+            if ($os->status === StatusOrdemServico::CANCELADA) {
+                $linhas[$chave]['canceladas']++;
+                $responsavel = $os->responsavel_nao_execucao ?? 'NAO_INFORMADO';
+                $porResponsavel[$responsavel] = ($porResponsavel[$responsavel] ?? 0) + 1;
+                if ($responsavel === 'PROMOTOR') {
+                    $linhas[$chave]['canceladas_promotor']++;
+                }
+                $rotulo = $os->motivoCancelamento?->descricao ?? ($os->motivo_cancelamento_texto ? 'Outro (texto livre)' : 'Sem motivo informado');
+                $porMotivo[$rotulo] = ($porMotivo[$rotulo] ?? 0) + 1;
+
+                continue;
+            }
 
             $linhas[$chave]['planejadas']++;
             $categoria = match ($os->status) {
@@ -120,7 +168,10 @@ class RelatorioController extends Controller
         }
 
         $linhas = collect($linhas)
-            ->map(fn (array $l) => $l + ['percentual_cumprimento' => $this->percentual($l['cumpridas'], $l['planejadas'])])
+            ->map(fn (array $l) => $l + [
+                'percentual_cumprimento' => $this->percentual($l['cumpridas'], $l['planejadas']),
+                'percentual_cumprimento_ajustado' => $this->percentual($l['cumpridas'], $l['planejadas'] + $l['canceladas_promotor']),
+            ])
             ->sortBy([['data', 'desc'], fn ($a, $b) => strcmp($a['promotor']['nome'] ?? '', $b['promotor']['nome'] ?? '')])
             ->values();
 
@@ -130,15 +181,38 @@ class RelatorioController extends Controller
             'em_andamento' => $linhas->sum('em_andamento'),
             'atrasadas' => $linhas->sum('atrasadas'),
             'a_vencer' => $linhas->sum('a_vencer'),
+            'canceladas' => $linhas->sum('canceladas'),
+            'canceladas_promotor' => $linhas->sum('canceladas_promotor'),
             'espontaneas' => $linhas->sum('espontaneas'),
         ];
         $total['percentual_cumprimento'] = $this->percentual($total['cumpridas'], $total['planejadas']);
+        // Cancelar por culpa do promotor entra no denominador: faltar e "justificar" não melhora o
+        // número dele (docs/59 §3.4).
+        $total['percentual_cumprimento_ajustado'] = $this->percentual($total['cumpridas'], $total['planejadas'] + $total['canceladas_promotor']);
+        $total['canceladas_por_responsavel'] = $porResponsavel;
+        $total['canceladas_por_motivo'] = collect($porMotivo)
+            ->map(fn (int $q, string $motivo) => ['motivo' => $motivo, 'quantidade' => $q])
+            ->sortByDesc('quantidade')->values()->all();
 
-        return response()->json([
-            'periodo' => ['data_inicio' => $inicio->copy()->setTimezone($tz)->toDateString(), 'data_fim' => $fim->copy()->setTimezone($tz)->toDateString()],
-            'linhas' => $linhas,
-            'total' => $total,
-        ]);
+        return ['linhas' => $linhas, 'total' => $total];
+    }
+
+    /** @return array{data_inicio: string, data_fim: string} */
+    private function periodoLocal(Carbon $inicio, Carbon $fim, string $tz): array
+    {
+        return ['data_inicio' => $inicio->copy()->setTimezone($tz)->toDateString(), 'data_fim' => $fim->copy()->setTimezone($tz)->toDateString()];
+    }
+
+    /**
+     * Período equivalente pra comparar: `anterior` = mesmo número de dias imediatamente antes;
+     * `ano_anterior` = mesmas datas um ano antes. Devolvido em UTC, como `periodo()`.
+     *
+     * @return array{0: Carbon, 1: Carbon}
+     */
+    private function periodoDeComparacao(Carbon $inicio, Carbon $fim, string $tz, string $tipo): array
+    {
+        // Regra única com o gerador de relatórios (docs/60).
+        return Periodo::comparacao($inicio, $fim, $tz, $tipo);
     }
 
     /**
@@ -451,6 +525,144 @@ class RelatorioController extends Controller
                 ->values()
                 ->all(),
         ];
+    }
+
+    /** Visita com menos que isso (check-in e saída sem estar na loja) ou mais que isso (checkout esquecido) não vira média. */
+    private const TEMPO_MIN_VALIDO = 2;
+
+    private const TEMPO_MAX_VALIDO = 720;
+
+    /**
+     * Tempo dentro do PDV (docs/59 §4.2): duração da visita (check-in → checkout) menos o tempo
+     * fora da loja já calculado pelo afastamento (docs/49) — a mesma conta do KPI "Tempo em loja"
+     * da Rota do Dia, pros números baterem. Agrupa por loja, promotor, rede ou dia; visita sem
+     * checkout, cancelada ou fora da faixa válida fica de fora da média e vira `desconsideradas`.
+     */
+    public function tempoNaLoja(Request $request): JsonResponse
+    {
+        $this->exigirAdminOuGestor($request);
+        [$inicio, $fim, $tz] = $this->periodo($request);
+        $request->validate([
+            'agrupar' => ['nullable', 'in:loja,promotor,rede,dia'],
+            'comparar' => ['nullable', 'in:anterior,ano_anterior'],
+        ]);
+        $agrupar = $request->input('agrupar', 'loja');
+
+        $filtros = [
+            'usuario_id' => $request->filled('usuario_uuid') ? Usuario::where('uuid', $request->string('usuario_uuid'))->value('id') : null,
+            'ponto_venda_id' => $request->filled('ponto_venda_uuid') ? PontoVenda::where('uuid', $request->string('ponto_venda_uuid'))->value('id') : null,
+            'rede_loja_id' => $request->filled('rede_loja_uuid') ? RedeLoja::where('uuid', $request->string('rede_loja_uuid'))->value('id') : null,
+        ];
+
+        $atual = $this->calcularTempoNaLoja($inicio, $fim, $tz, $agrupar, $filtros);
+        $resposta = ['periodo' => $this->periodoLocal($inicio, $fim, $tz), 'agrupar' => $agrupar] + $atual;
+
+        if ($request->filled('comparar')) {
+            [$compInicio, $compFim] = $this->periodoDeComparacao($inicio, $fim, $tz, $request->string('comparar')->toString());
+            $comp = $this->calcularTempoNaLoja($compInicio, $compFim, $tz, $agrupar, $filtros);
+            $porChave = $comp['linhas']->keyBy('chave');
+
+            $resposta['linhas'] = $atual['linhas']->map(fn (array $l) => $l + [
+                'media_minutos_comparativo' => $porChave->get($l['chave'])['media_minutos'] ?? null,
+            ])->values();
+            $resposta['comparativo'] = [
+                'tipo' => $request->string('comparar')->toString(),
+                'periodo' => $this->periodoLocal($compInicio, $compFim, $tz),
+                'total' => $comp['total'],
+            ];
+        }
+
+        return response()->json($resposta);
+    }
+
+    /**
+     * @param  array{usuario_id: ?int, ponto_venda_id: ?int, rede_loja_id: ?int}  $filtros
+     * @return array{linhas: Collection, total: array<string, mixed>}
+     */
+    private function calcularTempoNaLoja(Carbon $inicio, Carbon $fim, string $tz, string $agrupar, array $filtros): array
+    {
+        $visitas = Visita::query()
+            ->with(['pontoVenda:id,uuid,fantasia,rede_loja_id', 'pontoVenda.redeLoja:id,uuid,descricao', 'usuario:id,uuid,nome'])
+            ->where('status', '!=', StatusVisita::CANCELADA->value)
+            ->whereNotNull('fim_data')
+            ->whereBetween('inicio_data', [$inicio, $fim])
+            ->when($filtros['usuario_id'], fn ($q, $id) => $q->where('usuario_id', $id))
+            ->when($filtros['ponto_venda_id'], fn ($q, $id) => $q->where('ponto_venda_id', $id))
+            ->when($filtros['rede_loja_id'], fn ($q, $id) => $q->whereHas('pontoVenda', fn ($p) => $p->where('rede_loja_id', $id)))
+            ->get();
+
+        // Itens trabalhados (docs/61 §6.1): produtos distintos registrados em cada visita.
+        $itensPorVisita = VisitaRegistro::query()
+            ->whereIn('visita_id', $visitas->pluck('id'))
+            ->whereNotNull('produto_auditoria_id')
+            ->whereNull('cancelado_em')
+            ->selectRaw('visita_id, count(distinct produto_auditoria_id) as itens')
+            ->groupBy('visita_id')
+            ->pluck('itens', 'visita_id');
+
+        $validas = collect();
+        $desconsideradas = 0;
+        foreach ($visitas as $visita) {
+            $duracao = (int) round($visita->inicio_data->diffInSeconds($visita->fim_data) / 60);
+            if ($duracao < self::TEMPO_MIN_VALIDO || $duracao > self::TEMPO_MAX_VALIDO) {
+                $desconsideradas++;
+
+                continue;
+            }
+            $validas->push([
+                'visita' => $visita,
+                'minutos' => max(0, $duracao - (int) ($visita->afastamento_minutos ?? 0)),
+                'itens' => (int) ($itensPorVisita[$visita->id] ?? 0),
+            ]);
+        }
+
+        $chaveDe = function (array $v) use ($agrupar, $tz): array {
+            $visita = $v['visita'];
+
+            return match ($agrupar) {
+                'promotor' => [$visita->usuario?->uuid ?? '-', $visita->usuario?->nome ?? 'Sem promotor'],
+                'rede' => [$visita->pontoVenda?->redeLoja?->uuid ?? '-', $visita->pontoVenda?->redeLoja?->descricao ?? 'Sem rede'],
+                'dia' => [$visita->inicio_data->copy()->setTimezone($tz)->toDateString(), $visita->inicio_data->copy()->setTimezone($tz)->toDateString()],
+                default => [$visita->pontoVenda?->uuid ?? '-', $visita->pontoVenda?->fantasia ?? 'Sem loja'],
+            };
+        };
+
+        $resumo = function (Collection $itens): array {
+            $tempo = (int) $itens->sum('minutos');
+            $trabalhados = (int) $itens->sum('itens');
+
+            return [
+                'visitas' => $itens->count(),
+                'tempo_total_minutos' => $tempo,
+                'media_minutos' => $itens->isEmpty() ? null : (int) round($itens->avg('minutos')),
+                'mediana_minutos' => $this->mediana($itens->pluck('minutos')),
+                // Soma dos produtos distintos de cada visita; sem registro por produto fica nulo ("sem informação"), nunca 0.
+                'itens_trabalhados' => $trabalhados > 0 ? $trabalhados : null,
+                'minutos_por_item' => $trabalhados > 0 ? round($tempo / $trabalhados, 1) : null,
+            ];
+        };
+
+        $linhas = $validas
+            ->groupBy(fn (array $v) => $chaveDe($v)[0])
+            ->map(fn (Collection $g, string $chave) => ['chave' => $chave, 'nome' => $chaveDe($g->first())[1]] + $resumo($g))
+            ->sortByDesc('tempo_total_minutos')
+            ->values();
+
+        return [
+            'linhas' => $linhas,
+            'total' => $resumo($validas) + ['desconsideradas' => $desconsideradas],
+        ];
+    }
+
+    private function mediana(Collection $valores): ?int
+    {
+        if ($valores->isEmpty()) {
+            return null;
+        }
+        $ordenados = $valores->sort()->values();
+        $meio = intdiv($ordenados->count(), 2);
+
+        return (int) round($ordenados->count() % 2 ? $ordenados[$meio] : ($ordenados[$meio - 1] + $ordenados[$meio]) / 2);
     }
 
     private function percentual(int $parte, int $total): ?int
