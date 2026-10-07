@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\OrdemServico;
 
+use App\Enums\ResponsavelNaoExecucao;
 use App\Enums\StatusOrdemServico;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -46,6 +47,21 @@ class UpdateOrdemServicoRequest extends FormRequest
             // pelo próprio fluxo de check-in/checkout (ver VisitaController), nunca por edição
             // direta.
             'status' => ['sometimes', Rule::in([StatusOrdemServico::CANCELADA->value])],
+            // Cancelar exige justificativa (docs/59): quem causou + motivo do catálogo e/ou
+            // texto livre. Sem isso o cancelamento seria "limpar o atraso" sem deixar rastro.
+            'responsavel_nao_execucao' => [
+                Rule::requiredIf(fn () => $this->input('status') === StatusOrdemServico::CANCELADA->value),
+                'nullable', Rule::enum(ResponsavelNaoExecucao::class),
+            ],
+            'motivo_uuid' => [
+                'nullable', 'string',
+                Rule::requiredIf(fn () => $this->input('status') === StatusOrdemServico::CANCELADA->value && ! $this->filled('motivo_texto')),
+                Rule::exists('motivos_nao_execucao', 'uuid')->where('empresa_id', $empresaId),
+            ],
+            'motivo_texto' => [
+                'nullable', 'string', 'max:2000',
+                Rule::requiredIf(fn () => $this->input('status') === StatusOrdemServico::CANCELADA->value && ! $this->filled('motivo_uuid')),
+            ],
             // Vínculo direto de formulário numa OS avulsa — ver docs/25 §7.2.
             'formularios' => ['sometimes', 'nullable', 'array'],
             'formularios.*.tipo_registro_uuid' => [

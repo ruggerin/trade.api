@@ -12,6 +12,7 @@ use App\Models\UsuarioLoginLog;
 use App\Support\DocumentosLegais;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
@@ -125,6 +126,23 @@ class AuthController extends Controller
 
         $caminho = $request->file('imagem')->store("usuarios/{$usuario->id}", config('filesystems.default'));
         $usuario->update(['foto_path' => $caminho]);
+
+        return response()->json([
+            'usuario' => new UsuarioResource($usuario->fresh()->loadMissing(['empresa', 'perfil', 'dispositivo'])),
+        ]);
+    }
+
+    /**
+     * Preferências do próprio usuário (docs/65) — hoje só o tema do admin. Self-service como a
+     * foto: cada um decide o seu, sem permissão.
+     */
+    public function atualizarPreferencias(Request $request): JsonResponse
+    {
+        $dados = $request->validate([
+            'tema' => ['required', Rule::in(['claro', 'escuro', 'sistema'])],
+        ]);
+        $usuario = $request->user();
+        $usuario->update(['tema' => $dados['tema']]);
 
         return response()->json([
             'usuario' => new UsuarioResource($usuario->fresh()->loadMissing(['empresa', 'perfil', 'dispositivo'])),

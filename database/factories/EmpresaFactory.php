@@ -5,6 +5,7 @@ namespace Database\Factories;
 use App\Enums\PlanoEmpresa;
 use App\Models\Empresa;
 use App\Models\TipoRegistro;
+use App\Support\RelatoriosPadrao;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -24,6 +25,8 @@ class EmpresaFactory extends Factory
     {
         return $this->afterCreating(function (Empresa $empresa): void {
             TipoRegistro::seedPadrao($empresa->id);
+            // Relatórios padrão do gerador (docs/60 §6.2), como em toda empresa real.
+            RelatoriosPadrao::completar($empresa);
         });
     }
 

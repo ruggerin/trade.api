@@ -10,7 +10,8 @@ use Symfony\Component\HttpFoundation\Response;
 
 /**
  * Autorização por permissão granular (RBAC por empresa) — ver App\Models\Perfil e
- * docs/02-API-BACKEND.md. Uso: middleware('permissao:pontos_venda.gerenciar').
+ * docs/02-API-BACKEND.md. Uso: middleware('permissao:pontos_venda.gerenciar'). Mais de uma
+ * chave (`permissao:tela.relatorios,ordens_servico.gerenciar`) = basta ter uma delas.
  *
  * ADMIN sempre libera (acesso total, nunca restringível por perfil — garante que a empresa
  * nunca fica trancada pra fora configurando um perfil errado). GESTOR depende do perfil
@@ -33,18 +34,21 @@ class EnsurePermissao
         Permissao::CONTRATOS_GERENCIAR,
     ];
 
-    public function handle(Request $request, Closure $next, string $permissao): Response
+    public function handle(Request $request, Closure $next, string ...$permissoes): Response
     {
         $usuario = $request->user();
-        $permissaoEnum = Permissao::from($permissao);
 
-        $liberado = match ($usuario?->user_type) {
-            UserType::ADMIN => true,
-            UserType::GESTOR => $usuario->perfil?->tem($permissaoEnum) ?? false,
-            UserType::SUPERADMIN => in_array($permissaoEnum, self::PERMISSOES_LIBERADAS_PARA_SUPERADMIN, true)
-                && in_array($request->method(), ['GET', 'POST', 'PUT'], true),
-            default => false,
-        };
+        $liberado = false;
+        foreach ($permissoes as $permissao) {
+            $permissaoEnum = Permissao::from($permissao);
+            $liberado = $liberado || match ($usuario?->user_type) {
+                UserType::ADMIN => true,
+                UserType::GESTOR => $usuario->perfil?->tem($permissaoEnum) ?? false,
+                UserType::SUPERADMIN => in_array($permissaoEnum, self::PERMISSOES_LIBERADAS_PARA_SUPERADMIN, true)
+                    && in_array($request->method(), ['GET', 'POST', 'PUT'], true),
+                default => false,
+            };
+        }
 
         if (! $liberado) {
             abort(403, 'Você não tem permissão para executar esta ação.');

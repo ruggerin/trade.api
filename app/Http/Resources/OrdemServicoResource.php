@@ -93,6 +93,18 @@ class OrdemServicoResource extends JsonResource
             // Preenchido só quando o gestor rejeitou a solicitação mais recente — ver
             // docs/13-AGENDA-MOBILE-E-AUTONOMIA.md.
             'motivo_rejeicao' => $this->motivo_rejeicao,
+            // Rastro do cancelamento (docs/59) — quem, quando, por quê e "quem causou".
+            'cancelada_em' => $this->cancelada_em,
+            'cancelada_por' => $this->whenLoaded(
+                'canceladaPor',
+                fn () => $this->canceladaPor ? ['id' => $this->canceladaPor->uuid, 'nome' => $this->canceladaPor->nome] : null,
+            ),
+            'responsavel_nao_execucao' => $this->responsavel_nao_execucao,
+            'motivo_cancelamento' => $this->whenLoaded(
+                'motivoCancelamento',
+                fn () => $this->motivoCancelamento ? ['id' => $this->motivoCancelamento->uuid, 'descricao' => $this->motivoCancelamento->descricao] : null,
+            ),
+            'motivo_cancelamento_texto' => $this->motivo_cancelamento_texto,
             // SUPERADMIN não usa esta tela hoje (sem rota dele aqui), mas mantém o padrão do
             // resto do catálogo pra facilitar se um dia precisar de visão cross-empresa.
             'empresa' => $this->whenLoaded('empresa', fn () => new EmpresaResource($this->empresa)),

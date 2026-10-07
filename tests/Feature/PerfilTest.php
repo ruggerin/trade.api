@@ -22,11 +22,25 @@ class PerfilTest extends TestCase
 
         $response = $this->postJson('/api/perfis', [
             'nome' => 'Gestor Regional',
-            'permissoes' => [Permissao::PONTOS_VENDA_GERENCIAR->value, Permissao::CATALOGO_GERENCIAR->value],
+            'permissoes' => [
+                Permissao::TELA_LOJAS->value, Permissao::PONTOS_VENDA_GERENCIAR->value,
+                Permissao::TELA_CATALOGO->value, Permissao::CATALOGO_GERENCIAR->value,
+            ],
         ]);
 
         $response->assertCreated()->assertJsonPath('perfil.nome', 'Gestor Regional');
         $this->assertDatabaseHas('perfis', ['nome' => 'Gestor Regional', 'empresa_id' => $empresa->id]);
+    }
+
+    public function test_acao_sem_a_tela_dela_nao_salva(): void
+    {
+        $empresa = Empresa::factory()->create();
+        Sanctum::actingAs(Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]));
+
+        // docs/64 §3 — catalogo.gerenciar exige tela.catalogo.
+        $this->postJson('/api/perfis', ['nome' => 'X', 'permissoes' => [Permissao::CATALOGO_GERENCIAR->value]])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('permissoes');
     }
 
     public function test_rejeita_permissao_fora_do_catalogo_fixo(): void

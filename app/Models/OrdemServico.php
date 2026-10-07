@@ -45,6 +45,11 @@ class OrdemServico extends Model
         'visita_id',
         'observacao',
         'motivo_rejeicao',
+        'cancelada_em',
+        'cancelada_por_id',
+        'motivo_cancelamento_id',
+        'motivo_cancelamento_texto',
+        'responsavel_nao_execucao',
     ];
 
     protected function casts(): array
@@ -58,6 +63,7 @@ class OrdemServico extends Model
             'prazo_fim' => 'datetime',
             'prazo_inicio_proposto' => 'datetime',
             'prazo_fim_proposto' => 'datetime',
+            'cancelada_em' => 'datetime',
         ];
     }
 
@@ -122,5 +128,15 @@ class OrdemServico extends Model
     public function visita(): BelongsTo
     {
         return $this->belongsTo(Visita::class, 'visita_id');
+    }
+
+    public function canceladaPor(): BelongsTo
+    {
+        return $this->belongsTo(Usuario::class, 'cancelada_por_id');
+    }
+
+    public function motivoCancelamento(): BelongsTo
+    {
+        return $this->belongsTo(MotivoNaoExecucao::class, 'motivo_cancelamento_id');
     }
 }

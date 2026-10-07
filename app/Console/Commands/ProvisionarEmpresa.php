@@ -8,6 +8,7 @@ use App\Models\Empresa;
 use App\Models\TipoRegistro;
 use App\Models\Usuario;
 use App\Support\ParametrosPadrao;
+use App\Support\RelatoriosPadrao;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -127,6 +128,8 @@ class ProvisionarEmpresa extends Command
             // Catálogo único em App\Support\ParametrosPadrao (o mesmo do botão do superadmin e do
             // comando parametros:completar).
             ParametrosPadrao::completar($empresa);
+            // Relatórios padrão do gerador (docs/60 §6.2).
+            RelatoriosPadrao::completar($empresa);
 
             return [$empresa, $admin];
         });

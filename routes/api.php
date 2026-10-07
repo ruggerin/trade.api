@@ -23,6 +23,7 @@ use App\Http\Controllers\LocalizacaoController;
 use App\Http\Controllers\PedidoController;
 use App\Http\Controllers\PedidoVendaController;
 use App\Http\Controllers\RelatorioController;
+use App\Http\Controllers\RelatorioPersonalizadoController;
 use App\Http\Controllers\RotaDoDiaController;
 use App\Http\Controllers\MarcaAuditoriaController;
 use App\Http\Controllers\NivelExibicaoController;
@@ -43,6 +44,7 @@ use App\Http\Controllers\RedeLojaController;
 use App\Http\Controllers\RegistroController;
 use App\Http\Controllers\SecaoAuditoriaController;
 use App\Http\Controllers\SortimentoPontoVendaController;
+use App\Http\Controllers\MotivoNaoExecucaoController;
 use App\Http\Controllers\MotivoResolucaoAlertaController;
 use App\Http\Controllers\TipoRegistroController;
 use App\Http\Controllers\TipoVisitaController;
@@ -71,6 +73,8 @@ Route::middleware('auth:sanctum')->group(function (): void {
     // PROMOTOR — ver UsuarioController::foto.
     Route::post('/auth/me/foto', [AuthController::class, 'atualizarFoto']);
     Route::delete('/auth/me/foto', [AuthController::class, 'removerFoto']);
+    // Tema do admin (docs/65) — self-service, como a foto.
+    Route::put('/auth/me/preferencias', [AuthController::class, 'atualizarPreferencias']);
     Route::get('/usuarios/{usuario}/foto', [UsuarioController::class, 'foto']);
     Route::get('/empresa', [EmpresaController::class, 'show']);
 
@@ -88,6 +92,8 @@ Route::middleware('auth:sanctum')->group(function (): void {
     // Catálogo de motivos de fechamento rápido de alerta (docs/56) — mesmo padrão de leitura
     // aberta/escrita por permissão do resto do catálogo.
     Route::get('/motivos-resolucao-alerta', [MotivoResolucaoAlertaController::class, 'index']);
+    // Catálogo de motivos de cancelamento de visita não realizada (docs/59).
+    Route::get('/motivos-nao-execucao', [MotivoNaoExecucaoController::class, 'index']);
     Route::get('/tipos-registro', [TipoRegistroController::class, 'index']);
     // Checklist resolvido de um campo SORTIMENTO pra um PDV — ver docs/20-FORMULARIO-DINAMICO-CAMPANHA.md
     // decisão 3. Precisa vir antes de qualquer /tipos-registro/{tipoRegistro} se um dia existir
@@ -182,36 +188,60 @@ Route::middleware('auth:sanctum')->group(function (): void {
     // Painel de Atividades: feed agregado (check-in/checkout/alertas) pra ADMIN/GESTOR
     // acompanhar tudo que rolou nas visitas do dia, todo mundo junto — ver
     // AtividadeController::index e docs/17-PAINEL-ATIVIDADES.md.
-    Route::get('/atividades', [AtividadeController::class, 'index']);
+    Route::get('/atividades', [AtividadeController::class, 'index'])->middleware('permissao:tela.atividades');
     // Coluna lateral + contadores (em loja agora, alertas sem tratativa, respostas novas) e badge
     // do menu — ver AtividadeController::resumo e docs/43-REVISAO-UX-PAINEL-ATIVIDADES.md.
-    Route::get('/atividades/resumo', [AtividadeController::class, 'resumo']);
+    Route::get('/atividades/resumo', [AtividadeController::class, 'resumo'])->middleware('permissao:tela.atividades');
 
     // Operação do Dia: KPIs + equipe em campo + fila de ações num payload só, pra ADMIN/GESTOR
     // — ver OperacaoDoDiaController::index e docs/32-PAINEL-OPERACAO-DO-DIA.md.
-    Route::get('/operacao-do-dia', [OperacaoDoDiaController::class, 'index']);
+    Route::get('/operacao-do-dia', [OperacaoDoDiaController::class, 'index'])->middleware('permissao:tela.operacao_dia');
 
     // Galeria de Fotos: grade só de fotos (não timeline), filtrável por período/tipo de
     // registro/catálogo/loja/rede/ramo/promotor/ruptura — ver GaleriaFotosController::index e
     // docs/23-GALERIA-DE-FOTOS.md.
-    Route::get('/galeria-fotos', [GaleriaFotosController::class, 'index']);
+    Route::get('/galeria-fotos', [GaleriaFotosController::class, 'index'])->middleware('permissao:tela.registros');
 
     // Registros: lista genérica e crua de VisitaRegistro (qualquer TipoRegistro — ruptura,
     // avaria, validade, foto, observação), filtrável por parâmetro de URL pra permitir link
     // direto de outras telas (ex.: "Rupturas por SKU" da Operação do Dia). Cada linha tem o
     // uuid da visita de origem. Ver RegistroController::index e docs/44-TELA-REGISTROS.md.
-    Route::get('/registros', [RegistroController::class, 'index']);
+    Route::get('/registros', [RegistroController::class, 'index'])->middleware('permissao:tela.registros');
 
     // Relatórios agregados (docs/28-RELATORIOS-FEEDBACK-HISTORICO.md §2) — ADMIN/GESTOR, checado
-    // no controller (mesmo padrão do Painel de Atividades).
-    Route::get('/relatorios/visitas-planejadas-x-executadas', [RelatorioController::class, 'visitasPlanejadasXExecutadas']);
-    Route::get('/relatorios/respostas-formulario', [RelatorioController::class, 'respostasFormulario']);
-    Route::get('/relatorios/visitas-planejadas-x-executadas/pdf', [RelatorioController::class, 'visitasPlanejadasXExecutadasPdf']);
-    Route::get('/relatorios/respostas-formulario/pdf', [RelatorioController::class, 'respostasFormularioPdf']);
-    // Coleta por Formulário (docs/39-RELATORIO-ANALITICO-PIVOT.md) — lista plana; o PDF recebe a
-    // matriz já montada pelo front (POST).
-    Route::get('/relatorios/respostas-formulario/analitico', [RelatorioController::class, 'respostasFormularioAnalitico']);
-    Route::post('/relatorios/respostas-formulario/analitico/pdf', [RelatorioController::class, 'respostasFormularioAnaliticoPdf']);
+    // no controller (mesmo padrão do Painel de Atividades). Acesso à tela (docs/64): tela.relatorios
+    // no grupo abaixo; planejadas × executadas também atende o Planejador de visitas, por isso
+    // libera com ordens_servico.gerenciar.
+    Route::get('/relatorios/visitas-planejadas-x-executadas', [RelatorioController::class, 'visitasPlanejadasXExecutadas'])
+        ->middleware('permissao:tela.relatorios,ordens_servico.gerenciar');
+    Route::middleware('permissao:tela.relatorios')->group(function (): void {
+        Route::get('/relatorios/tempo-na-loja', [RelatorioController::class, 'tempoNaLoja']);
+        Route::get('/relatorios/respostas-formulario', [RelatorioController::class, 'respostasFormulario']);
+        Route::get('/relatorios/visitas-planejadas-x-executadas/pdf', [RelatorioController::class, 'visitasPlanejadasXExecutadasPdf']);
+        Route::get('/relatorios/respostas-formulario/pdf', [RelatorioController::class, 'respostasFormularioPdf']);
+        // Coleta por Formulário (docs/39-RELATORIO-ANALITICO-PIVOT.md) — lista plana; o PDF recebe a
+        // matriz já montada pelo front (POST).
+        Route::get('/relatorios/respostas-formulario/analitico', [RelatorioController::class, 'respostasFormularioAnalitico']);
+        Route::post('/relatorios/respostas-formulario/analitico/pdf', [RelatorioController::class, 'respostasFormularioAnaliticoPdf']);
+
+        // Gerador de relatórios (docs/60-GERADOR-DE-RELATORIOS.md §5). Ver/executar: ADMIN/GESTOR,
+        // checado no controller; criar/editar/excluir/duplicar: permissão própria.
+        Route::get('/relatorios-personalizados', [RelatorioPersonalizadoController::class, 'index']);
+        Route::get('/relatorios-personalizados/catalogo', [RelatorioPersonalizadoController::class, 'catalogo']);
+        Route::get('/relatorios-personalizados/opcoes', [RelatorioPersonalizadoController::class, 'opcoes']);
+        // docs/63 §1.7 — fixados no menu; alcance "empresa" checa a permissão no controller.
+        Route::get('/relatorios-personalizados/menu', [RelatorioPersonalizadoController::class, 'menu']);
+        Route::put('/relatorios-personalizados/{relatorio}/fixar', [RelatorioPersonalizadoController::class, 'fixar']);
+        Route::post('/relatorios-personalizados/executar', [RelatorioPersonalizadoController::class, 'executarDefinicao'])->middleware('throttle:60,1');
+        Route::get('/relatorios-personalizados/{relatorio}', [RelatorioPersonalizadoController::class, 'show']);
+        Route::get('/relatorios-personalizados/{relatorio}/executar', [RelatorioPersonalizadoController::class, 'executar'])->middleware('throttle:60,1');
+        Route::middleware('permissao:relatorios.personalizados.gerenciar')->group(function (): void {
+            Route::post('/relatorios-personalizados', [RelatorioPersonalizadoController::class, 'store']);
+            Route::put('/relatorios-personalizados/{relatorio}', [RelatorioPersonalizadoController::class, 'update']);
+            Route::delete('/relatorios-personalizados/{relatorio}', [RelatorioPersonalizadoController::class, 'destroy']);
+            Route::post('/relatorios-personalizados/{relatorio}/duplicar', [RelatorioPersonalizadoController::class, 'duplicar']);
+        });
+    });
 
     // Rastreamento em tempo real (docs/11-RASTREAMENTO-TEMPO-REAL.md): o promotor manda a própria
     // posição; o mapa ao vivo do admin lê a lista, sob permissão dedicada.
@@ -287,6 +317,8 @@ Route::middleware('auth:sanctum')->group(function (): void {
         // faltam sem sobrescrever nada. Mesmo efeito do comando `parametros:completar`.
         Route::get('/superadmin/empresas/{empresa}/parametros-padrao', [EmpresaController::class, 'parametrosPadrao']);
         Route::post('/superadmin/empresas/{empresa}/parametros-padrao', [EmpresaController::class, 'completarParametrosPadrao']);
+        // Relatórios padrão do gerador (docs/60 §6.2) — mesmo efeito do `relatorios:completar`.
+        Route::post('/superadmin/empresas/{empresa}/relatorios-padrao', [RelatorioPersonalizadoController::class, 'completarPadrao']);
 
         // Faturas: registro manual de cobrança por empresa — ver App\Models\Fatura.
         Route::get('/superadmin/empresas/{empresa}/faturas', [FaturaController::class, 'index']);
@@ -361,6 +393,10 @@ Route::middleware('auth:sanctum')->group(function (): void {
         Route::post('/motivos-resolucao-alerta', [MotivoResolucaoAlertaController::class, 'store']);
         Route::put('/motivos-resolucao-alerta/{motivoResolucaoAlerta}', [MotivoResolucaoAlertaController::class, 'update']);
         Route::delete('/motivos-resolucao-alerta/{motivoResolucaoAlerta}', [MotivoResolucaoAlertaController::class, 'destroy']);
+
+        Route::post('/motivos-nao-execucao', [MotivoNaoExecucaoController::class, 'store']);
+        Route::put('/motivos-nao-execucao/{motivoNaoExecucao}', [MotivoNaoExecucaoController::class, 'update']);
+        Route::delete('/motivos-nao-execucao/{motivoNaoExecucao}', [MotivoNaoExecucaoController::class, 'destroy']);
 
         Route::post('/tipos-registro', [TipoRegistroController::class, 'store']);
         Route::put('/tipos-registro/{tipoRegistro}', [TipoRegistroController::class, 'update']);

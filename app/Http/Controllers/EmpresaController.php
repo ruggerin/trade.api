@@ -19,6 +19,7 @@ use App\Support\Adesao;
 use App\Support\DocumentosLegais;
 use App\Support\Fuso;
 use App\Support\ParametrosPadrao;
+use App\Support\RelatoriosPadrao;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -66,6 +67,10 @@ class EmpresaController extends Controller
             ]);
 
             TipoRegistro::seedPadrao($empresa->id);
+            // O signup público não completava os parâmetros (docs/60 §6.2) — agora igual ao
+            // storeSuperadmin, mais os relatórios padrão do gerador.
+            ParametrosPadrao::completar($empresa);
+            RelatoriosPadrao::completar($empresa);
 
             return [$empresa, $usuario];
         });
@@ -225,6 +230,7 @@ class EmpresaController extends Controller
             TipoRegistro::seedPadrao($empresa->id);
             // Empresa cadastrada pelo suporte já nasce com todos os parâmetros visíveis na tela.
             ParametrosPadrao::completar($empresa);
+            RelatoriosPadrao::completar($empresa);
 
             return [$empresa, $usuario];
         });

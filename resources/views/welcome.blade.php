@@ -3,7 +3,10 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{{ config('app.name', 'PDV API') }}</title>
+    <title>{{ config('app.name', 'Horus API') }}</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <link rel="icon" href="/favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -41,18 +44,8 @@
         .logo {
             width: 26px;
             height: 26px;
-            border-radius: 8px;
-            background: var(--indigo);
-            display: flex;
-            align-items: center;
-            justify-content: center;
+            display: block;
             flex-shrink: 0;
-        }
-        .logo span {
-            width: 8px;
-            height: 8px;
-            border-radius: 3px;
-            background: var(--amber);
         }
         header strong {
             font-size: 15px;
@@ -126,8 +119,8 @@
 </head>
 <body>
     <header>
-        <div class="logo"><span></span></div>
-        <strong>{{ config('app.name', 'PDV API') }}</strong>
+        <svg class="logo" viewBox="0 0 512 512" aria-hidden="true"><rect width="512" height="512" rx="112" fill="#4f46e5"/><g transform="translate(116,16) scale(2)"><g fill="#fff"><path d="M0,40 H36 V200 H0 Z"/><path d="M104,40 H140 V200 H104 Z"/></g><path fill="#f59e0b" d="M0,40 H36 C36,86 50,102 70,102 C112,102 140,132 140,200 H104 C104,154 92,138 70,138 C28,138 0,108 0,40 Z"/></g></svg>
+        <strong>{{ config('app.name', 'Horus API') }}</strong>
         <div class="status">
             <span class="ponto"></span>
             no ar &middot; {{ app()->environment() }} &middot; Laravel {{ app()->version() }} &middot; PHP {{ PHP_VERSION }}
@@ -136,7 +129,7 @@
 
     <main>
         <p>
-            Backend do sistema de PDV/auditoria de campo &mdash; atende o admin web e o app mobile
+            Backend do Horus, sistema de trade e auditoria de campo &mdash; atende o admin web e o app mobile
             do promotor. Não é um site público; se você chegou aqui de fora, provavelmente queria
             um dos outros dois.
         </p>

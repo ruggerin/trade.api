@@ -4,6 +4,7 @@ namespace Database\Factories;
 
 use App\Enums\UserType;
 use App\Models\Empresa;
+use App\Models\Perfil;
 use App\Models\Usuario;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Facades\Hash;
@@ -35,6 +36,21 @@ class UsuarioFactory extends Factory
     public function gestor(): static
     {
         return $this->state(['user_type' => UserType::GESTOR]);
+    }
+
+    /**
+     * Perfil na mesma empresa com estas permissões (ex.: `tela.relatorios`, docs/64). Sem perfil,
+     * GESTOR não vê nenhuma tela.
+     *
+     * @param  list<string>  $permissoes
+     */
+    public function comPerfil(array $permissoes): static
+    {
+        // Depois de criar: o empresa_id passado no create() só existe a essa altura.
+        return $this->afterCreating(function (Usuario $usuario) use ($permissoes): void {
+            $perfil = Perfil::factory()->comPermissoes($permissoes)->create(['empresa_id' => $usuario->empresa_id]);
+            $usuario->forceFill(['perfil_id' => $perfil->id])->save();
+        });
     }
 
     public function promotor(): static

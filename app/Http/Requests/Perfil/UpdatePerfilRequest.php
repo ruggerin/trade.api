@@ -18,7 +18,12 @@ class UpdatePerfilRequest extends FormRequest
         return [
             'nome' => ['sometimes', 'required', 'string', 'max:255'],
             'descricao' => ['sometimes', 'nullable', 'string', 'max:255'],
-            'permissoes' => ['sometimes', 'array'],
+            'permissoes' => ['sometimes', 'array', function (string $atributo, mixed $valor, \Closure $falhar): void {
+                // docs/64 §3 — ação sem a tela dela não salva.
+                foreach (Permissao::semTela(is_array($valor) ? $valor : []) as $erro) {
+                    $falhar($erro);
+                }
+            }],
             'permissoes.*' => [Rule::in(array_column(Permissao::cases(), 'value'))],
             'ativo' => ['sometimes', 'boolean'],
         ];
