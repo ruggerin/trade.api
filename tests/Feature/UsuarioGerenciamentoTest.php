@@ -29,7 +29,7 @@ class UsuarioGerenciamentoTest extends TestCase
         $promotor = Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]);
         Dispositivo::create([
             'usuario_id' => $promotor->id,
-            'identificador' => 'aparelho-123',
+            'identificador_hash' => hash('sha256', 'aparelho-123'),
             'nome' => 'Moto G',
             'ultimo_acesso_em' => now(),
         ]);
@@ -39,7 +39,7 @@ class UsuarioGerenciamentoTest extends TestCase
 
         $response->assertOk()
             ->assertJsonPath('usuario.id', $promotor->uuid)
-            ->assertJsonPath('usuario.dispositivo.identificador', 'aparelho-123');
+            ->assertJsonPath('usuario.dispositivo.identificador', substr(hash('sha256', 'aparelho-123'), 0, 8));
     }
 
     public function test_admin_atribui_perfil_a_promotor(): void
@@ -76,7 +76,7 @@ class UsuarioGerenciamentoTest extends TestCase
         $promotor = Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]);
         Dispositivo::create([
             'usuario_id' => $promotor->id,
-            'identificador' => 'aparelho-123',
+            'identificador_hash' => hash('sha256', 'aparelho-123'),
             'ultimo_acesso_em' => now(),
         ]);
         $promotor->createToken('acesso-api');
@@ -85,8 +85,10 @@ class UsuarioGerenciamentoTest extends TestCase
         $response = $this->deleteJson("/api/usuarios/{$promotor->uuid}/dispositivo");
 
         $response->assertNoContent();
-        $this->assertDatabaseMissing('dispositivos', ['usuario_id' => $promotor->id]);
-        $this->assertSame(0, $promotor->tokens()->count());
+        // Vínculo vai pro histórico (docs/67 §4.2), não é apagado.
+        $this->assertDatabaseMissing('dispositivos', ['usuario_id' => $promotor->id, 'desvinculado_em' => null]);
+        // Sessão revogada com motivo (o app explica a saída), não apagada.
+        $this->assertSame(0, $promotor->tokens()->whereNull('revogado_em')->count());
     }
 
     public function test_revogar_dispositivo_sem_nenhum_vinculado_retorna_422(): void
@@ -116,7 +118,7 @@ class UsuarioGerenciamentoTest extends TestCase
         $promotor = Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]);
         Dispositivo::create([
             'usuario_id' => $promotor->id,
-            'identificador' => 'aparelho-123',
+            'identificador_hash' => hash('sha256', 'aparelho-123'),
             'ultimo_acesso_em' => now(),
         ]);
         $superadmin = Usuario::factory()->superadmin()->create();

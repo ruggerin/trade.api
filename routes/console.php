@@ -37,3 +37,6 @@ Schedule::command('rastreamento:limpar-historico')->dailyAt('03:30');
 // Afastamento durante a visita (docs/49-AFASTAMENTO-DURANTE-VISITA.md §6): grava o resumo nas
 // visitas finalizadas há 30+ min (espera posição atrasada do app) — filtro da lista e feed.
 Schedule::command('visitas:calcular-afastamento')->everyTenMinutes();
+
+// Sessões do app (docs/67 §4.4): tokens revogados/vencidos há 30+ dias e desafios de atestação vencidos.
+Schedule::command('sessoes:limpar')->dailyAt('03:45');

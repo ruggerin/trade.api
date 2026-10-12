@@ -42,6 +42,8 @@ class UpdateUsuarioRequest extends FormRequest
                 Rule::exists('centros_custo', 'uuid')->where('empresa_id', $this->route('usuario')?->empresa_id),
             ],
             'ativo' => ['sometimes', 'boolean'],
+            // Licença do app mobile (docs/67 §3) — qualquer user_type; checada contra o limite.
+            'licenca_mobile' => ['sometimes', 'boolean'],
             'avatar_url' => ['sometimes', 'nullable', 'string', 'max:2048'],
         ];
     }

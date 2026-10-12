@@ -38,7 +38,8 @@ class UsuarioHistoricoTest extends TestCase
 
         $this->assertDatabaseHas('usuario_login_logs', [
             'usuario_id' => $promotor->id,
-            'dispositivo_identificador' => 'aparelho-teste',
+            // Só o hash do identificador é guardado (docs/67 §4.2).
+            'dispositivo_identificador' => hash('sha256', 'aparelho-teste'),
             'dispositivo_nome' => 'Moto G',
         ]);
     }

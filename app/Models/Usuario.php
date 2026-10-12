@@ -45,6 +45,9 @@ class Usuario extends Authenticatable
         'perfil_id',
         'centro_custo_id',
         'ativo',
+        // Licença do app mobile atribuída pelo ADMIN (docs/67 §3).
+        'licenca_mobile',
+        'troca_aparelho_liberada_em',
         'avatar_url',
         'foto_path',
         // Preferência de tema do admin (docs/65): claro | escuro | sistema; null = claro.
@@ -66,6 +69,8 @@ class Usuario extends Authenticatable
         return [
             'user_type' => UserType::class,
             'ativo' => 'boolean',
+            'licenca_mobile' => 'boolean',
+            'troca_aparelho_liberada_em' => 'datetime',
             'ultima_localizacao_latitude' => 'double',
             'ultima_localizacao_longitude' => 'double',
             'ultima_localizacao_em' => 'datetime',
@@ -131,12 +136,18 @@ class Usuario extends Authenticatable
     }
 
     /**
-     * Só tem valor prático pra PROMOTOR — trava de 1 dispositivo por vez, ver
-     * AuthController::login. ADMIN/GESTOR/SUPERADMIN nunca têm um registro aqui.
+     * Aparelho vinculado agora ao app — 1 por usuário, qualquer user_type que entra pelo app
+     * (docs/67 §4). Os vínculos anteriores ficam em dispositivos().
      */
     public function dispositivo(): HasOne
     {
-        return $this->hasOne(Dispositivo::class);
+        return $this->hasOne(Dispositivo::class)->whereNull('desvinculado_em');
+    }
+
+    /** Histórico de aparelhos (docs/67 §4.2), inclusive os já desvinculados. */
+    public function dispositivos(): HasMany
+    {
+        return $this->hasMany(Dispositivo::class);
     }
 
     /**

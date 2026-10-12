@@ -50,7 +50,11 @@ final class ParametrosPadrao
         'JORNADA_FIM' => ['valor' => '17:00', 'descricao' => 'Fim da jornada de trabalho (HH:mm) — régua da Operação do Dia (App\Support\OperacaoDoDia)'],
         'DIRECIONAMENTO_BLOQUEIA_CHECKOUT' => ['valor' => 'false', 'descricao' => 'Checkout recusado enquanto houver formulário de Direcionamento pendente (App\Support\DirecionamentoParametros) — false = só avisa'],
         'PLANEJADOR_VISITAS_OMITIR_DOMINGO' => ['valor' => 'false', 'descricao' => 'Esconde o domingo no Planejador de Visitas e no Relatório de Rota (App\Support\DiasSemanaVisiveis)'],
-        'PLANEJADOR_VISITAS_OMITIR_SABADO' => ['valor' => 'false', 'descricao' => 'Esconde o sábado no Planejador de Visitas e no Relatório de Rota (App\Support\DiasSemanaVisiveis)'],
+        'TROCA_APARELHO_DIAS' => ['valor' => '7', 'descricao' => 'Dias entre trocas de celular que o usuário faz sozinho no app; mínimo 7 (App\Support\VinculoAparelho, docs/67)'],
+        'TROCA_APARELHO_EXIGE_APROVACAO' => ['valor' => 'false', 'descricao' => 'Toda troca de celular no app precisa ser liberada pelo ADMIN (docs/67) — false = 1 troca por janela sem aprovação'],
+        'TROCA_APARELHO_SO_REGISTRA' => ['valor' => 'false', 'descricao' => 'Período de medição: troca de celular nunca é bloqueada, só registrada como "seria bloqueada" (docs/67 §7.3)'],
+        'INTEGRIDADE_MODO' => ['valor' => 'ALERTA', 'descricao' => 'Aparelho com root/emulador: ALERTA (entra e avisa o ADMIN) ou BLOQUEIO (login negado) — docs/67 §5.3'],
+        'PLANEJADOR_VISITAS_OMITIR_SABADO' =>['valor' => 'false', 'descricao' => 'Esconde o sábado no Planejador de Visitas e no Relatório de Rota (App\Support\DiasSemanaVisiveis)'],
     ];
 
     /**

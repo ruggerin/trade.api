@@ -10,8 +10,9 @@ use App\Http\Requests\EmpresaSuperadmin\StoreEmpresaSuperadminRequest;
 use App\Http\Requests\EmpresaSuperadmin\UpdateEmpresaSuperadminRequest;
 use App\Http\Resources\EmpresaResource;
 use App\Http\Resources\UsuarioResource;
+use App\Models\Dispositivo;
 use App\Models\Empresa;
-use App\Models\PontoVenda;
+use App\Models\SolicitacaoAparelho;
 use App\Models\TipoRegistro;
 use App\Models\Usuario;
 use App\Models\Visita;
@@ -20,6 +21,9 @@ use App\Support\DocumentosLegais;
 use App\Support\Fuso;
 use App\Support\ParametrosPadrao;
 use App\Support\RelatoriosPadrao;
+use App\Support\SessaoApp;
+use App\Support\UsoLicencas;
+use App\Support\VinculoAparelho;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -115,6 +119,95 @@ class EmpresaController extends Controller
     }
 
     /**
+     * Licenças e plano do próprio tenant pro ADMIN (docs/67 §3) — os mesmos números da tela do
+     * SUPERADMIN (UsoLicencas), quem tem licença do app (com o aparelho, se já entrou), quem pode
+     * receber uma e os pedidos de liberação. Só a empresa de quem pede: o scope de tenant já
+     * filtra Usuario.
+     */
+    public function licencas(Request $request): JsonResponse
+    {
+        $empresa = $request->user()->empresa;
+
+        $usuarios = Usuario::query()
+            ->where('ativo', true)
+            ->where('licenca_mobile', true)
+            ->with('dispositivo')
+            ->orderBy('nome')
+            ->get();
+        $ids = $usuarios->pluck('id');
+
+        // Último uso do app no aparelho atual (login ou qualquer token dele — SessaoApp).
+        $ultimoUso = SessaoApp::ultimoUsoPorAparelho($usuarios->pluck('dispositivo'));
+
+        // Trocas de aparelho em 30 dias = vínculos que não foram o primeiro (histórico, docs/67 §4.2).
+        $trocas30d = Dispositivo::query()
+            ->whereIn('usuario_id', $ids)
+            ->where('origem', '!=', Dispositivo::ORIGEM_PRIMEIRO)
+            ->where('vinculado_em', '>=', now()->subDays(30))
+            ->groupBy('usuario_id')
+            ->selectRaw('usuario_id, count(*) as trocas')
+            ->pluck('trocas', 'usuario_id');
+
+        $solicitacoes = SolicitacaoAparelho::query()
+            ->where('status', SolicitacaoAparelho::PENDENTE)
+            ->with(['usuario:id,uuid,nome,user_type', 'usuario.dispositivo:id,usuario_id,nome,desvinculado_em'])
+            ->latest('updated_at')
+            ->get();
+
+        return response()->json([
+            'plano' => $empresa->plano,
+            'uso' => UsoLicencas::resumo($empresa),
+            'troca_aparelho' => [
+                'dias_entre_trocas' => VinculoAparelho::diasEntreTrocas($empresa),
+            ],
+            'usando_agora' => $usuarios->filter(fn (Usuario $u) => $u->dispositivo && SessaoApp::online($ultimoUso[$u->dispositivo->id] ?? null))->count(),
+            'com_aparelho' => $usuarios->filter(fn (Usuario $u) => $u->dispositivo !== null)->count(),
+            'licenciados' => $usuarios->map(function (Usuario $usuario) use ($ultimoUso, $trocas30d): array {
+                $aparelho = $usuario->dispositivo;
+                $ultimo = $aparelho ? ($ultimoUso[$aparelho->id] ?? null) : null;
+                $trocas = (int) ($trocas30d[$usuario->id] ?? 0);
+
+                return [
+                    'usuario_uuid' => $usuario->uuid,
+                    'usuario_nome' => $usuario->nome,
+                    'user_type' => $usuario->user_type,
+                    // null = licença atribuída, mas ainda não entrou no app.
+                    'aparelho' => $aparelho?->nome,
+                    'tem_aparelho' => $aparelho !== null,
+                    'plataforma' => $aparelho?->plataforma,
+                    'versao_so' => $aparelho?->versao_so,
+                    'versao_app' => $aparelho?->versao_app,
+                    'integridade_status' => $aparelho?->integridade_status,
+                    'vinculado_em' => $aparelho?->vinculado_em,
+                    'ultimo_uso_em' => $ultimo,
+                    'online' => SessaoApp::online($ultimo),
+                    'trocas_aparelho_30d' => $trocas,
+                    // Painel do ADMIN destaca quem troca demais (docs/67 §4.5).
+                    'alerta_trocas' => $trocas > 2,
+                ];
+            })->values(),
+            // Quem pode receber licença ("Atribuir licença").
+            'sem_licenca' => Usuario::query()
+                ->where('ativo', true)
+                ->where('licenca_mobile', false)
+                ->orderBy('nome')
+                ->get(['uuid', 'nome', 'user_type'])
+                ->map(fn (Usuario $u): array => ['usuario_uuid' => $u->uuid, 'usuario_nome' => $u->nome, 'user_type' => $u->user_type])
+                ->values(),
+            'solicitacoes' => $solicitacoes->map(fn (SolicitacaoAparelho $s): array => [
+                'uuid' => $s->uuid,
+                'usuario_uuid' => $s->usuario?->uuid,
+                'usuario_nome' => $s->usuario?->nome,
+                'user_type' => $s->usuario?->user_type,
+                'aparelho_atual' => $s->usuario?->dispositivo?->nome,
+                'aparelho' => $s->nome,
+                'plataforma' => $s->plataforma,
+                'pedido_em' => $s->updated_at,
+            ])->values(),
+        ]);
+    }
+
+    /**
      * Lista completa de empresas — restrito a SUPERADMIN (middleware 'user_type:SUPERADMIN' na
      * rota). Empresa não é Model tenant-aware (não usa BelongsToEmpresa — ela É o tenant), a
      * query já retorna todas as empresas sem precisar de withoutGlobalScope().
@@ -139,30 +232,12 @@ class EmpresaController extends Controller
      */
     public function showSuperadmin(Empresa $empresa): JsonResponse
     {
-        $licencasUsadas = Usuario::withoutGlobalScopes()
-            ->where('empresa_id', $empresa->id)
-            ->where('user_type', UserType::PROMOTOR)
-            ->where('ativo', true)
-            ->count();
-
-        $usuariosTotal = Usuario::withoutGlobalScopes()->where('empresa_id', $empresa->id)->count();
-
-        $pontosVendaTotal = PontoVenda::withoutGlobalScopes()
-            ->where('empresa_id', $empresa->id)
-            ->where('ativo', true)
-            ->count();
-
         $visitasQuery = Visita::withoutGlobalScopes()->where('empresa_id', $empresa->id);
 
         return response()->json([
             'empresa' => new EmpresaResource($empresa),
             'uso' => [
-                'licencas_usadas' => $licencasUsadas,
-                'licencas_limite' => $empresa->limite_licencas,
-                'usuarios_total' => $usuariosTotal,
-                'usuarios_limite' => $empresa->limite_usuarios,
-                'pontos_venda_total' => $pontosVendaTotal,
-                'pontos_venda_limite' => $empresa->limite_pontos_venda,
+                ...UsoLicencas::resumo($empresa),
                 'visitas_total' => (clone $visitasQuery)->count(),
                 'visitas_ultimos_30_dias' => (clone $visitasQuery)->where('inicio_data', '>=', now()->subDays(30))->count(),
                 'pontos_venda_visitados' => (clone $visitasQuery)->distinct('ponto_venda_id')->count('ponto_venda_id'),
