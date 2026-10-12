@@ -2,14 +2,19 @@
 
 namespace App\Http\Controllers;
 
-use App\Enums\UserType;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Http\Requests\Usuario\AtualizarFotoUsuarioRequest;
 use App\Http\Resources\UsuarioResource;
 use App\Models\Dispositivo;
+use App\Models\PersonalAccessToken;
 use App\Models\Usuario;
 use App\Models\UsuarioLoginLog;
+use App\Support\Atestacao\Veredito;
+use App\Support\AtestacaoAparelho;
 use App\Support\DocumentosLegais;
+use App\Support\Seguranca;
+use App\Support\SessaoApp;
+use App\Support\VinculoAparelho;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -28,6 +33,10 @@ class AuthController extends Controller
             ->first();
 
         if (! $usuario || ! Hash::check($credenciais['senha'], $usuario->senha_hash)) {
+            if ($usuario) {
+                Seguranca::registrar(Seguranca::LOGIN_NEGADO, $usuario, null, ['motivo' => 'SENHA']);
+            }
+
             throw ValidationException::withMessages([
                 'email' => ['Credenciais inválidas.'],
             ]);
@@ -47,28 +56,51 @@ class AuthController extends Controller
             ]);
         }
 
-        // Trava de 1 sessão ativa por PROMOTOR: logar num aparelho novo derruba o antigo
-        // automaticamente. Não se aplica a ADMIN/GESTOR/SUPERADMIN (admin web sem restrição).
-        if ($usuario->user_type === UserType::PROMOTOR) {
+        // Trava de 1 aparelho por usuário no app (docs/67 §4): vale pra qualquer user_type que
+        // entra pelo app, não só PROMOTOR. Aparelho novo só entra pela troca self-service ou pela
+        // liberação do ADMIN (App\Support\VinculoAparelho, 423 fora disso). O admin web
+        // (canal `web`) segue sem trava nesta fase, mas o token dele não passa nas rotas do app
+        // (middleware canal.mobile) — senão bastava logar pelo navegador e usar o token no celular.
+        $canal = SessaoApp::canalDoLogin($request, $usuario);
+
+        if ($canal === SessaoApp::CANAL_MOBILE) {
             if (empty($credenciais['dispositivo_identificador'])) {
                 throw ValidationException::withMessages([
                     'dispositivo_identificador' => ['Obrigatório para login do app mobile.'],
                 ]);
             }
 
-            // Revoga qualquer token anterior — garante no máximo 1 sessão válida, mesmo se for
-            // o mesmo aparelho logando de novo (mais simples que comparar identificador antigo
-            // x novo, e cobre igualmente o caso de aparelho diferente).
-            $usuario->tokens()->delete();
+            // Licença do app atribuída pelo ADMIN (docs/67 §3) — sem ela, nem vincula aparelho.
+            if (! $usuario->licenca_mobile) {
+                // Rastro pro ADMIN: quem tentou usar o app sem licença (achado no teste no celular).
+                Seguranca::registrar(Seguranca::LOGIN_NEGADO, $usuario, null, ['motivo' => 'SEM_LICENCA']);
 
-            Dispositivo::updateOrCreate(
-                ['usuario_id' => $usuario->id],
-                [
-                    'identificador' => $credenciais['dispositivo_identificador'],
-                    'nome' => $credenciais['dispositivo_nome'] ?? null,
-                    'ultimo_acesso_em' => now(),
-                ]
-            );
+                return response()->json([
+                    'message' => 'Você não tem licença do app Horus. Fale com seu gestor.',
+                    'codigo' => 'SEM_LICENCA',
+                ], 403);
+            }
+
+            // Fase 3 (docs/67): root/emulador e atestação do app ANTES de vincular — aparelho que não
+            // passa não pode ocupar o vínculo. Desligada a obrigatoriedade, só gera alerta.
+            $sinal = AtestacaoAparelho::avaliarSinais($usuario, $credenciais['integridade'] ?? null);
+            $mesmoAparelho = $usuario->dispositivo?->identificador_hash === Dispositivo::hashIdentificador($credenciais['dispositivo_identificador'])
+                ? $usuario->dispositivo
+                : null;
+            $veredito = AtestacaoAparelho::exigir($usuario, $credenciais['atestacao'] ?? null, $credenciais['chave_publica'] ?? null, $mesmoAparelho);
+
+            $dispositivo = VinculoAparelho::resolver($usuario, [
+                'identificador' => $credenciais['dispositivo_identificador'],
+                'nome' => $credenciais['dispositivo_nome'] ?? null,
+                'plataforma' => $credenciais['dispositivo_plataforma'] ?? null,
+                'versao_so' => $credenciais['dispositivo_versao_so'] ?? null,
+                'versao_app' => $request->header('X-App-Version'),
+            ]);
+            AtestacaoAparelho::aplicar($dispositivo, $veredito, $credenciais['chave_publica'] ?? null, $sinal);
+
+            // Revoga as sessões anteriores do app — garante no máximo 1 sessão mobile válida,
+            // mesmo se for o mesmo aparelho logando de novo. As do admin web ficam.
+            SessaoApp::revogarMobile($usuario, SessaoApp::MOTIVO_NOVO_LOGIN);
         }
 
         // Log append-only pro histórico de eventos do usuário no admin web (ver
@@ -76,11 +108,15 @@ class AuthController extends Controller
         // último acesso.
         UsuarioLoginLog::create([
             'usuario_id' => $usuario->id,
-            'dispositivo_identificador' => $credenciais['dispositivo_identificador'] ?? null,
+            // Só o hash (docs/67 §4.2) — o identificador puro do aparelho nunca é guardado.
+            'dispositivo_identificador' => isset($credenciais['dispositivo_identificador'])
+                ? Dispositivo::hashIdentificador($credenciais['dispositivo_identificador'])
+                : null,
             'dispositivo_nome' => $credenciais['dispositivo_nome'] ?? null,
         ]);
 
-        $token = $usuario->createToken('acesso-api')->plainTextToken;
+        $token = SessaoApp::emitir($usuario, $canal, $request, $dispositivo ?? null);
+        Seguranca::registrar(Seguranca::LOGIN, $usuario, $dispositivo ?? null, ['canal' => $canal]);
         // Termos/Política pendentes (docs/58 §5.3) — os apps mostram a tela de aceite antes de entrar.
         $usuario->documentosPendentes = DocumentosLegais::pendentes($usuario);
 
@@ -90,6 +126,55 @@ class AuthController extends Controller
             // contratados (ex.: aba "Pedidos" do modo Vendedor, docs/38-PEDIDO-VENDEDOR.md §4/§12)
             // sem esperar um /auth/me.
             'usuario' => new UsuarioResource($usuario->loadMissing(['perfil', 'empresa'])),
+        ]);
+    }
+
+    /**
+     * Renova o token do app (docs/67 §4.4): token novo com mais VALIDADE_DIAS e o atual marcado
+     * como rotacionado (segue valendo só pela tolerância das requisições em voo). Renovar de novo
+     * com um token já rotacionado é sinal de cópia — derruba as sessões mobile do usuário.
+     */
+    public function refresh(Request $request): JsonResponse
+    {
+        $usuario = $request->user();
+        $atual = $usuario->currentAccessToken();
+
+        if (! $atual instanceof PersonalAccessToken || $atual->canal === SessaoApp::CANAL_WEB) {
+            return response()->json(['message' => 'Só sessões do app são renovadas.'], 403);
+        }
+
+        if ($atual->rotacionado_em !== null) {
+            SessaoApp::registrarReuso($atual);
+
+            return response()->json(['message' => 'Sessão encerrada. Entre de novo.'], 401);
+        }
+
+        $dispositivo = $atual->dispositivo_id ? Dispositivo::find($atual->dispositivo_id) : $usuario->dispositivo;
+
+        // Fase 3: atestação também no refresh (docs/67 §5.3) — a chave é a já registrada no aparelho.
+        if ($dispositivo) {
+            $atestacao = $request->validate(['atestacao' => ['nullable', 'array']])['atestacao'] ?? null;
+            $veredito = AtestacaoAparelho::exigir($usuario, $atestacao, $dispositivo->chave_publica, $dispositivo);
+            if ($veredito->status !== Veredito::NAO_ENVIADA) {
+                AtestacaoAparelho::aplicar($dispositivo, $veredito, null, null);
+            }
+        }
+
+        $atual->forceFill(['rotacionado_em' => now()])->save();
+
+        return response()->json([
+            'token' => SessaoApp::emitir($usuario, SessaoApp::CANAL_MOBILE, $request, $dispositivo),
+        ]);
+    }
+
+    /** Desafio de uso único pra atestação do app (docs/67 Fase 3), pedido antes do login/refresh. */
+    public function desafio(): JsonResponse
+    {
+        return response()->json([
+            ...AtestacaoAparelho::emitirDesafio(),
+            // O app só tenta atestar quando sabe que o servidor está configurado pra isso.
+            'obrigatoria' => AtestacaoAparelho::obrigatoria(),
+            'play_integrity_projeto' => config('seguranca.play_integrity.numero_projeto_cloud') ?: null,
         ]);
     }
 

@@ -50,13 +50,17 @@ class UsuarioResource extends JsonResource
                 'centroCusto',
                 fn () => $this->centroCusto ? ['id' => $this->centroCusto->uuid, 'descricao' => $this->centroCusto->descricao] : null,
             ),
-            // Só tem valor pra PROMOTOR — trava de 1 dispositivo por vez, ver
-            // AuthController::login. null quando nunca logou pelo mobile.
+            // Licença do app mobile atribuída pelo ADMIN (docs/67 §3).
+            'licenca_mobile' => (bool) $this->licenca_mobile,
+            // Aparelho vinculado agora ao app (docs/67 §4) — null quando não há. O identificador
+            // só existe como hash; o começo dele serve de rótulo quando o app não mandou o modelo.
             'dispositivo' => $this->whenLoaded(
                 'dispositivo',
                 fn () => $this->dispositivo ? [
-                    'identificador' => $this->dispositivo->identificador,
+                    'identificador' => substr((string) $this->dispositivo->identificador_hash, 0, 8),
                     'nome' => $this->dispositivo->nome,
+                    'plataforma' => $this->dispositivo->plataforma,
+                    'vinculado_em' => $this->dispositivo->vinculado_em,
                     'ultimo_acesso_em' => $this->dispositivo->ultimo_acesso_em,
                 ] : null,
             ),

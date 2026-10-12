@@ -31,6 +31,7 @@ use App\Support\HorarioDoCampo;
 use App\Support\Instante;
 use App\Support\RaioCheckin;
 use App\Support\Rastreamento;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -193,73 +194,93 @@ class VisitaController extends Controller
             ? OrdemServico::withoutGlobalScopes()->where('uuid', $dados['ordem_servico_uuid'])->first()
             : null;
 
-        // Já existe uma visita ABERTA deste promotor NESTA loja? Retoma ela em vez de criar outra. Duas
-        // visitas abertas na mesma loja travavam a ordem de serviço na primeira (a segunda nascia sem
-        // vínculo e o formulário do Direcionamento não aparecia) e deixavam lixo aberto no servidor
-        // quando o app perdia a visita local. A distância já foi validada acima — retomar não burla o raio.
-        $aberta = Visita::where('usuario_id', $request->user()->id)
-            ->where('ponto_venda_id', $pontoVenda->id)
-            ->where('status', StatusVisita::ABERTA)
-            ->orderByDesc('id')
-            ->first();
+        // docs/57 #13 — check-ins simultâneos do mesmo promotor (duplo toque, fila reenviando junto
+        // com o app em primeiro plano). Sem trava, as duas requisições passam pelo "já tem visita
+        // aberta?" antes de qualquer uma criar. Serializa por promotor (lock na linha do usuário) e,
+        // se a outra ganhou com a mesma idempotency_key, devolve a visita dela em vez de 500.
+        try {
+            return DB::transaction(function () use ($request, $dados, $pontoVenda, $ordemServico, $distancia) {
+                Usuario::withoutGlobalScopes()->whereKey($request->user()->id)->lockForUpdate()->first();
 
-        if ($aberta) {
-            // Se a retomada chegou com uma OS pendente e a visita aberta ainda não tem nenhuma, vincula.
-            if ($ordemServico && ! $aberta->ordem_servico_id) {
-                $aberta->update(['ordem_servico_id' => $ordemServico->id]);
-                $ordemServico->update(['status' => StatusOrdemServico::EM_ANDAMENTO, 'visita_id' => $aberta->id]);
+                // Já existe uma visita ABERTA deste promotor NESTA loja? Retoma ela em vez de criar outra. Duas
+                // visitas abertas na mesma loja travavam a ordem de serviço na primeira (a segunda nascia sem
+                // vínculo e o formulário do Direcionamento não aparecia) e deixavam lixo aberto no servidor
+                // quando o app perdia a visita local. A distância já foi validada acima — retomar não burla o raio.
+                $aberta = Visita::where('usuario_id', $request->user()->id)
+                    ->where('ponto_venda_id', $pontoVenda->id)
+                    ->where('status', StatusVisita::ABERTA)
+                    ->orderByDesc('id')
+                    ->first();
+
+                if ($aberta) {
+                    // Se a retomada chegou com uma OS pendente e a visita aberta ainda não tem nenhuma, vincula.
+                    if ($ordemServico && ! $aberta->ordem_servico_id) {
+                        $aberta->update(['ordem_servico_id' => $ordemServico->id]);
+                        $ordemServico->update(['status' => StatusOrdemServico::EM_ANDAMENTO, 'visita_id' => $aberta->id]);
+                    }
+
+                    return response()->json([
+                        'visita' => new VisitaResource($aberta->load(['pontoVenda', 'campanha', 'ordemServico'])),
+                        'retomada' => true,
+                    ], 200);
+                }
+
+                // Visita ABERTA deste promotor em OUTRA loja — diferente do caso acima, aqui não tem o que
+                // retomar (é outro PDV de verdade), então recusa. Até agora essa regra só existia no
+                // aparelho (lib/visitaLocal.ts::iniciarVisitaLocal, "uma visita por vez") — sem trava aqui,
+                // qualquer coisa que fizesse o estado local divergir do servidor (reinstalar o app, trocar
+                // de aparelho, limpar dados) deixava abrir uma segunda visita ABERTA de verdade. O check-in
+                // no mobile é assíncrono (fila de envio, ver docs/04-APP-MOBILE.md) — essa `message` chega
+                // como rejeição permanente e vira "Check-in recusado pelo servidor: ..." pro promotor, sem
+                // precisar de nenhuma mudança no app.
+                $outraAberta = Visita::where('usuario_id', $request->user()->id)
+                    ->where('ponto_venda_id', '!=', $pontoVenda->id)
+                    ->where('status', StatusVisita::ABERTA)
+                    ->with('pontoVenda')
+                    ->orderByDesc('id')
+                    ->first();
+
+                if ($outraAberta) {
+                    return response()->json([
+                        'message' => "Você já está em uma visita em {$outraAberta->pontoVenda->fantasia}. Finalize-a antes de iniciar outra.",
+                    ], 422);
+                }
+
+                $visita = Visita::create([
+                    'ponto_venda_id' => $pontoVenda->id,
+                    'usuario_id' => $request->user()->id,
+                    'campanha_id' => $this->resolverCampanhaUnica(),
+                    'ordem_servico_id' => $ordemServico?->id,
+                    'idempotency_key' => $dados['idempotency_key'] ?? null,
+                    'status' => StatusVisita::ABERTA,
+                    // Hora do campo, não da chegada (docs/51 §3.5) — check-in feito offline e enviado
+                    // depois mantém o horário real. Sem `inicio_em` (APK antigo) = agora, como antes.
+                    'inicio_data' => HorarioDoCampo::resolver($dados['inicio_em'] ?? null),
+                    'checkin_recebido_em' => now(),
+                    'inicio_latitude' => $dados['latitude'],
+                    'inicio_longitude' => $dados['longitude'],
+                    'inicio_distancia_metros' => $distancia,
+                ]);
+
+                if ($ordemServico) {
+                    $ordemServico->update(['status' => StatusOrdemServico::EM_ANDAMENTO, 'visita_id' => $visita->id]);
+                }
+
+                return response()->json([
+                    'visita' => new VisitaResource($visita->load(['pontoVenda', 'campanha', 'ordemServico'])),
+                ], 201);
+            });
+        } catch (UniqueConstraintViolationException $e) {
+            $existente = ! empty($dados['idempotency_key']) ? Visita::where('idempotency_key', $dados['idempotency_key'])->first() : null;
+            if (! $existente) {
+                throw $e;
             }
+            $this->autorizarAcesso($request, $existente);
 
             return response()->json([
-                'visita' => new VisitaResource($aberta->load(['pontoVenda', 'campanha', 'ordemServico'])),
-                'retomada' => true,
+                'visita' => new VisitaResource($existente->load(['pontoVenda', 'campanha', 'ordemServico'])),
             ], 200);
         }
-
-        // Visita ABERTA deste promotor em OUTRA loja — diferente do caso acima, aqui não tem o que
-        // retomar (é outro PDV de verdade), então recusa. Até agora essa regra só existia no
-        // aparelho (lib/visitaLocal.ts::iniciarVisitaLocal, "uma visita por vez") — sem trava aqui,
-        // qualquer coisa que fizesse o estado local divergir do servidor (reinstalar o app, trocar
-        // de aparelho, limpar dados) deixava abrir uma segunda visita ABERTA de verdade. O check-in
-        // no mobile é assíncrono (fila de envio, ver docs/04-APP-MOBILE.md) — essa `message` chega
-        // como rejeição permanente e vira "Check-in recusado pelo servidor: ..." pro promotor, sem
-        // precisar de nenhuma mudança no app.
-        $outraAberta = Visita::where('usuario_id', $request->user()->id)
-            ->where('ponto_venda_id', '!=', $pontoVenda->id)
-            ->where('status', StatusVisita::ABERTA)
-            ->with('pontoVenda')
-            ->orderByDesc('id')
-            ->first();
-
-        if ($outraAberta) {
-            return response()->json([
-                'message' => "Você já está em uma visita em {$outraAberta->pontoVenda->fantasia}. Finalize-a antes de iniciar outra.",
-            ], 422);
-        }
-
-        $visita = Visita::create([
-            'ponto_venda_id' => $pontoVenda->id,
-            'usuario_id' => $request->user()->id,
-            'campanha_id' => $this->resolverCampanhaUnica(),
-            'ordem_servico_id' => $ordemServico?->id,
-            'idempotency_key' => $dados['idempotency_key'] ?? null,
-            'status' => StatusVisita::ABERTA,
-            // Hora do campo, não da chegada (docs/51 §3.5) — check-in feito offline e enviado
-            // depois mantém o horário real. Sem `inicio_em` (APK antigo) = agora, como antes.
-            'inicio_data' => HorarioDoCampo::resolver($dados['inicio_em'] ?? null),
-            'checkin_recebido_em' => now(),
-            'inicio_latitude' => $dados['latitude'],
-            'inicio_longitude' => $dados['longitude'],
-            'inicio_distancia_metros' => $distancia,
-        ]);
-
-        if ($ordemServico) {
-            $ordemServico->update(['status' => StatusOrdemServico::EM_ANDAMENTO, 'visita_id' => $visita->id]);
-        }
-
-        return response()->json([
-            'visita' => new VisitaResource($visita->load(['pontoVenda', 'campanha', 'ordemServico'])),
-        ], 201);
     }
 
     public function checkout(CheckoutVisitaRequest $request, Visita $visita): JsonResponse

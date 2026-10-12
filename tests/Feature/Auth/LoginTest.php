@@ -131,7 +131,7 @@ class LoginTest extends TestCase
         $response->assertOk();
         $this->assertDatabaseHas('dispositivos', [
             'usuario_id' => $usuario->id,
-            'identificador' => 'aparelho-1',
+            'identificador_hash' => hash('sha256', 'aparelho-1'),
             'nome' => 'Moto G',
         ]);
     }
@@ -159,6 +159,7 @@ class LoginTest extends TestCase
         // token contra o banco, mascarando a revogação. Nunca acontece em produção (cada
         // request HTTP real é um processo PHP novo).
         $this->app['auth']->forgetGuards();
+        $this->app['auth']->shouldUse('web');
 
         $this->postJson('/api/auth/login', [
             'email' => $usuario->email,
@@ -167,15 +168,19 @@ class LoginTest extends TestCase
         ])->assertOk();
 
         $this->app['auth']->forgetGuards();
+        $this->app['auth']->shouldUse('web');
 
         // Token antigo foi revogado pelo login no aparelho novo.
         $this->withToken($tokenAntigo)->getJson('/api/auth/me')->assertStatus(401);
 
         $this->assertDatabaseHas('dispositivos', [
             'usuario_id' => $usuario->id,
-            'identificador' => 'aparelho-novo',
+            'identificador_hash' => hash('sha256', 'aparelho-novo'),
+            'desvinculado_em' => null,
         ]);
-        $this->assertDatabaseCount('dispositivos', 1);
+        // Histórico (docs/67 §4.2): o antigo fica, desvinculado — só 1 ativo.
+        $this->assertDatabaseCount('dispositivos', 2);
+        $this->assertSame(1, \App\Models\Dispositivo::where('usuario_id', $usuario->id)->whereNull('desvinculado_em')->count());
     }
 
     public function test_logout_invalida_o_token_atual(): void

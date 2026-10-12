@@ -27,6 +27,9 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'user_type' => \App\Http\Middleware\EnsureUserType::class,
             'permissao' => \App\Http\Middleware\EnsurePermissao::class,
+            'licenca' => \App\Http\Middleware\EnsureLicencaValida::class,
+            'canal.mobile' => \App\Http\Middleware\EnsureCanalMobile::class,
+            'assinatura' => \App\Http\Middleware\EnsureAssinaturaAparelho::class,
         ]);
 
         // App é só API, sem tela de login web — sem isso, uma request sem header Accept
@@ -37,11 +40,26 @@ return Application::configure(basePath: dirname(__DIR__))
         // Uso do dia por usuário/app pra medir adesão (docs/52) — roda depois da resposta, quando
         // o auth:sanctum da rota já identificou o usuário.
         $middleware->api(append: [\App\Http\Middleware\RegistrarAcessoDiario::class]);
+
+        // Versão mínima do app (docs/67 Fase 2) — antes de tudo, inclusive do login.
+        $middleware->api(prepend: [\App\Http\Middleware\EnsureVersaoApp::class]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         // Garante resposta em JSON pra qualquer exceção em /api/*, independente do header
         // Accept enviado pelo cliente.
         $exceptions->shouldRenderJsonWhen(fn ($request, $e) => $request->is('api/*') || $request->expectsJson());
+
+        // Sessão revogada com motivo (docs/67 §4.5): o 401 diz por que caiu, pro app mostrar
+        // "Sua conta entrou em outro aparelho (Moto G, 14:32)" na tela de login.
+        $exceptions->render(function (\Illuminate\Auth\AuthenticationException $e, Request $request) {
+            $encerrada = $request->attributes->get(\App\Support\SessaoApp::ATRIBUTO_SESSAO_ENCERRADA);
+            if ($encerrada && $request->is('api/*')) {
+                return new JsonResponse([
+                    'message' => \App\Support\SessaoApp::mensagem($encerrada['motivo'], $encerrada['detalhe']),
+                    'motivo' => $encerrada['motivo'],
+                ], 401);
+            }
+        });
 
         // Toda entidade tenant-aware é endereçada só por uuid (route model binding e queries
         // manuais tipo Model::where('uuid', ...)) — mas a coluna é do tipo `uuid` nativo do

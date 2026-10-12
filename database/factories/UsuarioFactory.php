@@ -55,7 +55,8 @@ class UsuarioFactory extends Factory
 
     public function promotor(): static
     {
-        return $this->state(['user_type' => UserType::PROMOTOR]);
+        // Promotor só trabalha no app — nasce com a licença mobile (docs/67 §3).
+        return $this->state(['user_type' => UserType::PROMOTOR, 'licenca_mobile' => true]);
     }
 
     // SUPERADMIN não pertence a nenhuma empresa (ver docs/02-API-BACKEND.md) — sobrescreve o
@@ -63,6 +64,12 @@ class UsuarioFactory extends Factory
     public function superadmin(): static
     {
         return $this->state(['user_type' => UserType::SUPERADMIN, 'empresa_id' => null]);
+    }
+
+    /** Licença do app mobile atribuída (docs/67 §3) — pra GESTOR/ADMIN que usam o app. */
+    public function comLicencaMobile(): static
+    {
+        return $this->state(['licenca_mobile' => true]);
     }
 
     public function inativo(): static

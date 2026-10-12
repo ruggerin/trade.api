@@ -15,6 +15,9 @@ use App\Models\VisitaRegistro;
 use App\Support\Fuso;
 use Carbon\Carbon;
 use App\Support\Adesao;
+use App\Support\Seguranca;
+use App\Support\UsoLicencas;
+use App\Support\VinculoAparelho;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -128,21 +131,11 @@ class UsuarioController extends Controller
             ], 422);
         }
 
-        // Cobrança por licença de dispositivo: só PROMOTOR consome licença (é o único
-        // user_type com 1 dispositivo travado por vez, ver AuthController::login) — limite
-        // separado de limite_usuarios (esse é o headcount geral do plano).
-        if ($dados['user_type'] === UserType::PROMOTOR->value && $empresa->limite_licencas !== null) {
-            $licencasUsadas = Usuario::withoutGlobalScopes()
-                ->where('empresa_id', $empresa->id)
-                ->where('user_type', UserType::PROMOTOR)
-                ->where('ativo', true)
-                ->count();
-
-            if ($licencasUsadas >= $empresa->limite_licencas) {
-                return response()->json([
-                    'message' => "Limite de licenças de promotor atingido ({$empresa->limite_licencas}). Fale com o suporte pra contratar mais.",
-                ], 422);
-            }
+        // Licença do app mobile atribuída no cadastro (docs/67 §3), qualquer user_type — PROMOTOR
+        // nasce com ela (só trabalha no app). Limite separado de limite_usuarios (headcount geral).
+        $licencaMobile = $dados['licenca_mobile'] ?? $dados['user_type'] === UserType::PROMOTOR->value;
+        if ($licencaMobile && ! UsoLicencas::comportaMaisUma($empresa)) {
+            return response()->json(['message' => UsoLicencas::mensagemLimite($empresa)], 422);
         }
 
         $usuario = Usuario::create([
@@ -158,6 +151,7 @@ class UsuarioController extends Controller
                 ? CentroCusto::where('uuid', $dados['centro_custo_uuid'])->value('id')
                 : null,
             'avatar_url' => $dados['avatar_url'] ?? null,
+            'licenca_mobile' => $licencaMobile,
         ]);
         $usuario->load(['perfil', 'centroCusto', 'dispositivo', 'empresa']);
 
@@ -189,7 +183,30 @@ class UsuarioController extends Controller
             unset($dados['centro_custo_uuid']);
         }
 
+        // Licença do app (docs/67 §3): atribuir, reativar quem tem ou transformar alguém em PROMOTOR
+        // (que ganha a licença, só trabalha no app) passa a consumir — mesma trava do store (brecha
+        // B2). Só checa quando o usuário NÃO consumia antes, senão editar o nome de quem já tem
+        // licença com o limite cheio daria 422.
+        $viraPromotor = ($dados['user_type'] ?? null) === UserType::PROMOTOR->value && $usuario->user_type !== UserType::PROMOTOR;
+        $licencaDepois = (bool) ($dados['licenca_mobile'] ?? ($viraPromotor ? true : $usuario->licenca_mobile));
+        $consumiaAntes = $usuario->ativo && $usuario->licenca_mobile;
+        $consomeDepois = ($dados['ativo'] ?? $usuario->ativo) && $licencaDepois;
+        if (! $consumiaAntes && $consomeDepois && ! UsoLicencas::comportaMaisUma($usuario->empresa)) {
+            return response()->json(['message' => UsoLicencas::mensagemLimite($usuario->empresa)], 422);
+        }
+        $dados['licenca_mobile'] = $licencaDepois;
+        $perdeuLicenca = $usuario->licenca_mobile && ! $licencaDepois;
+
         $usuario->update($dados);
+
+        // Licença removida: o aparelho sai (vai pro histórico) e a sessão do app cai com o motivo.
+        if ($perdeuLicenca && ($aparelho = $usuario->dispositivo()->first())) {
+            VinculoAparelho::desvincular($aparelho, 'LICENCA_REMOVIDA', $request->user());
+            Seguranca::registrar(Seguranca::APARELHO_DESVINCULADO, $usuario, $aparelho, [
+                'motivo' => 'licença removida',
+                'por' => $request->user()->nome,
+            ]);
+        }
         $usuario->load(['perfil', 'centroCusto', 'dispositivo']);
 
         return response()->json([
@@ -251,10 +268,11 @@ class UsuarioController extends Controller
      * perdido/roubado, ou troca de celular do promotor sem esperar ele logar de novo pra
      * liberar a licença. Não é a mesma coisa que a trava automática do login (ver
      * AuthController::login): aqui é uma ação deliberada do ADMIN/GESTOR, sem precisar do
-     * promotor fazer nada primeiro. Login novo continua funcionando normalmente depois — só
-     * exige um dispositivo_identificador de novo (obrigatório pra qualquer PROMOTOR).
+     * promotor fazer nada primeiro. O próximo aparelho que logar é vinculado sem contar como troca
+     * self-service (docs/67 §4.3). O vínculo vai pro histórico; a sessão do app cai com o motivo,
+     * a do admin web (se houver) fica.
      */
-    public function revogarDispositivo(Usuario $usuario): JsonResponse
+    public function revogarDispositivo(Request $request, Usuario $usuario): JsonResponse
     {
         if (! $usuario->dispositivo) {
             return response()->json([
@@ -262,8 +280,11 @@ class UsuarioController extends Controller
             ], 422);
         }
 
-        $usuario->dispositivo()->delete();
-        $usuario->tokens()->delete();
+        $dispositivo = $usuario->dispositivo;
+        VinculoAparelho::desvincular($dispositivo, 'DESVINCULADO_ADMIN', $request->user());
+        Seguranca::registrar(Seguranca::APARELHO_DESVINCULADO, $usuario, $dispositivo, [
+            'por' => $request->user()->nome,
+        ]);
 
         return response()->json(status: 204);
     }

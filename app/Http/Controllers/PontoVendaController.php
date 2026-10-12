@@ -93,6 +93,12 @@ class PontoVendaController extends Controller
                     fn ($q) => $q->where('usuarios.uuid', $request->string('promotor_uuid')),
                 ),
             )
+            // Só lojas com contrato ativo — mesma regra do `tem_contrato_ativo` abaixo (escopo CONTRATO
+            // da Ação). Usado pelo "Enviar agora pro app" do formulário (docs/66 §2.2).
+            ->when(
+                $request->boolean('com_contrato_ativo'),
+                fn ($query) => $query->whereHas('contratos', fn ($q) => $q->where('ativo', true)),
+            )
             // Visibilidade de PDV pro PROMOTOR — ver docs/12-VISIBILIDADE-PONTOS-DE-VENDA.md.
             // ADMIN/GESTOR/SUPERADMIN sempre veem tudo, sem nenhuma restrição abaixo.
             ->when(

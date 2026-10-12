@@ -32,6 +32,8 @@ class StoreUsuarioRequest extends FormRequest
             'email' => ['required', 'email', 'unique:usuarios,email'],
             'codigo_externo' => ['nullable', 'string', 'max:64'],
             'senha' => ['required', 'string', 'min:8'],
+            // Licença do app mobile (docs/67 §3) — ausente: PROMOTOR com, demais sem.
+            'licenca_mobile' => ['sometimes', 'boolean'],
             // SUPERADMIN nunca é atribuível por aqui — só via comando artisan
             // usuario:criar-superadmin, fora da API pública.
             'user_type' => ['required', Rule::in([

@@ -43,6 +43,7 @@ use App\Http\Controllers\RamoAtividadeController;
 use App\Http\Controllers\RedeLojaController;
 use App\Http\Controllers\RegistroController;
 use App\Http\Controllers\SecaoAuditoriaController;
+use App\Http\Controllers\SegurancaAparelhoController;
 use App\Http\Controllers\SortimentoPontoVendaController;
 use App\Http\Controllers\MotivoNaoExecucaoController;
 use App\Http\Controllers\MotivoResolucaoAlertaController;
@@ -55,14 +56,21 @@ use Illuminate\Support\Facades\Route;
 
 // Público — signup de empresa (cria o tenant) e login.
 Route::post('/empresas/signup', [EmpresaController::class, 'signup']);
-Route::post('/auth/login', [AuthController::class, 'login']);
+// docs/67 §2 (B8): limite de tentativas por e-mail+IP e por IP (RateLimiter 'login' no AppServiceProvider).
+Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:login');
+// Desafio de uso único pra atestação do app (docs/67 Fase 3) — antes do login e do refresh.
+Route::post('/auth/desafio', [AuthController::class, 'desafio'])->middleware('throttle:30,1');
 // Termos de Uso / Política de Privacidade (docs/58 §5.2) — leitura pública, sem login.
 Route::get('/documentos-legais/{slug}', [DocumentoLegalController::class, 'show'])
     ->where('slug', 'termos-de-uso|politica-de-privacidade');
 
-// Autenticado (qualquer user_type).
-Route::middleware('auth:sanctum')->group(function (): void {
+// Autenticado (qualquer user_type). `licenca` (docs/67 §5.1): usuário/empresa ativos e aparelho
+// vinculado checados em todo request, não só no login.
+// `assinatura` (docs/67 Fase 3): aparelho com chave registrada assina cada request.
+Route::middleware(['auth:sanctum', 'licenca', 'assinatura'])->group(function (): void {
     Route::post('/auth/logout', [AuthController::class, 'logout']);
+    // Renovação do token do app (docs/67 §4.4).
+    Route::post('/auth/refresh', [AuthController::class, 'refresh']);
     Route::get('/auth/me', [AuthController::class, 'me']);
     // Aceite dos Termos/Política pelo próprio usuário (docs/58 §5.4).
     Route::post('/auth/me/aceites', [DocumentoLegalController::class, 'aceitar']);
@@ -135,7 +143,7 @@ Route::middleware('auth:sanctum')->group(function (): void {
     // pontos_venda.gerenciar (bloco abaixo, ver PontoVendaController::atualizarFachada).
     Route::get('/pontos-venda/{pontoVenda}/fachada', [PontoVendaController::class, 'fachada']);
     // Promotor envia a fachada só quando a loja ainda não tem (não substitui a do admin).
-    Route::post('/pontos-venda/{pontoVenda}/fachada-promotor', [PontoVendaController::class, 'enviarFachadaPromotor']);
+    Route::post('/pontos-venda/{pontoVenda}/fachada-promotor', [PontoVendaController::class, 'enviarFachadaPromotor'])->middleware('canal.mobile');
     // Histórico da loja e pedidos do ERP — só leitura, qualquer autenticado (é o que o promotor vê
     // ao entrar na loja). Ver docs/28-RELATORIOS-FEEDBACK-HISTORICO.md §4.
     Route::get('/pontos-venda/{pontoVenda}/historico', [HistoricoLojaController::class, 'show']);
@@ -159,16 +167,16 @@ Route::middleware('auth:sanctum')->group(function (): void {
     // só mexe nas próprias visitas) é checado dentro dos controllers.
     Route::get('/visitas', [VisitaController::class, 'index']);
     Route::get('/visitas/{visita}', [VisitaController::class, 'show']);
-    Route::post('/visitas', [VisitaController::class, 'store']);
-    Route::patch('/visitas/{visita}/checkout', [VisitaController::class, 'checkout']);
+    Route::post('/visitas', [VisitaController::class, 'store'])->middleware('canal.mobile');
+    Route::patch('/visitas/{visita}/checkout', [VisitaController::class, 'checkout'])->middleware('canal.mobile');
     // Autosserviço: promotor cancela a própria visita em andamento, parametrizável por empresa
     // (VISITA_CANCELAMENTO_PERMITIDO) — mesmo raciocínio do cancelamento de registro, não se
     // confunde com a intervenção administrativa (bloco visitas.intervir abaixo). Ver
     // VisitaController::cancelarPropria.
-    Route::post('/visitas/{visita}/cancelar-propria', [VisitaController::class, 'cancelarPropria']);
+    Route::post('/visitas/{visita}/cancelar-propria', [VisitaController::class, 'cancelarPropria'])->middleware('canal.mobile');
     // Saída de segurança: gestor/admin autoriza o cancelamento com e-mail e senha no aparelho do promotor.
-    Route::post('/visitas/{visita}/cancelar-autorizado', [VisitaController::class, 'cancelarAutorizado']);
-    Route::post('/visitas/{visita}/registros', [VisitaRegistroController::class, 'store']);
+    Route::post('/visitas/{visita}/cancelar-autorizado', [VisitaController::class, 'cancelarAutorizado'])->middleware('canal.mobile');
+    Route::post('/visitas/{visita}/registros', [VisitaRegistroController::class, 'store'])->middleware('canal.mobile');
     // Serve o arquivo de uma foto de evidência — não depende mais de um registro específico
     // (uma foto pode evidenciar N registros), ver docs/21-EVIDENCIA-EM-FOTOS.md.
     Route::get('/visitas/{visita}/imagens/{imagem}', [ImagemRegistroController::class, 'show']);
@@ -245,10 +253,10 @@ Route::middleware('auth:sanctum')->group(function (): void {
 
     // Rastreamento em tempo real (docs/11-RASTREAMENTO-TEMPO-REAL.md): o promotor manda a própria
     // posição; o mapa ao vivo do admin lê a lista, sob permissão dedicada.
-    Route::patch('/localizacao', [LocalizacaoController::class, 'atualizar']);
+    Route::patch('/localizacao', [LocalizacaoController::class, 'atualizar'])->middleware('canal.mobile');
     // Situação do rastreamento informada pelo app (por que está ou não rastreando) e lista de
     // irregulares pro Mapa ao vivo — docs/47-RASTREAMENTO-EXIGENCIA.md.
-    Route::patch('/localizacao/situacao', [LocalizacaoController::class, 'situacao']);
+    Route::patch('/localizacao/situacao', [LocalizacaoController::class, 'situacao'])->middleware('canal.mobile');
     Route::get('/localizacoes/conformidade', [LocalizacaoController::class, 'conformidade'])->middleware('permissao:rastreamento.visualizar');
     Route::get('/localizacoes', [LocalizacaoController::class, 'index'])->middleware('permissao:rastreamento.visualizar');
     // Rota do dia (docs/48-ROTA-DO-DIA.md) — trajeto histórico de um promotor num dia, permissão própria.
@@ -282,21 +290,25 @@ Route::middleware('auth:sanctum')->group(function (): void {
     // mobile) — ownership em vez de RBAC, sem exigir ordens_servico.gerenciar. Autônomo ou vira
     // solicitação, dependendo do parâmetro AGENDA_REQUER_APROVACAO da empresa. Ver
     // docs/13-AGENDA-MOBILE-E-AUTONOMIA.md.
-    Route::post('/ordens-servico/minhas', [OrdemServicoController::class, 'minhas']);
-    Route::post('/ordens-servico/{ordemServico}/reagendar', [OrdemServicoController::class, 'reagendar']);
-    Route::post('/ordens-servico/{ordemServico}/cancelar', [OrdemServicoController::class, 'cancelar']);
+    Route::post('/ordens-servico/minhas', [OrdemServicoController::class, 'minhas'])->middleware('canal.mobile');
+    Route::post('/ordens-servico/{ordemServico}/reagendar', [OrdemServicoController::class, 'reagendar'])->middleware('canal.mobile');
+    Route::post('/ordens-servico/{ordemServico}/cancelar', [OrdemServicoController::class, 'cancelar'])->middleware('canal.mobile');
 
     // Self-service: o promotor cresce o sortimento do PDV ou cadastra um produto novo pela
     // própria visita — autonomia parametrizável por empresa (SORTIMENTO_AUTONOMIA_PROMOTOR/
     // CATALOGO_AUTONOMIA_PROMOTOR), sem exigir pontos_venda.gerenciar/catalogo.gerenciar. Ver
     // docs/14-SORTIMENTO-PONTO-VENDA.md §9.
-    Route::post('/pontos-venda/{pontoVenda}/sortimento/proprio', [SortimentoPontoVendaController::class, 'adicionarProprio']);
-    Route::post('/produtos-auditoria/proprio', [ProdutoAuditoriaController::class, 'proprio']);
+    Route::post('/pontos-venda/{pontoVenda}/sortimento/proprio', [SortimentoPontoVendaController::class, 'adicionarProprio'])->middleware('canal.mobile');
+    Route::post('/produtos-auditoria/proprio', [ProdutoAuditoriaController::class, 'proprio'])->middleware('canal.mobile');
 
     // Gestão de perfis (RBAC por empresa) — sempre ADMIN, nunca delegável por permissão
     // (evita um GESTOR se auto-promover editando o próprio perfil). Ver App\Models\Perfil.
     Route::middleware('user_type:ADMIN')->group(function (): void {
         Route::put('/empresa', [EmpresaController::class, 'update']);
+        // Licenças e plano do próprio tenant (docs/67 §3) — uso × limite e aparelhos vinculados.
+        Route::get('/empresa/licencas', [EmpresaController::class, 'licencas']);
+        // Trilha de segurança da empresa (docs/67 Fase 2).
+        Route::get('/empresa/eventos-seguranca', [SegurancaAparelhoController::class, 'eventos']);
 
         Route::get('/perfis', [PerfilController::class, 'index']);
         Route::post('/perfis', [PerfilController::class, 'store']);
@@ -433,6 +445,9 @@ Route::middleware('auth:sanctum')->group(function (): void {
         Route::delete('/campanhas-auditoria/{campanhaAuditoria}/itens/{item}', [CampanhaItemController::class, 'destroy']);
     });
 
+    // Tela de Configurações (docs/62). `lote` vem antes de `/parametros/{parametro}` pra não ser lido como uuid.
+    Route::get('/parametros/catalogo', [ParametroController::class, 'catalogo'])->middleware('permissao:parametros.gerenciar');
+    Route::put('/parametros/lote', [ParametroController::class, 'lote'])->middleware('permissao:parametros.gerenciar');
     Route::post('/parametros', [ParametroController::class, 'store'])->middleware('permissao:parametros.gerenciar');
     Route::put('/parametros/{parametro}', [ParametroController::class, 'update'])->middleware('permissao:parametros.gerenciar');
     Route::delete('/parametros/{parametro}', [ParametroController::class, 'destroy'])->middleware('permissao:parametros.gerenciar');
@@ -448,6 +463,12 @@ Route::middleware('auth:sanctum')->group(function (): void {
         Route::post('/usuarios', [UsuarioController::class, 'store']);
         Route::put('/usuarios/{usuario}', [UsuarioController::class, 'update']);
         Route::delete('/usuarios/{usuario}', [UsuarioController::class, 'destroy']);
+        // Acesso ao app mobile no cadastro do usuário (docs/67 §3): licença, aparelho, troca e
+        // pedidos de liberação — quem edita o usuário decide.
+        Route::get('/usuarios/{usuario}/acesso-app', [SegurancaAparelhoController::class, 'acessoApp']);
+        Route::post('/usuarios/{usuario}/liberar-troca-aparelho', [SegurancaAparelhoController::class, 'liberarTroca']);
+        Route::post('/solicitacoes-aparelho/{solicitacao}/aprovar', [SegurancaAparelhoController::class, 'aprovar']);
+        Route::post('/solicitacoes-aparelho/{solicitacao}/recusar', [SegurancaAparelhoController::class, 'recusar']);
         // ADMIN/GESTOR envia/remove a foto de outro usuário da empresa (distinto do
         // self-service em /auth/me/foto) — ver UsuarioController::atualizarFoto.
         Route::post('/usuarios/{usuario}/foto', [UsuarioController::class, 'atualizarFoto']);

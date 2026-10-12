@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Enums\UserType;
 use App\Models\Usuario;
+use App\Support\AnomaliaLocalizacao;
 use App\Support\Instante;
 use App\Support\OperacaoDoDia;
 use App\Support\Rastreamento;
@@ -38,6 +39,8 @@ class LocalizacaoController extends Controller
             'longitude' => ['required', 'numeric', 'between:-180,180'],
             // Momento em que o aparelho capturou a posição (não quando chegou aqui) — opcional.
             'capturado_em' => ['nullable', 'date'],
+            // Android marcou a leitura como simulada (app de GPS falso) — docs/67 §5.2.
+            'simulada' => ['nullable', 'boolean'],
         ]);
 
         // Instante sempre UTC (docs/50): um capturado_em com offset (-04:00) seria gravado com a
@@ -47,6 +50,15 @@ class LocalizacaoController extends Controller
         if ($capturadoEm->isFuture()) {
             $capturadoEm = now();
         }
+
+        // Revezamento de conta / GPS falso (docs/67): só registra evento pro ADMIN, nunca recusa.
+        AnomaliaLocalizacao::verificar(
+            $usuario,
+            (float) $dados['latitude'],
+            (float) $dados['longitude'],
+            $capturadoEm,
+            (bool) ($dados['simulada'] ?? false),
+        );
 
         // Rota do dia (docs/48 §4.1): toda leitura entra no histórico — inclusive um envio atrasado,
         // que é um ponto real do trajeto. insertOrIgnore: reenvio da mesma leitura não duplica.
