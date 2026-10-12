@@ -121,6 +121,8 @@ rodava com os defaults do PHP (128M de memória, upload de no máximo 2M).
 
 - **Fuso horário:** o servidor roda em **UTC** (sem `APP_TIMEZONE` no `.env`). O fuso de cada
   empresa fica em `empresas.fuso` (hoje `America/Manaus`) — ver docs/50.
-- **Cron do Laravel:** o `Dockerfile` desta branch usa `deploy/supervisord.conf`, que **não** sobe
-  o `crond`. Os `Schedule::command` de `routes/console.php` (geração de OS às 05:00, limpeza de
-  histórico de GPS, cálculo de afastamento) não rodam sozinhos aqui.
+- **Cron do Laravel:** `deploy/supervisord.conf` sobe o `crond`, e o `Dockerfile` instala
+  `docker/crontab` como crontab do `www-data` (`schedule:run` a cada minuto). É isso que dispara
+  os `Schedule::command` de `routes/console.php` (geração de OS às 05:00 UTC, limpeza de histórico
+  de GPS, cálculo de afastamento). Conferir: `docker exec tradeteste_api php artisan schedule:list`
+  e `docker exec tradeteste_api ps aux | grep crond`.

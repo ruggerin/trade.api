@@ -56,6 +56,10 @@ COPY deploy/nginx.conf /etc/nginx/http.d/default.conf
 # /docs/api passa de 128M ao gerar), opcache. Sem ele o PHP rodava com os defaults (2M/128M).
 COPY docker/php.ini /usr/local/etc/php/conf.d/99-app.ini
 COPY deploy/supervisord.conf /etc/supervisor.d/supervisord.ini
+# Crontab do scheduler do Laravel (schedule:run a cada minuto) — sem ele a geração de OS das
+# 05:00 e o resto de routes/console.php nunca disparam sozinhos. Fica no usuário www-data pra
+# não criar arquivo de log/cache em storage/ como root.
+COPY docker/crontab /etc/crontabs/www-data
 COPY deploy/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
