@@ -38,5 +38,11 @@ Schedule::command('rastreamento:limpar-historico')->dailyAt('03:30');
 // visitas finalizadas há 30+ min (espera posição atrasada do app) — filtro da lista e feed.
 Schedule::command('visitas:calcular-afastamento')->everyTenMinutes();
 
+// Simulador de campo — SÓ servidor de teste/demonstração (config/simulador.php). Desligado por
+// padrão: sem SIMULADOR_ATIVIDADE_EMPRESAS no .env nem entra na fila. O próprio comando respeita
+// a jornada da empresa (JORNADA_INICIO/JORNADA_FIM).
+Schedule::command('dev:simular-atividade')->everyFiveMinutes()->withoutOverlapping()
+    ->when(fn (): bool => config('simulador.empresas') !== []);
+
 // Sessões do app (docs/67 §4.4): tokens revogados/vencidos há 30+ dias e desafios de atestação vencidos.
 Schedule::command('sessoes:limpar')->dailyAt('03:45');
