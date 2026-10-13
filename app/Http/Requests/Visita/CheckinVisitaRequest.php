@@ -28,6 +28,10 @@ class CheckinVisitaRequest extends FormRequest
                 'nullable', 'string',
                 Rule::exists('ordens_servico', 'uuid')->where('empresa_id', $this->user()->empresa_id),
             ],
+            // O promotor escolheu ESTA OS (tocou no card dela na Agenda) — a API vincula exatamente
+            // ela, sem a regra de data de App\Support\OrdemDoCheckin. Ausente (app antigo, ou check-in
+            // pela aba Lojas, em que o app só sugere) = a API pode trocar uma OS fora do dia pela do dia.
+            'ordem_servico_escolhida' => ['nullable', 'boolean'],
             // Idempotência de check-in — ver VisitaController::store. Só formato aqui, de
             // propósito SEM `unique:visitas`: o reenvio da mesma chave é o caso esperado (fila
             // de envio retransmitindo depois de perder a resposta), tratado no controller

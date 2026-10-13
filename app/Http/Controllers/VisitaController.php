@@ -29,6 +29,7 @@ use App\Support\Fuso;
 use App\Support\Haversine;
 use App\Support\HorarioDoCampo;
 use App\Support\Instante;
+use App\Support\OrdemDoCheckin;
 use App\Support\RaioCheckin;
 use App\Support\Rastreamento;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -194,12 +195,24 @@ class VisitaController extends Controller
             ? OrdemServico::withoutGlobalScopes()->where('uuid', $dados['ordem_servico_uuid'])->first()
             : null;
 
+        // Hora do campo, não da chegada (docs/51 §3.5) — check-in feito offline e enviado depois
+        // mantém o horário real. Sem `inicio_em` (APK antigo) = agora, como antes.
+        $inicio = HorarioDoCampo::resolver($dados['inicio_em'] ?? null);
+
+        // OS escolhida pelo promotor (card da Agenda) vale como veio. Sem essa marca (app antigo, ou
+        // sugestão do app na aba Lojas), a OS enviada pode ser uma vencida de outro dia mesmo havendo
+        // a do dia da visita — o app antigo escolhia pelo prazo mais antigo —, então a API troca pela
+        // do dia. Ver App\Support\OrdemDoCheckin.
+        if ($ordemServico && ! ($dados['ordem_servico_escolhida'] ?? false)) {
+            $ordemServico = OrdemDoCheckin::escolher($ordemServico, $pontoVenda, $request->user(), $inicio);
+        }
+
         // docs/57 #13 — check-ins simultâneos do mesmo promotor (duplo toque, fila reenviando junto
         // com o app em primeiro plano). Sem trava, as duas requisições passam pelo "já tem visita
         // aberta?" antes de qualquer uma criar. Serializa por promotor (lock na linha do usuário) e,
         // se a outra ganhou com a mesma idempotency_key, devolve a visita dela em vez de 500.
         try {
-            return DB::transaction(function () use ($request, $dados, $pontoVenda, $ordemServico, $distancia) {
+            return DB::transaction(function () use ($request, $dados, $pontoVenda, $ordemServico, $distancia, $inicio) {
                 Usuario::withoutGlobalScopes()->whereKey($request->user()->id)->lockForUpdate()->first();
 
                 // Já existe uma visita ABERTA deste promotor NESTA loja? Retoma ela em vez de criar outra. Duas
@@ -253,9 +266,7 @@ class VisitaController extends Controller
                     'ordem_servico_id' => $ordemServico?->id,
                     'idempotency_key' => $dados['idempotency_key'] ?? null,
                     'status' => StatusVisita::ABERTA,
-                    // Hora do campo, não da chegada (docs/51 §3.5) — check-in feito offline e enviado
-                    // depois mantém o horário real. Sem `inicio_em` (APK antigo) = agora, como antes.
-                    'inicio_data' => HorarioDoCampo::resolver($dados['inicio_em'] ?? null),
+                    'inicio_data' => $inicio,
                     'checkin_recebido_em' => now(),
                     'inicio_latitude' => $dados['latitude'],
                     'inicio_longitude' => $dados['longitude'],
