@@ -94,7 +94,10 @@ final class DocumentosLegais
                     'ip' => $request->ip(),
                     'user_agent' => mb_substr((string) $request->userAgent(), 0, 500) ?: null,
                     'app' => $app,
-                    'dispositivo_identificador' => $dispositivo ?? $usuario->dispositivo?->identificador,
+                    // Só o hash do aparelho (docs/67 §4.2) — a coluna `identificador` não existe mais.
+                    'dispositivo_identificador' => $dispositivo !== null
+                        ? \App\Models\Dispositivo::hashIdentificador($dispositivo)
+                        : $usuario->dispositivo?->identificador_hash,
                 ],
             );
         }
