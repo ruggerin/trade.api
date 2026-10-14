@@ -13,6 +13,7 @@ use App\Http\Controllers\ContratoMetaController;
 use App\Http\Controllers\DepartamentoAuditoriaController;
 use App\Http\Controllers\DocumentoLegalController;
 use App\Http\Controllers\EmpresaController;
+use App\Http\Controllers\ExportacaoController;
 use App\Http\Controllers\FaturaController;
 use App\Http\Controllers\GaleriaFotosController;
 use App\Http\Controllers\ImagemRegistroController;
@@ -444,6 +445,9 @@ Route::middleware(['auth:sanctum', 'licenca', 'assinatura'])->group(function ():
         Route::post('/campanhas-auditoria/{campanhaAuditoria}/itens', [CampanhaItemController::class, 'store']);
         Route::delete('/campanhas-auditoria/{campanhaAuditoria}/itens/{item}', [CampanhaItemController::class, 'destroy']);
     });
+
+    // Exportação padronizada (docs/68): CSV/XLSX gerado no servidor a partir da consulta da tela.
+    Route::post('/exportacoes', [ExportacaoController::class, 'store']);
 
     // Tela de Configurações (docs/62). `lote` vem antes de `/parametros/{parametro}` pra não ser lido como uuid.
     Route::get('/parametros/catalogo', [ParametroController::class, 'catalogo'])->middleware('permissao:parametros.gerenciar');

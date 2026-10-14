@@ -79,7 +79,8 @@ class RegistroController extends Controller
             )
             ->with(['visita.pontoVenda.redeLoja', 'visita.usuario', 'tipoRegistro', 'produtoAuditoria', 'motivoResolucao'])
             ->latest('created_at')
-            ->paginate();
+            // `por_pagina` é opt-in (docs/68): a exportação pagina de 200 em 200 com os mesmos filtros.
+            ->paginate($request->filled('por_pagina') ? min(max($request->integer('por_pagina'), 1), 200) : null);
 
         $paginado->getCollection()->transform(fn (VisitaRegistro $registro) => [
             'id' => $registro->uuid,

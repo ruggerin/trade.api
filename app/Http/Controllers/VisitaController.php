@@ -96,7 +96,8 @@ class VisitaController extends Controller
                 },
             );
 
-        $visitas = $query->orderByDesc('inicio_data')->paginate();
+        $visitas = $query->orderByDesc('inicio_data')
+            ->paginate($request->filled('por_pagina') ? min(max($request->integer('por_pagina'), 1), 200) : null);
 
         return response()->json([
             'visitas' => VisitaResource::collection($visitas->items()),
