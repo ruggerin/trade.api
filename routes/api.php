@@ -55,6 +55,9 @@ use App\Http\Controllers\VisitaController;
 use App\Http\Controllers\VisitaRegistroController;
 use Illuminate\Support\Facades\Route;
 
+// Saúde do servidor pro Uptime Kuma (docs/71): público, só o veredito; o detalhe exige X-Saude-Token.
+Route::get('/saude', \App\Http\Controllers\SaudeController::class)->middleware('throttle:60,1');
+
 // Público — signup de empresa (cria o tenant) e login.
 Route::post('/empresas/signup', [EmpresaController::class, 'signup']);
 // docs/67 §2 (B8): limite de tentativas por e-mail+IP e por IP (RateLimiter 'login' no AppServiceProvider).

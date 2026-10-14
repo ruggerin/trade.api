@@ -13,6 +13,13 @@ Artisan::command('inspire', function () {
 // basta: a janela de cada ciclo é medida em dias (frequencia_dias), não em horas.
 Schedule::command('ordens-servico:gerar-por-campanha')->daily();
 
+// Batimento do agendador (docs/71): a cada minuto grava a hora no cache. O endpoint /api/saude lê
+// isto pra saber se o cron `schedule:run` está vivo — sem batimento, as rotinas diárias não rodam.
+Schedule::call(fn () => \Illuminate\Support\Facades\Cache::put(\App\Support\Saude\VerificacaoSaude::CHAVE_BATIMENTO, now()->getTimestamp(), 3600))
+    ->everyMinute()
+    ->name('saude-batimento')
+    ->withoutOverlapping(2);
+
 // Geração automática de OrdemServico por agenda de visita do promotor (regra semanal ou data
 // única) — ver App\Console\Commands\GerarOrdensServicoPorAgenda e docs/10-AGENDA-VISITA.md.
 // Cedo de manhã, antes do horário comercial, pra já aparecer pro promotor no início do dia.
