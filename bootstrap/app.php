@@ -74,4 +74,9 @@ return Application::configure(basePath: dirname(__DIR__))
                 return new JsonResponse(['message' => 'Recurso não encontrado.'], 404);
             }
         });
+
+        // Sentry (homologação): reporta as exceções não tratadas. Sem SENTRY_LARAVEL_DSN no .env o
+        // SDK fica desligado e isto não faz nada (ambiente local e testes). O que o Laravel já não
+        // reporta (validação, 401/403, 404) continua de fora. Ver docs/70-SENTRY-HOMOLOGACAO.md.
+        \Sentry\Laravel\Integration::handles($exceptions);
     })->create();

@@ -52,6 +52,12 @@ return [
 
     'channels' => [
 
+        // Logs estruturados no Sentry (precisa de SENTRY_ENABLE_LOGS=true e de 'sentry_logs' no LOG_STACK).
+        'sentry_logs' => [
+            'driver' => 'sentry_logs',
+            'level' => env('LOG_LEVEL', 'info'),
+        ],
+
         'stack' => [
             'driver' => 'stack',
             'channels' => explode(',', (string) env('LOG_STACK', 'single')),
