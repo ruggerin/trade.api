@@ -35,7 +35,7 @@ class Doc61FaturamentoTest extends TestCase
     {
         parent::setUp();
         Carbon::setTestNow(Carbon::parse('2026-09-23 15:00:00', 'UTC'));
-        $this->empresa = Empresa::factory()->create();
+        $this->empresa = Empresa::factory()->create(['faturamento_contratado' => true]); // contrato liberado pelo SUPERADMIN; o bloqueio sem contrato tem teste próprio
         $this->admin = Usuario::factory()->admin()->create(['empresa_id' => $this->empresa->id]);
         $this->pdv = PontoVenda::factory()->create(['empresa_id' => $this->empresa->id, 'fantasia' => 'Loja Valor']);
         Sanctum::actingAs($this->admin);

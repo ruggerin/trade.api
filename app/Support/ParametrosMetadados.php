@@ -123,6 +123,11 @@ final class ParametrosMetadados
 
         'FATURAMENTO_HABILITADO' => [
             'area' => 'pedidos', 'rotulo' => 'Mostrar faturamento e Esforço × Retorno', 'tipo' => 'bool',
+            // Recurso do plano: travado até o SUPERADMIN liberar a integração (empresas.faturamento_contratado).
+            'exige_contrato' => [
+                'campo' => 'faturamento_contratado',
+                'motivo' => 'Recurso do plano: a integração de faturamento precisa ser contratada. Fale com o suporte para liberar.',
+            ],
             'ajuda' => 'Liga valor, lucro e faturamento dos pedidos do ERP e o relatório Esforço × Retorno. Só aparece para quem tem a permissão "Ver faturamento" no perfil; o promotor nunca vê.',
         ],
         'PEDIDO_VENDA_SEM_VISITA_PERMITIDO' => [

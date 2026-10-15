@@ -27,6 +27,7 @@ class StoreEmpresaSuperadminRequest extends FormRequest
             // trava 1 dispositivo por vez, ver AuthController::login). null = sem limite.
             'limite_licencas' => ['nullable', 'integer', 'min:1'],
             'pedidos_venda_habilitado' => ['nullable', 'boolean'],
+            'faturamento_contratado' => ['nullable', 'boolean'],
             // IANA — ausente = America/Sao_Paulo (default da coluna, docs/50 §4.3).
             'fuso' => ['sometimes', 'timezone:all'],
             // Cria junto o primeiro ADMIN da empresa — sem isso não existe forma de logar
