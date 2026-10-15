@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Support\CarteiraVendedores;
 use App\Support\EquipeComercial;
 use App\Support\ImportacaoProdutos;
+use App\Support\ImportacaoRotaVisitas;
 use App\Support\ImportacaoSortimento;
 use App\Support\LeitorCsv;
 use Illuminate\Http\JsonResponse;
@@ -49,6 +50,23 @@ class ImportacaoDadosController extends Controller
     public function vendedores(Request $request): JsonResponse
     {
         return $this->equipe($request, EquipeComercial::COLUNAS_VENDEDOR, 'vendedor', EquipeComercial::vendedores(...));
+    }
+
+    /**
+     * Rota de visitas (docs/78 §4): dias de atendimento por loja + promotor viram o planejamento
+     * semanal. `promotor_padrao` vale pras linhas sem a coluna `promotor`.
+     */
+    public function rotaVisitas(Request $request): JsonResponse
+    {
+        $this->validarArquivo($request, 5);
+        $request->validate(['promotor_padrao' => ['nullable', 'string', 'max:255']]);
+
+        return response()->json(ImportacaoRotaVisitas::executar(
+            $request->user()->empresa,
+            $request->file('arquivo')->get(),
+            $request->boolean('simular'),
+            $request->input('promotor_padrao'),
+        ));
     }
 
     /** Carteira vendedor × loja (docs/73 §11.1) — substitui a carteira de cada loja do arquivo. */

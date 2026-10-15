@@ -3,6 +3,7 @@
 namespace App\Http\Requests\PontoVenda;
 
 use Illuminate\Foundation\Http\FormRequest;
+use App\Support\Uf;
 use Illuminate\Validation\Rule;
 
 class StorePontoVendaRequest extends FormRequest
@@ -11,6 +12,13 @@ class StorePontoVendaRequest extends FormRequest
     {
         // user_type/permissão já validados pelo middleware da rota.
         return true;
+    }
+
+    protected function prepareForValidation(): void
+    {
+        if ($this->has('uf')) {
+            $this->merge(['uf' => Uf::normalizar($this->input('uf'))]);
+        }
     }
 
     public function rules(): array
@@ -29,6 +37,7 @@ class StorePontoVendaRequest extends FormRequest
             'numero' => ['nullable', 'string', 'max:10'],
             'bairro' => ['nullable', 'string', 'max:100'],
             'cidade' => ['required', 'string', 'max:100'],
+            'uf' => ['sometimes', 'nullable', Rule::in(Uf::SIGLAS)],
             'cep' => ['nullable', 'string', 'max:10'],
             'telefone' => ['nullable', 'string', 'max:50'],
             'email' => ['nullable', 'email', 'max:255'],

@@ -39,6 +39,7 @@ final class LojasRotina extends Rotina
             new Coluna('numero', 'Número'),
             new Coluna('bairro', 'Bairro'),
             new Coluna('cidade', 'Cidade'),
+            new Coluna('uf', 'UF'),
             new Coluna('cep', 'CEP'),
             new Coluna('telefone', 'Telefone'),
             new Coluna('email', 'E-mail'),
@@ -51,7 +52,7 @@ final class LojasRotina extends Rotina
     public function filtrosPermitidos(): array
     {
         return [
-            'ativo', 'busca', 'rede_loja_uuid', 'cidade', 'sem_promotor', 'data_inicio', 'data_fim', 'data_campo',
+            'ativo', 'busca', 'rede_loja_uuid', 'cidade', 'uf', 'sem_promotor', 'data_inicio', 'data_fim', 'data_campo',
             'razao_social', 'fantasia', 'cnpj', 'promotor_uuid', 'com_contrato_ativo', 'ordenar',
         ];
     }
@@ -70,6 +71,7 @@ final class LojasRotina extends Rotina
                 'numero' => $p['numero'] ?? null,
                 'bairro' => $p['bairro'] ?? null,
                 'cidade' => $p['cidade'] ?? null,
+                'uf' => $p['uf'] ?? null,
                 'cep' => $p['cep'] ?? null,
                 'telefone' => $p['telefone'] ?? null,
                 'email' => $p['email'] ?? null,

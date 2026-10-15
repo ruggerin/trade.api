@@ -2,6 +2,7 @@
 
 namespace App\Relatorios;
 
+use App\Support\Uf;
 use BackedEnum;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
@@ -123,6 +124,31 @@ abstract class Entidade
     // ——— Ajudantes pra declarar campos ———
 
     /** Filtro sobre coluna de enum/valor simples. `nao_em` inclui o vazio (null não é "nenhum dos valores" no SQL). */
+    /**
+     * UF da loja (docs/78 §5) como dimensão e filtro. `$caminho` é a relação até a loja
+     * ("pontoVenda", "visita.pontoVenda"); `$loja` tira a loja da linha.
+     */
+    protected static function campoUf(string $caminho, \Closure $loja): Campo
+    {
+        $naLoja = fn (Builder $q, \Closure $condicao) => $q->whereHas($caminho, $condicao);
+
+        return new Campo('uf', 'UF da loja', Campo::ENUM, ['em', 'nao_em', 'vazio', 'nao_vazio'], opcoes: array_combine(Uf::SIGLAS, Uf::SIGLAS),
+            filtrar: function (Builder $q, string $operador, mixed $valor) use ($naLoja): void {
+                match ($operador) {
+                    'em' => $naLoja($q, fn (Builder $p) => $p->whereIn('uf', (array) $valor)),
+                    'nao_em' => $naLoja($q, fn (Builder $p) => $p->where(fn (Builder $s) => $s->whereNotIn('uf', (array) $valor)->orWhereNull('uf'))),
+                    'vazio' => $naLoja($q, fn (Builder $p) => $p->whereNull('uf')),
+                    'nao_vazio' => $naLoja($q, fn (Builder $p) => $p->whereNotNull('uf')),
+                    default => null,
+                };
+            },
+            agrupar: function (Model $linha) use ($loja): array {
+                $uf = $loja($linha)?->uf;
+
+                return $uf ? [$uf, $uf] : ['-', 'Sem UF'];
+            });
+    }
+
     protected static function filtroColuna(string $coluna): \Closure
     {
         return function (Builder $q, string $operador, mixed $valor) use ($coluna): void {

@@ -68,7 +68,7 @@ final class OrdemServicoEntidade extends Entidade
                 'usuario:id,uuid,nome',
                 'visita:id,usuario_id',
                 'visita.usuario:id,uuid,nome',
-                'pontoVenda:id,uuid,fantasia,rede_loja_id',
+                'pontoVenda:id,uuid,fantasia,rede_loja_id,uf',
                 'pontoVenda.redeLoja:id,uuid,descricao',
                 'tipoVisita:id,uuid,descricao',
                 'objetivoVisita:id,uuid,descricao',
@@ -110,6 +110,7 @@ final class OrdemServicoEntidade extends Entidade
                     $operador === 'nao_em' ? $q->whereNot($naRede) : $q->where($naRede);
                 },
                 agrupar: fn (OrdemServico $os) => self::grupoDe($os->pontoVenda?->redeLoja, 'descricao', 'Sem rede')),
+            self::campoUf('pontoVenda', fn (OrdemServico $os) => $os->pontoVenda),
             new Campo('tipo_visita', 'Tipo de visita', Campo::RELACAO, ['em', 'nao_em', 'vazio', 'nao_vazio'], fonte: 'tipos_visita',
                 filtrar: self::filtroRelacao('tipo_visita_id', TipoVisita::class),
                 agrupar: fn (OrdemServico $os) => self::grupoDe($os->tipoVisita, 'descricao', 'Sem tipo')),
