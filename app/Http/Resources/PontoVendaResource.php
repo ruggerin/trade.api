@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Support\EquipeComercial;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -73,6 +74,8 @@ class PontoVendaResource extends JsonResource
             // withCount('sortimento') (ver PontoVendaController::index); null em show() e afins,
             // que já carregam o sortimento inteiro (ver 'sortimento' acima) e não precisam dela.
             'sortimento_count' => $this->sortimento_count ?? null,
+            // Vendedores que atendem a loja (carteira, docs/73 §11.1) — só no detalhe. E-mail não vai pro promotor.
+            'vendedores' => $this->whenLoaded('vendedores', fn () => EquipeComercial::vendedoresDaLoja($this->vendedores, $request->user())),
             'ativo' => $this->ativo,
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
