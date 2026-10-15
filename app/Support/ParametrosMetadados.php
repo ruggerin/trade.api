@@ -121,6 +121,10 @@ final class ParametrosMetadados
             'depende_de' => ['chave' => 'RASTREAMENTO_INTERVALO_SEGUNDOS', 'motivo' => 'Ligue o rastreamento para ajustar.'],
         ],
 
+        'FATURAMENTO_HABILITADO' => [
+            'area' => 'pedidos', 'rotulo' => 'Mostrar faturamento e Esforço × Retorno', 'tipo' => 'bool',
+            'ajuda' => 'Liga valor, lucro e faturamento dos pedidos do ERP e o relatório Esforço × Retorno. Só aparece para quem tem a permissão "Ver faturamento" no perfil; o promotor nunca vê.',
+        ],
         'PEDIDO_VENDA_SEM_VISITA_PERMITIDO' => [
             'area' => 'pedidos', 'rotulo' => 'Pedido de venda fora de uma visita', 'tipo' => 'bool',
             'ajuda' => 'Ligado: o vendedor pode tirar pedido sem estar em visita. Desligado: só durante a visita.',

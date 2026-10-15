@@ -42,6 +42,7 @@ final class ParametrosPadrao
         'RASTREAMENTO_PARADA_MINUTOS' => ['valor' => '30', 'descricao' => 'A partir de quantos minutos parado no mesmo lugar, sem loja por perto, conta como parada fora de loja na Rota do dia (docs/48)'],
         'RASTREAMENTO_AFASTAMENTO_METROS' => ['valor' => '300', 'descricao' => 'Distância da loja, em metros, a partir da qual o promotor conta como "saiu da loja" durante a visita (docs/49) — deixe acima do CHECKIN_RAIO_METROS'],
         'RASTREAMENTO_AFASTAMENTO_MINUTOS' => ['valor' => '10', 'descricao' => 'Minutos longe da loja durante a visita pra contar como afastamento (docs/49)'],
+        'FATURAMENTO_HABILITADO' => ['valor' => 'false', 'descricao' => 'Mostra valor, lucro e faturamento dos pedidos do ERP e o Esforço × Retorno, só pra quem tem faturamento.visualizar (App\Support\Faturamento, docs/61) — false = não expõe'],
         'PEDIDO_VENDA_SEM_VISITA_PERMITIDO' => ['valor' => 'false', 'descricao' => 'Vendedor pode tirar Pedido de Venda fora de uma visita (App\Support\PedidoVendaSemVisita) — false = só durante a visita'],
         'ATIVIDADES_POLLING_SEGUNDOS' => ['valor' => '30', 'descricao' => 'Intervalo de atualização automática do Painel de Atividades, em segundos (docs/19)'],
         'ATIVIDADES_ALERTA_REQUER_RESOLUCAO' => ['valor' => 'false', 'descricao' => 'Alertas do Painel de Atividades ficam pendentes até alguém resolver (docs/19) — false = só informativos'],

@@ -35,6 +35,24 @@ class TipoRegistroTest extends TestCase
         $this->assertSame('camera', TipoRegistro::where(['empresa_id' => $empresa->id, 'descricao' => 'Foto'])->value('icone'));
     }
 
+    public function test_lista_filtra_por_registro_espontaneo_busca_e_status(): void
+    {
+        $empresa = Empresa::factory()->create();
+        Sanctum::actingAs(Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]));
+        // Os 3 de fábrica (Foto, Observação, Ruptura) nascem espontâneos e ativos.
+        TipoRegistro::create(['empresa_id' => $empresa->id, 'descricao' => 'Auditoria de gôndola', 'disponivel_registro_livre' => false]);
+        TipoRegistro::create(['empresa_id' => $empresa->id, 'descricao' => 'Foto antiga', 'ativo' => false]);
+
+        $descricoes = fn (string $query) => collect($this->getJson("/api/tipos-registro?$query")->assertOk()->json('tipos_registro'))
+            ->pluck('descricao')->sort()->values()->all();
+
+        $this->assertSame(['Auditoria de gôndola'], $descricoes('disponivel_registro_livre=0'));
+        $this->assertSame(['Foto', 'Foto antiga', 'Observação', 'Ruptura'], $descricoes('disponivel_registro_livre=1'));
+        $this->assertSame(['Foto', 'Foto antiga'], $descricoes('busca=foto'));
+        $this->assertSame(['Foto'], $descricoes('busca=foto&ativo=1'));
+        $this->assertSame([], $descricoes('busca=100%25'));
+    }
+
     public function test_admin_cria_tipo_de_registro_com_campos_customizados(): void
     {
         $empresa = Empresa::factory()->create();

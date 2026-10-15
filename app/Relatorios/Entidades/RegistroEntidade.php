@@ -135,11 +135,12 @@ final class RegistroEntidade extends Entidade
                 agrupar: fn (VisitaRegistro $r, ?string $granularidade, string $tz) => Periodo::agrupar($r->created_at, $granularidade, $tz)),
         ];
 
-        // Com formulário escolhido, filtrar por formulário não faz sentido (já está fixo).
+        // Tipo de registro (no admin, "Tipos de registro"; a chave "formulario" fica pelos relatórios
+        // já salvos). Com um escolhido no topo, agrupar ou filtrar por ele não faz sentido (já está fixo).
         if (! $this->formulario) {
-            array_unshift($campos, new Campo('formulario', 'Formulário', Campo::RELACAO, ['em', 'nao_em'], fonte: 'formularios',
+            array_unshift($campos, new Campo('formulario', 'Tipo de registro', Campo::RELACAO, ['em', 'nao_em'], fonte: 'formularios',
                 filtrar: self::filtroRelacao('tipo_registro_id', TipoRegistro::class),
-                agrupar: fn (VisitaRegistro $r) => self::grupoDe($r->tipoRegistro, 'descricao', 'Sem formulário')));
+                agrupar: fn (VisitaRegistro $r) => self::grupoDe($r->tipoRegistro, 'descricao', 'Sem tipo')));
         }
 
         foreach ($this->perguntas() as $pergunta) {

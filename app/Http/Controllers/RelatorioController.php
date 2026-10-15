@@ -16,6 +16,8 @@ use App\Models\Usuario;
 use App\Models\Visita;
 use App\Models\VisitaRegistro;
 use App\Relatorios\Periodo;
+use App\Support\EsforcoRetorno;
+use App\Support\Faturamento;
 use App\Support\Fuso;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
@@ -23,6 +25,8 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Routing\Controllers\HasMiddleware;
+use Illuminate\Routing\Controllers\Middleware;
 use Illuminate\Support\Collection;
 
 /**
@@ -35,8 +39,24 @@ use Illuminate\Support\Collection;
  * projeto ainda não tem volume que justifique materializar nada. Se um relatório ficar lento,
  * o ponto de troca é a query de cada método, o formato da resposta não muda.
  */
-class RelatorioController extends Controller
+class RelatorioController extends Controller implements HasMiddleware
 {
+    /** Filtros que identificam um registro por uuid: só aceitam texto (array virava 500 em `$request->string()`). */
+    private const FILTROS_UUID = ['usuario_uuid', 'ponto_venda_uuid', 'rede_loja_uuid', 'tipo_registro_uuid'];
+
+    public static function middleware(): array
+    {
+        return [new Middleware(function (Request $request, \Closure $next) {
+            foreach (self::FILTROS_UUID as $filtro) {
+                if (is_array($request->input($filtro))) {
+                    return response()->json(['message' => "O filtro {$filtro} deve ser um texto."], 422);
+                }
+            }
+
+            return $next($request);
+        })];
+    }
+
     /** Máximo de dias de um período — protege a agregação em memória de um pedido "desde sempre". */
     private const MAX_DIAS = 92;
 
@@ -556,11 +576,21 @@ class RelatorioController extends Controller
         ];
 
         $atual = $this->calcularTempoNaLoja($inicio, $fim, $tz, $agrupar, $filtros);
+
+        // Esforço × Retorno (docs/61): só com FATURAMENTO_HABILITADO ligado E faturamento.visualizar.
+        // Sem isso o JSON é exatamente o de antes — nenhuma chave de valor existe.
+        $lojasPorGrupo = $atual['lojas_por_grupo'];
+        unset($atual['lojas_por_grupo']);
+        if (Faturamento::podeVer($request->user())) {
+            $atual = EsforcoRetorno::anexar($atual['linhas'], $atual['total'], $lojasPorGrupo, $agrupar, $inicio, $fim, $tz);
+        }
+
         $resposta = ['periodo' => $this->periodoLocal($inicio, $fim, $tz), 'agrupar' => $agrupar] + $atual;
 
         if ($request->filled('comparar')) {
             [$compInicio, $compFim] = $this->periodoDeComparacao($inicio, $fim, $tz, $request->string('comparar')->toString());
             $comp = $this->calcularTempoNaLoja($compInicio, $compFim, $tz, $agrupar, $filtros);
+            unset($comp['lojas_por_grupo']);
             $porChave = $comp['linhas']->keyBy('chave');
 
             $resposta['linhas'] = $atual['linhas']->map(fn (array $l) => $l + [
@@ -578,7 +608,7 @@ class RelatorioController extends Controller
 
     /**
      * @param  array{usuario_id: ?int, ponto_venda_id: ?int, rede_loja_id: ?int}  $filtros
-     * @return array{linhas: Collection, total: array<string, mixed>}
+     * @return array{linhas: Collection, total: array<string, mixed>, lojas_por_grupo: array<string, list<int>>}
      */
     private function calcularTempoNaLoja(Carbon $inicio, Carbon $fim, string $tz, string $agrupar, array $filtros): array
     {
@@ -649,9 +679,16 @@ class RelatorioController extends Controller
             ->sortByDesc('tempo_total_minutos')
             ->values();
 
+        // Lojas visitadas em cada grupo — usado só por EsforcoRetorno pra atribuir o faturamento.
+        $lojasPorGrupo = $validas
+            ->groupBy(fn (array $v) => $chaveDe($v)[0])
+            ->map(fn (Collection $g) => $g->pluck('visita.ponto_venda_id')->unique()->values()->map(fn ($id) => (int) $id)->all())
+            ->all();
+
         return [
             'linhas' => $linhas,
             'total' => $resumo($validas) + ['desconsideradas' => $desconsideradas],
+            'lojas_por_grupo' => $lojasPorGrupo,
         ];
     }
 

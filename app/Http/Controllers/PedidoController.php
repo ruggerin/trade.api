@@ -7,7 +7,9 @@ use App\Http\Requests\Pedido\StorePedidoRequest;
 use App\Models\Pedido;
 use App\Models\PontoVenda;
 use App\Models\ProdutoAuditoria;
+use App\Support\Faturamento;
 use App\Support\NotificacoesPedido;
+use App\Support\ValoresDoPedido;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -35,7 +37,10 @@ class PedidoController extends Controller
         $pedido = DB::transaction(function () use ($dados, $empresaId, $pontoVendaId, &$previsaoAnterior) {
             $pedido = Pedido::where('numero_pedido', $dados['numero_pedido'])->first();
             $previsaoAnterior = $pedido?->data_previsao_entrega?->toDateString();
-            $atributos = [
+            // Valor e faturamento (docs/61): sempre gravados, com o parâmetro ligado ou não — só a
+            // EXPOSIÇÃO é controlada (Faturamento::podeVer). Assim nada se perde se ligarem depois.
+            $valores = ValoresDoPedido::calcular($dados);
+            $atributos = $valores['pedido'] + [
                 'ponto_venda_id' => $pontoVendaId,
                 'numero_nf' => $dados['numero_nf'] ?? null,
                 'data_pedido' => $dados['data_pedido'],
@@ -55,8 +60,8 @@ class PedidoController extends Controller
             $codigos = collect($dados['itens'])->pluck('codigo_externo_produto')->unique();
             $produtos = ProdutoAuditoria::whereIn('codigo_externo', $codigos)->pluck('id', 'codigo_externo');
 
-            foreach ($dados['itens'] as $item) {
-                $pedido->itens()->create([
+            foreach ($dados['itens'] as $i => $item) {
+                $pedido->itens()->create($valores['itens'][$i] + [
                     'produto_id' => $produtos[$item['codigo_externo_produto']] ?? null,
                     'codigo_externo_produto' => $item['codigo_externo_produto'],
                     'descricao_produto' => $item['descricao_produto'],
@@ -77,7 +82,7 @@ class PedidoController extends Controller
         }
 
         return response()->json(
-            ['pedido' => $this->formatar($pedido)],
+            ['pedido' => $this->formatar($pedido, $this->verValores($request))],
             $pedido->wasRecentlyCreated ? 201 : 200,
         );
     }
@@ -98,14 +103,15 @@ class PedidoController extends Controller
         }
 
         return response()->json(
-            ['pedido' => $this->formatar($pedido->load(['itens.produto', 'entregas', 'pontoVenda']))],
+            ['pedido' => $this->formatar($pedido->load(['itens.produto', 'entregas', 'pontoVenda']), $this->verValores($request))],
             $entrega->wasRecentlyCreated ? 201 : 200,
         );
     }
 
     /** Pedidos da loja, mais recentes primeiro — consulta do promotor (e do admin no detalhe do PDV). */
-    public function porPontoVenda(PontoVenda $pontoVenda): JsonResponse
+    public function porPontoVenda(Request $request, PontoVenda $pontoVenda): JsonResponse
     {
+        $comValores = $this->verValores($request);
         $pedidos = Pedido::query()
             ->where('ponto_venda_id', $pontoVenda->id)
             ->with(['itens.produto', 'entregas'])
@@ -114,7 +120,7 @@ class PedidoController extends Controller
             ->paginate(10);
 
         return response()->json([
-            'pedidos' => collect($pedidos->items())->map(fn (Pedido $p) => $this->formatar($p))->values(),
+            'pedidos' => collect($pedidos->items())->map(fn (Pedido $p) => $this->formatar($p, $comValores))->values(),
             'meta' => [
                 'current_page' => $pedidos->currentPage(),
                 'last_page' => $pedidos->lastPage(),
@@ -125,9 +131,9 @@ class PedidoController extends Controller
     }
 
     /** Um pedido só — detalhe no app, aberto pela lista da loja ou pelo sino (docs/54 §5). */
-    public function show(Pedido $pedido): JsonResponse
+    public function show(Request $request, Pedido $pedido): JsonResponse
     {
-        return response()->json(['pedido' => $this->formatar($pedido->load(['itens.produto', 'entregas', 'pontoVenda']))]);
+        return response()->json(['pedido' => $this->formatar($pedido->load(['itens.produto', 'entregas', 'pontoVenda']), $this->verValores($request))]);
     }
 
     /**
@@ -172,11 +178,40 @@ class PedidoController extends Controller
         return response()->json(status: 204);
     }
 
-    private function formatar(Pedido $pedido): array
+    /**
+     * O mesmo endpoint serve o promotor (app) e o admin: valor, lucro e status de faturamento só
+     * saem pra quem passa em Faturamento::podeVer — a chave nem existe no JSON do promotor.
+     */
+    private function verValores(Request $request): bool
+    {
+        return Faturamento::podeVer($request->user());
+    }
+
+    /** @return array<string, mixed> */
+    private function valoresDoPedido(Pedido $pedido, bool $comValores): array
+    {
+        if (! $comValores) {
+            return [];
+        }
+
+        return [
+            'valor_total' => $pedido->valor_total,
+            'valor_lucro_total' => $pedido->valor_lucro_total,
+            // Margem calculada na leitura, nunca gravada; nula quando falta total ou lucro.
+            'margem_pct' => $pedido->valor_total && $pedido->valor_lucro_total !== null
+                ? round($pedido->valor_lucro_total / $pedido->valor_total * 100, 1)
+                : null,
+            'status_faturamento' => $pedido->status_faturamento,
+            'faturado_em' => $pedido->faturado_em?->toDateString(),
+            'valor_divergente' => $pedido->valor_divergente,
+        ];
+    }
+
+    private function formatar(Pedido $pedido, bool $comValores = false): array
     {
         $ultimaEntrega = $pedido->entregas->last();
 
-        return [
+        return $this->valoresDoPedido($pedido, $comValores) + [
             'id' => $pedido->uuid,
             'numero_pedido' => $pedido->numero_pedido,
             'numero_nf' => $pedido->numero_nf,
@@ -196,7 +231,14 @@ class PedidoController extends Controller
                 'descricao_produto' => $i->produto?->descricao ?? $i->descricao_produto,
                 'produto_id' => $i->produto?->uuid,
                 'quantidade' => $i->quantidade,
-            ])->values(),
+            ] + ($comValores ? [
+                'preco_unitario' => $i->preco_unitario,
+                'subtotal' => $i->subtotal,
+                'custo_unitario' => $i->custo_unitario,
+                'valor_lucro' => $i->valor_lucro,
+                'origem_lucro' => $i->origem_lucro,
+                'valor_divergente' => $i->valor_divergente,
+            ] : []))->values(),
             'entregas' => $pedido->entregas->map(fn ($e) => [
                 'id' => $e->uuid,
                 'data_entrega' => $e->data_entrega,

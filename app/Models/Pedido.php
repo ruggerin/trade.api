@@ -20,11 +20,22 @@ class Pedido extends Model
     protected $table = 'pedidos';
 
     // data_previsao_entrega: previsão de chegada na loja mandada pelo ERP (docs/54 §4).
-    protected $fillable = ['empresa_id', 'ponto_venda_id', 'numero_pedido', 'numero_nf', 'data_pedido', 'data_previsao_entrega', 'observacao'];
+    // Valor e faturamento (docs/61 §5.1): nullable — pedido sem valor é "sem informação", nunca zero.
+    protected $fillable = [
+        'empresa_id', 'ponto_venda_id', 'numero_pedido', 'numero_nf', 'data_pedido', 'data_previsao_entrega', 'observacao',
+        'valor_total', 'valor_lucro_total', 'status_faturamento', 'faturado_em', 'valor_divergente',
+    ];
 
     protected function casts(): array
     {
-        return ['data_pedido' => 'date', 'data_previsao_entrega' => 'date'];
+        return [
+            'data_pedido' => 'date',
+            'data_previsao_entrega' => 'date',
+            'faturado_em' => 'date',
+            'valor_total' => 'float',
+            'valor_lucro_total' => 'float',
+            'valor_divergente' => 'boolean',
+        ];
     }
 
     public function pontoVenda(): BelongsTo

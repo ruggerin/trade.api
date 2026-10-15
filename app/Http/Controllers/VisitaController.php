@@ -14,8 +14,8 @@ use App\Http\Requests\Visita\CheckoutVisitaRequest;
 use App\Http\Requests\Visita\CorrigirHorariosVisitaRequest;
 use App\Http\Requests\Visita\ForcarCheckoutVisitaRequest;
 use App\Http\Resources\VisitaResource;
-use App\Models\AutorizacaoGestor;
 use App\Models\CampanhaAuditoria;
+use App\Models\LiberacaoVisita;
 use App\Models\OrdemServico;
 use App\Models\PontoVenda;
 use App\Models\ProdutoAuditoria;
@@ -29,15 +29,15 @@ use App\Support\Fuso;
 use App\Support\Haversine;
 use App\Support\HorarioDoCampo;
 use App\Support\Instante;
+use App\Support\AutorizacaoDoGestor;
 use App\Support\OrdemDoCheckin;
 use App\Support\RaioCheckin;
 use App\Support\Rastreamento;
+use App\Support\RotaObrigatoria;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\RateLimiter;
 
 class VisitaController extends Controller
 {
@@ -260,6 +260,13 @@ class VisitaController extends Controller
                     ], 422);
                 }
 
+                // Perfil obrigado a seguir a agenda/sequência (docs/74). Depois da retomada de propósito:
+                // visita já aberta nunca fica presa pelas regras.
+                $liberacao = $this->regrasDaRota($request->user(), $pontoVenda, $ordemServico, $dados);
+                if ($liberacao instanceof JsonResponse) {
+                    return $liberacao;
+                }
+
                 $visita = Visita::create([
                     'ponto_venda_id' => $pontoVenda->id,
                     'usuario_id' => $request->user()->id,
@@ -278,6 +285,8 @@ class VisitaController extends Controller
                     $ordemServico->update(['status' => StatusOrdemServico::EM_ANDAMENTO, 'visita_id' => $visita->id]);
                 }
 
+                $liberacao?->update(['usada_em' => now(), 'visita_id' => $visita->id]);
+
                 return response()->json([
                     'visita' => new VisitaResource($visita->load(['pontoVenda', 'campanha', 'ordemServico'])),
                 ], 201);
@@ -293,6 +302,87 @@ class VisitaController extends Controller
                 'visita' => new VisitaResource($existente->load(['pontoVenda', 'campanha', 'ordemServico'])),
             ], 200);
         }
+    }
+
+    /**
+     * docs/74 §4 — só pela agenda (`visitas.exigir_agenda`) e na sequência do dia
+     * (`visitas.exigir_sequencia`). Devolve a recusa (422), a liberação do gestor a consumir, ou
+     * null quando a visita pode seguir sem nada a consumir. Quem não tem as marcas passa direto.
+     */
+    private function regrasDaRota(Usuario $usuario, PontoVenda $pontoVenda, ?OrdemServico $ordemServico, array $dados): JsonResponse|LiberacaoVisita|null
+    {
+        if (! RotaObrigatoria::exigeAgenda($usuario)) {
+            return null;
+        }
+
+        if (! empty($dados['liberacao_uuid'])) {
+            $liberacao = LiberacaoVisita::where('uuid', $dados['liberacao_uuid'])->disponivel($usuario, $pontoVenda)->lockForUpdate()->first();
+
+            return $liberacao ?? response()->json([
+                'message' => 'A autorização do gestor para esta visita expirou ou já foi usada. Peça uma nova autorização.',
+            ], 422);
+        }
+
+        // `escolhida` = o promotor tocou no card da Agenda; check-in pela aba Lojas não manda.
+        if (! $ordemServico || ! ($dados['ordem_servico_escolhida'] ?? false)) {
+            return response()->json(['message' => 'Seu perfil só permite iniciar visita pela agenda.'], 422);
+        }
+
+        // A fila é a do dia da PRÓPRIA OS, não a do relógio que o app mandou em `inicio_em`: um cliente
+        // modificado mandando a hora de ontem trocava de dia e escapava da ordem (docs/74).
+        if (RotaObrigatoria::exigeSequencia($usuario) && ($antes = RotaObrigatoria::antesDaVez($ordemServico, $usuario, $ordemServico->prazo_fim))) {
+            $previsto = $antes->horario_previsto ? ' (previsto '.substr((string) $antes->horario_previsto, 0, 5).')' : '';
+
+            return response()->json([
+                'message' => "Antes, atenda {$antes->pontoVenda?->fantasia}{$previsto}.",
+                'ordem_servico_da_vez' => $antes->uuid,
+            ], 422);
+        }
+
+        return null;
+    }
+
+    /**
+     * Visita fora da agenda autorizada pelo gestor (docs/74): o promotor obrigado a seguir a agenda
+     * pede, o gestor autoriza no aparelho dele (código ou senha, igual ao cancelamento de visita
+     * travada) e a API devolve uma liberação de uso único pra loja. O check-in leva o uuid.
+     */
+    public function liberar(Request $request): JsonResponse
+    {
+        $promotor = $request->user();
+        $dados = $request->validate([
+            ...AutorizacaoDoGestor::regras(),
+            'ponto_venda_uuid' => ['required', 'uuid'],
+            'motivo' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        if (! RotaObrigatoria::exigeAgenda($promotor)) {
+            return response()->json(['message' => 'Seu perfil já pode iniciar visita fora da agenda.'], 422);
+        }
+
+        $pontoVenda = PontoVenda::where('uuid', $dados['ponto_venda_uuid'])->firstOrFail();
+
+        $supervisor = AutorizacaoDoGestor::conferir($promotor, $dados, 'liberar-visita');
+        if ($supervisor instanceof JsonResponse) {
+            return $supervisor;
+        }
+
+        $liberacao = LiberacaoVisita::create([
+            'empresa_id' => $promotor->empresa_id,
+            'usuario_id' => $promotor->id,
+            'ponto_venda_id' => $pontoVenda->id,
+            'autorizada_por_id' => $supervisor->id,
+            'motivo' => isset($dados['motivo']) ? trim($dados['motivo']) ?: null : null,
+            'expira_em' => now()->addHours(LiberacaoVisita::HORAS_VALIDADE),
+        ]);
+
+        return response()->json([
+            'liberacao' => [
+                'id' => $liberacao->uuid,
+                'expira_em' => $liberacao->expira_em,
+                'autorizada_por' => ['nome' => $supervisor->nome],
+            ],
+        ], 201);
     }
 
     public function checkout(CheckoutVisitaRequest $request, Visita $visita): JsonResponse
@@ -634,51 +724,11 @@ class VisitaController extends Controller
             return response()->json(['visita' => new VisitaResource($visita)]);
         }
 
-        $dados = $request->validate([
-            'codigo' => ['nullable', 'string', 'size:6', 'required_without_all:email,senha'],
-            'email' => ['nullable', 'string', 'email', 'required_without:codigo'],
-            'senha' => ['nullable', 'string', 'required_without:codigo'],
-            'motivo' => ['nullable', 'string', 'max:500'],
-        ]);
+        $dados = $request->validate([...AutorizacaoDoGestor::regras(), 'motivo' => ['nullable', 'string', 'max:500']]);
 
-        $chave = 'cancelar-autorizado:'.$promotor->id;
-        if (RateLimiter::tooManyAttempts($chave, 5)) {
-            return response()->json([
-                'message' => 'Muitas tentativas. Aguarde alguns minutos antes de tentar de novo.',
-            ], 429);
-        }
-
-        if (isset($dados['codigo'])) {
-            $autorizacao = AutorizacaoGestor::valido($promotor->empresa_id, $dados['codigo'])->first();
-            $supervisor = $autorizacao?->usuario;
-            // Gerar o código já exigiu a permissão (middleware da rota) — aqui só reconfirma que
-            // a conta continua ativa no intervalo (código vive até 10 min).
-            $autorizado = $autorizacao !== null && $supervisor?->ativo === true;
-            $mensagemNegada = 'Autorização negada. Confira o código.';
-        } else {
-            $supervisor = Usuario::withoutGlobalScopes()
-                ->where('email', $dados['email'])
-                ->where('empresa_id', $promotor->empresa_id)
-                ->where('ativo', true)
-                ->whereIn('user_type', [UserType::ADMIN->value, UserType::GESTOR->value])
-                ->first();
-
-            $autorizado = $supervisor
-                && Hash::check($dados['senha'], $supervisor->senha_hash)
-                && ($supervisor->user_type === UserType::ADMIN || ($supervisor->perfil?->tem(Permissao::VISITAS_INTERVIR) ?? false));
-            // Mensagem única de propósito: não diz se o e-mail existe nem se faltou permissão.
-            $mensagemNegada = 'Autorização negada. Confira o e-mail e a senha do gestor.';
-        }
-
-        if (! $autorizado) {
-            RateLimiter::hit($chave, 15 * 60);
-
-            return response()->json(['message' => $mensagemNegada], 403);
-        }
-
-        RateLimiter::clear($chave);
-        if (isset($autorizacao)) {
-            $autorizacao->update(['usado_em' => now()]);
+        $supervisor = AutorizacaoDoGestor::conferir($promotor, $dados, 'cancelar-autorizado');
+        if ($supervisor instanceof JsonResponse) {
+            return $supervisor;
         }
 
         if ($visita->status !== StatusVisita::ABERTA) {

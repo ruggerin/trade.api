@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Pedido;
 
+use App\Enums\StatusFaturamento;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -31,6 +32,18 @@ class StorePedidoRequest extends FormRequest
             'itens.*.codigo_externo_produto' => ['required', 'string', 'max:100'],
             'itens.*.descricao_produto' => ['required', 'string', 'max:255'],
             'itens.*.quantidade' => ['required', 'numeric', 'gt:0'],
+
+            // Valor e faturamento (docs/61 §5.1) — todos opcionais: o ERP que ainda não manda
+            // continua funcionando. Devolução chega com valor NEGATIVO (Winthor), por isso sem `min`.
+            // Limites = o que as colunas decimal(14,2)/(14,4) aguentam; fora disso seria 500 do banco.
+            'valor_total' => ['nullable', 'numeric', 'between:-999999999999.99,999999999999.99'],
+            'valor_lucro_total' => ['nullable', 'numeric', 'between:-999999999999.99,999999999999.99'],
+            'status_faturamento' => ['nullable', Rule::enum(StatusFaturamento::class)],
+            'faturado_em' => ['nullable', 'date'],
+            'itens.*.preco_unitario' => ['nullable', 'numeric', 'between:-9999999999.9999,9999999999.9999'],
+            'itens.*.subtotal' => ['nullable', 'numeric', 'between:-999999999999.99,999999999999.99'],
+            'itens.*.custo_unitario' => ['nullable', 'numeric', 'between:-9999999999.9999,9999999999.9999'],
+            'itens.*.valor_lucro' => ['nullable', 'numeric', 'between:-999999999999.99,999999999999.99'],
         ];
     }
 }

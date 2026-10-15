@@ -177,7 +177,7 @@ class Doc68ExportacaoTest extends TestCase
         $resposta = $this->postJson('/api/exportacoes', [
             'rotina' => 'registros', 'formato' => 'xlsx', 'descricao_filtros' => 'Tipo: Ruptura · Status: Aberto',
         ])->assertOk();
-        $this->assertSame('mercados-norte-registros-'.now()->toDateString().'.xlsx', $resposta->baseResponse->getFile()->getFilename() === '' ? '' : basename($resposta->headers->get('Content-Disposition') ? $this->nomeDoDownload($resposta) : ''));
+        $this->assertSame('mercados-norte-registros-'.now(\App\Support\Fuso::daEmpresa($this->empresa))->toDateString().'.xlsx', $resposta->baseResponse->getFile()->getFilename() === '' ? '' : basename($resposta->headers->get('Content-Disposition') ? $this->nomeDoDownload($resposta) : ''));
 
         $conteudo = $this->conteudo($resposta);
         $this->assertStringStartsWith('PK', $conteudo, 'assinatura de ZIP');

@@ -172,6 +172,8 @@ Route::middleware(['auth:sanctum', 'licenca', 'assinatura'])->group(function ():
     Route::get('/visitas', [VisitaController::class, 'index']);
     Route::get('/visitas/{visita}', [VisitaController::class, 'show']);
     Route::post('/visitas', [VisitaController::class, 'store'])->middleware('canal.mobile');
+    // Visita fora da agenda autorizada pelo gestor no aparelho do promotor (docs/74).
+    Route::post('/visitas/liberacoes', [VisitaController::class, 'liberar'])->middleware('canal.mobile');
     Route::patch('/visitas/{visita}/checkout', [VisitaController::class, 'checkout'])->middleware('canal.mobile');
     // Autosserviço: promotor cancela a própria visita em andamento, parametrizável por empresa
     // (VISITA_CANCELAMENTO_PERMITIDO) — mesmo raciocínio do cancelamento de registro, não se
