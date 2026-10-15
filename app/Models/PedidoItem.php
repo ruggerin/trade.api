@@ -13,11 +13,21 @@ class PedidoItem extends Model
 
     protected $table = 'pedido_itens';
 
-    protected $fillable = ['pedido_id', 'produto_id', 'codigo_externo_produto', 'descricao_produto', 'quantidade'];
+    protected $fillable = [
+        'pedido_id', 'produto_id', 'codigo_externo_produto', 'descricao_produto', 'quantidade',
+        'preco_unitario', 'subtotal', 'custo_unitario', 'valor_lucro', 'origem_lucro', 'valor_divergente',
+    ];
 
     protected function casts(): array
     {
-        return ['quantidade' => 'float'];
+        return [
+            'quantidade' => 'float',
+            'preco_unitario' => 'float',
+            'subtotal' => 'float',
+            'custo_unitario' => 'float',
+            'valor_lucro' => 'float',
+            'valor_divergente' => 'boolean',
+        ];
     }
 
     public function produto(): BelongsTo

@@ -23,6 +23,8 @@ use App\Support\Fuso;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use App\Models\MotivoNaoExecucao;
+use App\Support\RotaObrigatoria;
 
 class OrdemServicoController extends Controller
 {
@@ -282,8 +284,18 @@ class OrdemServicoController extends Controller
             return response()->json(['message' => 'Esta ordem de serviço não está pendente.'], 422);
         }
 
-        $request->validate(['motivo_texto' => ['nullable', 'string', 'max:2000']]);
+        // "Pular a vez" de quem segue a sequência do dia (docs/74 §7.1) é este mesmo cancelamento, com
+        // o motivo de não execução obrigatório — aparece em Visitas não realizadas e nos relatórios.
+        $request->validate([
+            'motivo_texto' => ['nullable', 'string', 'max:2000'],
+            'motivo_uuid' => [
+                RotaObrigatoria::exigeSequencia($usuario) ? 'required' : 'nullable',
+                'uuid',
+                Rule::exists('motivos_nao_execucao', 'uuid')->where('empresa_id', $usuario->empresa_id)->where('ativo', true),
+            ],
+        ], ['motivo_uuid.required' => 'Escolha o motivo de não atender esta loja.']);
         $motivoTexto = $request->filled('motivo_texto') ? $request->string('motivo_texto')->trim()->value() : null;
+        $motivoUuid = $request->input('motivo_uuid');
 
         if (AutonomiaAgenda::requerAprovacao($usuario->empresa)) {
             $ordemServico->update([
@@ -291,11 +303,12 @@ class OrdemServicoController extends Controller
                 // Uma tentativa nova não deve carregar o motivo de uma rejeição anterior.
                 'motivo_rejeicao' => null,
                 'motivo_cancelamento_texto' => $motivoTexto,
+                'motivo_cancelamento_id' => $motivoUuid ? MotivoNaoExecucao::where('uuid', $motivoUuid)->value('id') : null,
             ]);
             CancelamentoOrdemServico::registrar($ordemServico, $usuario, 'CANCELAMENTO_SOLICITADO', ['motivo_texto' => $motivoTexto]);
         } else {
             $ordemServico->update(['motivo_rejeicao' => null]);
-            CancelamentoOrdemServico::aplicar($ordemServico, $usuario, ResponsavelNaoExecucao::PROMOTOR, null, $motivoTexto);
+            CancelamentoOrdemServico::aplicar($ordemServico, $usuario, ResponsavelNaoExecucao::PROMOTOR, $motivoUuid, $motivoTexto);
         }
         $ordemServico->load(self::RELACOES);
 
@@ -312,7 +325,7 @@ class OrdemServicoController extends Controller
             // O pedido veio do promotor — quem causou é ele; o texto que ele deu fica.
             CancelamentoOrdemServico::aplicar(
                 $ordemServico, $request->user(), ResponsavelNaoExecucao::PROMOTOR,
-                null, $ordemServico->motivo_cancelamento_texto, 'CANCELAMENTO_APROVADO',
+                $ordemServico->motivoCancelamento?->uuid, $ordemServico->motivo_cancelamento_texto, 'CANCELAMENTO_APROVADO',
             );
             $ordemServico->update(['motivo_rejeicao' => null]);
             $ordemServico->load(self::RELACOES);
@@ -361,7 +374,8 @@ class OrdemServicoController extends Controller
                 'motivo_rejeicao' => $motivo,
             ]),
             StatusOrdemServico::CANCELAMENTO_SOLICITADO => $ordemServico->update([
-                'status' => StatusOrdemServico::PENDENTE, 'motivo_rejeicao' => $motivo,
+                // Pedido negado: a OS volta pra fila e o motivo do pedido (docs/74) não fica pendurado nela.
+                'status' => StatusOrdemServico::PENDENTE, 'motivo_rejeicao' => $motivo, 'motivo_cancelamento_id' => null,
             ]),
             default => abort(422, 'Esta ordem de serviço não tem solicitação pendente.'),
         };

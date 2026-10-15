@@ -32,6 +32,8 @@ class CheckinVisitaRequest extends FormRequest
             // ela, sem a regra de data de App\Support\OrdemDoCheckin. Ausente (app antigo, ou check-in
             // pela aba Lojas, em que o app só sugere) = a API pode trocar uma OS fora do dia pela do dia.
             'ordem_servico_escolhida' => ['nullable', 'boolean'],
+            // Visita fora da agenda autorizada pelo gestor (docs/74) — ver VisitaController::liberar.
+            'liberacao_uuid' => ['nullable', 'uuid'],
             // Idempotência de check-in — ver VisitaController::store. Só formato aqui, de
             // propósito SEM `unique:visitas`: o reenvio da mesma chave é o caso esperado (fila
             // de envio retransmitindo depois de perder a resposta), tratado no controller

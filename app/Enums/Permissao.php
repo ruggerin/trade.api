@@ -69,6 +69,16 @@ enum Permissao: string
     // executar continua no gate dos relatórios atuais (ADMIN/GESTOR).
     case RELATORIOS_PERSONALIZADOS_GERENCIAR = 'relatorios.personalizados.gerenciar';
 
+    // Valor, lucro e faturamento dos pedidos do ERP (docs/61 §5.2). Só vale com o parâmetro
+    // FATURAMENTO_HABILITADO ligado na empresa; PROMOTOR nunca, mesmo com a permissão.
+    case FATURAMENTO_VISUALIZAR = 'faturamento.visualizar';
+
+    // Regras de visita (docs/74): as únicas do catálogo que RESTRINGEM em vez de liberar — quem tem a
+    // marca é obrigado; sem perfil, ou perfil sem a marca, nada muda. ADMIN nunca é restringido.
+    // Lidas via App\Support\RotaObrigatoria, nunca pelo EnsurePermissao.
+    case VISITAS_EXIGIR_AGENDA = 'visitas.exigir_agenda';
+    case VISITAS_EXIGIR_SEQUENCIA = 'visitas.exigir_sequencia';
+
     // Acesso a tela (docs/64-CONTROLE-DE-ACESSO-POR-TELA.md): "vê a tela no menu e lê os dados
     // dela". Só existem pras telas que não tinham permissão de leitura — onde já existe uma
     // (planos_acao.visualizar, rastreamento.*, usuarios.gerenciar, contratos.gerenciar...), é ela
@@ -108,6 +118,23 @@ enum Permissao: string
             if ($tela !== null && ! in_array($tela->value, $valores, true)) {
                 $erros[] = "A permissão {$valor} exige o acesso à tela ({$tela->value}).";
             }
+        }
+
+        return $erros;
+    }
+
+    /**
+     * Tudo o que impede o perfil de salvar: ação sem a tela dela (docs/64 §3) e a sequência sem a
+     * agenda (docs/74 §3.2 — sem compromisso não existe ordem a seguir).
+     *
+     * @param  array<int, mixed>  $valores
+     * @return list<string>
+     */
+    public static function inconsistencias(array $valores): array
+    {
+        $erros = self::semTela($valores);
+        if (in_array(self::VISITAS_EXIGIR_SEQUENCIA->value, $valores, true) && ! in_array(self::VISITAS_EXIGIR_AGENDA->value, $valores, true)) {
+            $erros[] = 'Seguir a sequência do dia exige também iniciar visita só pela agenda (visitas.exigir_agenda).';
         }
 
         return $erros;

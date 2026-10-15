@@ -560,6 +560,29 @@ class Doc60GeradorRelatoriosTest extends TestCase
             ->assertOk()->assertJsonPath('totais.registros', 1);
     }
 
+    public function test_tipo_de_registro_agrupa_nas_linhas_e_conta_nas_metricas(): void
+    {
+        $foto = $this->formulario('Foto');
+        $ruptura = $this->formulario('Ruptura');
+        $this->registro($foto);
+        $this->registro($foto);
+        $this->registro($ruptura);
+
+        $catalogo = $this->getJson('/api/relatorios-personalizados/catalogo?entidade=registro')->assertOk()->json('data');
+        $this->assertSame('Tipo de registro', collect($catalogo['campos'])->firstWhere('chave', 'formulario')['rotulo']);
+        $this->assertSame('Contagem distinta de Tipo de registro', collect($catalogo['metricas'])->firstWhere('chave', 'contagem_distinta:formulario')['rotulo']);
+
+        $resposta = $this->executar($this->definicaoRegistro([
+            'agrupar' => [['campo' => 'formulario']],
+            'metricas' => [['chave' => 'registros'], ['chave' => 'contagem_distinta:formulario'], ['chave' => 'moda:formulario']],
+        ]))->assertOk();
+
+        $resposta->assertJsonPath('totais', ['registros' => 3, 'contagem_distinta:formulario' => 2, 'moda:formulario' => 'Foto']);
+        $porTipo = collect($resposta->json('linhas'))->keyBy(fn ($l) => $l['dimensoes']['formulario']['rotulo']);
+        $this->assertSame(2, $porTipo['Foto']['valores']['registros']);
+        $this->assertSame(1, $porTipo['Ruptura']['valores']['registros']);
+    }
+
     public function test_perguntas_do_formulario_viram_campos_e_metricas(): void
     {
         $form = $this->formulario('Loja perfeita');

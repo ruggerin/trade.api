@@ -43,6 +43,13 @@ class TipoRegistroController extends Controller
     {
         $tipos = TipoRegistro::query()
             ->when($request->has('ativo'), fn ($query) => $query->where('ativo', $request->boolean('ativo')))
+            // Registro espontâneo: o promotor pode abrir esse formulário por conta própria na visita,
+            // sem estar pedido numa OS/Direcionamento.
+            ->when($request->has('disponivel_registro_livre'), fn ($query) => $query->where('disponivel_registro_livre', $request->boolean('disponivel_registro_livre')))
+            ->when($request->filled('busca'), function ($query) use ($request) {
+                $termo = '%'.addcslashes($request->string('busca'), '%_\\').'%';
+                $query->where('descricao', 'ilike', $termo);
+            })
             // Só tem efeito prático pro SUPERADMIN — ver DepartamentoAuditoriaController::index.
             ->when(
                 $request->filled('empresa_uuid'),
