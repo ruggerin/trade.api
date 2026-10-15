@@ -135,7 +135,7 @@ class PontoVendaController extends Controller
     {
         // Sortimento carregado só no detalhe, não na listagem (evita inflar a resposta da lista
         // de PDVs) — ver docs/14-SORTIMENTO-PONTO-VENDA.md §4.
-        $pontoVenda->load(['promotores', 'redeLoja', 'ramoAtividade', 'contratosAtivos', 'sortimento.produto.secao', 'sortimento.produto.departamento', 'sortimento.departamento', 'sortimento.secao', 'sortimento.marca', 'sortimento.usuario']);
+        $pontoVenda->load(['promotores', 'vendedores.supervisor', 'redeLoja', 'ramoAtividade', 'contratosAtivos', 'sortimento.produto.secao', 'sortimento.produto.departamento', 'sortimento.departamento', 'sortimento.secao', 'sortimento.marca', 'sortimento.usuario']);
         $pontoVenda->loadExists(['contratos as tem_contrato_ativo' => fn ($query) => $query->where('ativo', true)]);
 
         return response()->json([

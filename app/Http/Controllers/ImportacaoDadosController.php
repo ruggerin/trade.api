@@ -2,8 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Support\CarteiraVendedores;
+use App\Support\EquipeComercial;
 use App\Support\ImportacaoProdutos;
 use App\Support\ImportacaoSortimento;
+use App\Support\LeitorCsv;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -35,6 +38,48 @@ class ImportacaoDadosController extends Controller
             $request->file('arquivo')->get(),
             $request->boolean('simular'),
         ));
+    }
+
+    /** Equipe comercial do ERP (docs/73): planilha tudo ou nada, com pré-visualização (`simular`). */
+    public function supervisores(Request $request): JsonResponse
+    {
+        return $this->equipe($request, EquipeComercial::COLUNAS_SUPERVISOR, 'supervisor', EquipeComercial::supervisores(...));
+    }
+
+    public function vendedores(Request $request): JsonResponse
+    {
+        return $this->equipe($request, EquipeComercial::COLUNAS_VENDEDOR, 'vendedor', EquipeComercial::vendedores(...));
+    }
+
+    /** Carteira vendedor × loja (docs/73 §11.1) — substitui a carteira de cada loja do arquivo. */
+    public function carteira(Request $request): JsonResponse
+    {
+        $this->validarArquivo($request, 10);
+
+        $linhas = LeitorCsv::ler($request->file('arquivo')->get(), CarteiraVendedores::COLUNAS, CarteiraVendedores::COLUNAS, CarteiraVendedores::MAX_LINHAS, 'vínculo');
+        if (isset($linhas['erro'])) {
+            return response()->json([
+                'total' => 0, 'lojas' => 0, 'criadas' => 0, 'removidas' => 0, 'aplicado' => false,
+                'erros' => [['linha' => 1, 'codigo_externo' => null, 'mensagem' => $linhas['erro']]],
+            ]);
+        }
+
+        return response()->json(CarteiraVendedores::executar($request->user()->empresa, $linhas, true, $request->boolean('simular')));
+    }
+
+    private function equipe(Request $request, array $colunas, string $nomeItem, callable $carga): JsonResponse
+    {
+        $this->validarArquivo($request, 5);
+
+        $linhas = LeitorCsv::ler($request->file('arquivo')->get(), $colunas, ['codigo_externo'], EquipeComercial::MAX_LINHAS, $nomeItem);
+        if (isset($linhas['erro'])) {
+            return response()->json([
+                'total' => 0, 'criadas' => 0, 'atualizadas' => 0, 'avisos' => [], 'aplicado' => false,
+                'erros' => [['linha' => 1, 'codigo_externo' => null, 'mensagem' => $linhas['erro']]],
+            ]);
+        }
+
+        return response()->json($carga($request->user()->empresa, $linhas, true, $request->boolean('simular')));
     }
 
     private function validarArquivo(Request $request, int $megas): void

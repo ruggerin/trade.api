@@ -80,6 +80,13 @@ class PontoVenda extends Model
             ->withTimestamps();
     }
 
+    /** Vendedores do ERP que atendem esta loja (carteira, docs/73 §11.1) — N × N. */
+    public function vendedores(): BelongsToMany
+    {
+        return $this->belongsToMany(Vendedor::class, 'vendedor_ponto_venda', 'ponto_venda_id', 'vendedor_id')
+            ->withTimestamps();
+    }
+
     public function ordensServico(): HasMany
     {
         return $this->hasMany(OrdemServico::class, 'ponto_venda_id');

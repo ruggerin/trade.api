@@ -73,6 +73,10 @@ enum Permissao: string
     // FATURAMENTO_HABILITADO ligado na empresa; PROMOTOR nunca, mesmo com a permissão.
     case FATURAMENTO_VISUALIZAR = 'faturamento.visualizar';
 
+    // Vendedores e supervisores do ERP (docs/73): ver, conferir, ajustar contato e importar; é
+    // também a do integrador que sincroniza o cadastro. Funciona como a tela (igual usuarios.gerenciar).
+    case VENDEDORES_GERENCIAR = 'vendedores.gerenciar';
+
     // Regras de visita (docs/74): as únicas do catálogo que RESTRINGEM em vez de liberar — quem tem a
     // marca é obrigado; sem perfil, ou perfil sem a marca, nada muda. ADMIN nunca é restringido.
     // Lidas via App\Support\RotaObrigatoria, nunca pelo EnsurePermissao.

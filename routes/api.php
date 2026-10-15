@@ -46,6 +46,7 @@ use App\Http\Controllers\RegistroController;
 use App\Http\Controllers\SecaoAuditoriaController;
 use App\Http\Controllers\SegurancaAparelhoController;
 use App\Http\Controllers\SortimentoPontoVendaController;
+use App\Http\Controllers\EquipeComercialController;
 use App\Http\Controllers\MotivoNaoExecucaoController;
 use App\Http\Controllers\MotivoResolucaoAlertaController;
 use App\Http\Controllers\TipoRegistroController;
@@ -353,6 +354,25 @@ Route::middleware(['auth:sanctum', 'licenca', 'assinatura'])->group(function ():
     // mesma permissão que o cadastro de sortimento pelo admin já usa).
     Route::post('/produtos-auditoria/importar', [ImportacaoDadosController::class, 'produtos'])->middleware('permissao:catalogo.gerenciar');
     Route::post('/sortimentos/importar', [ImportacaoDadosController::class, 'sortimento'])->middleware('permissao:pontos_venda.gerenciar');
+
+    // Vendedores e supervisores espelhados do ERP (docs/73) — contato é PII, então até a leitura
+    // pede a permissão. `sincronizar` é o integrador; `importar` é a planilha do admin.
+    Route::middleware('permissao:vendedores.gerenciar')->group(function (): void {
+        Route::get('/supervisores', [EquipeComercialController::class, 'supervisores']);
+        Route::post('/supervisores/sincronizar', [EquipeComercialController::class, 'sincronizarSupervisores']);
+        Route::post('/supervisores/importar', [ImportacaoDadosController::class, 'supervisores']);
+        Route::put('/supervisores/{supervisor}', [EquipeComercialController::class, 'atualizarSupervisor']);
+        Route::get('/vendedores', [EquipeComercialController::class, 'vendedores']);
+        Route::post('/vendedores/sincronizar', [EquipeComercialController::class, 'sincronizarVendedores']);
+        Route::post('/vendedores/importar', [ImportacaoDadosController::class, 'vendedores']);
+        Route::put('/vendedores/{vendedor}', [EquipeComercialController::class, 'atualizarVendedor']);
+        // Carteira vendedor × loja (N × N): lote do ERP/planilha substitui a carteira de cada loja
+        // enviada; na tela da loja, vínculo 1 a 1.
+        Route::post('/carteira-vendedores/sincronizar', [EquipeComercialController::class, 'sincronizarCarteira']);
+        Route::post('/carteira-vendedores/importar', [ImportacaoDadosController::class, 'carteira']);
+        Route::post('/pontos-venda/{pontoVenda}/vendedores/{vendedor}', [EquipeComercialController::class, 'vincularLoja']);
+        Route::delete('/pontos-venda/{pontoVenda}/vendedores/{vendedor}', [EquipeComercialController::class, 'desvincularLoja']);
+    });
     Route::put('/pontos-venda/{pontoVenda}', [PontoVendaController::class, 'update'])->middleware('permissao:pontos_venda.gerenciar');
     Route::delete('/pontos-venda/{pontoVenda}', [PontoVendaController::class, 'destroy'])->middleware('permissao:pontos_venda.gerenciar');
     // Foto da fachada da loja — mesmo padrão de AuthController::atualizarFoto/removerFoto, só
