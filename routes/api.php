@@ -354,6 +354,8 @@ Route::middleware(['auth:sanctum', 'licenca', 'assinatura'])->group(function ():
     // mesma permissão que o cadastro de sortimento pelo admin já usa).
     Route::post('/produtos-auditoria/importar', [ImportacaoDadosController::class, 'produtos'])->middleware('permissao:catalogo.gerenciar');
     Route::post('/sortimentos/importar', [ImportacaoDadosController::class, 'sortimento'])->middleware('permissao:pontos_venda.gerenciar');
+    // Rota de visitas (docs/78 §4) — mesma permissão da agenda de visitas no admin.
+    Route::post('/agendas-visita/importar', [ImportacaoDadosController::class, 'rotaVisitas'])->middleware('permissao:ordens_servico.gerenciar');
 
     // Vendedores e supervisores espelhados do ERP (docs/73) — contato é PII, então até a leitura
     // pede a permissão. `sincronizar` é o integrador; `importar` é a planilha do admin.

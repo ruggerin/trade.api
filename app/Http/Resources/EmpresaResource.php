@@ -26,6 +26,8 @@ class EmpresaResource extends JsonResource
             // Módulo Pedido de Venda contratado (docs/38 §12) — o admin desabilita as permissões
             // pedidos_venda.* no Perfil e o mobile esconde a aba Pedidos quando false.
             'pedidos_venda_habilitado' => (bool) $this->pedidos_venda_habilitado,
+            // Faturamento contratado no plano (docs/61) — sem ele o parâmetro FATURAMENTO_HABILITADO fica travado.
+            'faturamento_contratado' => (bool) $this->faturamento_contratado,
             'ativo' => $this->ativo,
             // Fuso (IANA) que define o corte de "dia" da empresa (docs/50 §4.3).
             'fuso' => $this->fuso,

@@ -50,7 +50,7 @@ final class VisitaEntidade extends Entidade
     public function consulta(string $campoPeriodo, Carbon $inicio, Carbon $fim): Builder
     {
         return Visita::query()
-            ->with(['pontoVenda:id,uuid,fantasia,rede_loja_id', 'pontoVenda.redeLoja:id,uuid,descricao', 'usuario:id,uuid,nome'])
+            ->with(['pontoVenda:id,uuid,fantasia,rede_loja_id,uf', 'pontoVenda.redeLoja:id,uuid,descricao', 'usuario:id,uuid,nome'])
             ->whereBetween($campoPeriodo, [$inicio, $fim]);
     }
 
@@ -72,6 +72,7 @@ final class VisitaEntidade extends Entidade
                     $operador === 'nao_em' ? $q->whereNot($naRede) : $q->where($naRede);
                 },
                 agrupar: fn (Visita $v) => self::grupoDe($v->pontoVenda?->redeLoja, 'descricao', 'Sem rede')),
+            self::campoUf('pontoVenda', fn (Visita $v) => $v->pontoVenda),
             new Campo('checkout_tipo', 'Checkout feito', Campo::ENUM, ['em', 'nao_em', 'vazio', 'nao_vazio'], opcoes: self::CHECKOUT,
                 filtrar: self::filtroColuna('checkout_tipo'),
                 agrupar: function (Visita $v) {

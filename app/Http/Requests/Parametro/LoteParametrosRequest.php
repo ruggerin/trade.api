@@ -46,6 +46,13 @@ class LoteParametrosRequest extends FormRequest
                 }
 
                 $meta = ParametrosMetadados::de($chave);
+
+                if ($bloqueio = ConfiguracoesEmpresa::bloqueioDeContrato($this->user()->empresa, $chave)) {
+                    $validator->errors()->add("alteracoes.$i.chave", "{$meta['rotulo']}: $bloqueio");
+
+                    continue;
+                }
+
                 $temValor = array_key_exists('valor', $alteracao) && $alteracao['valor'] !== null;
                 $temAtivo = array_key_exists('ativo', $alteracao) && $alteracao['ativo'] !== null;
 

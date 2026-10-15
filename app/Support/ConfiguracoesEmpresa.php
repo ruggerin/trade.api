@@ -24,7 +24,7 @@ final class ConfiguracoesEmpresa
     {
         $linhas = Parametro::withoutGlobalScopes()->where('empresa_id', $empresa->id)->get()->keyBy('chave');
 
-        $itens = collect(ParametrosPadrao::CATALOGO)->map(function (array $padrao, string $chave) use ($linhas) {
+        $itens = collect(ParametrosPadrao::CATALOGO)->map(function (array $padrao, string $chave) use ($linhas, $empresa) {
             $meta = ParametrosMetadados::de($chave);
             /** @var Parametro|null $linha */
             $linha = $linhas->get($chave);
@@ -55,6 +55,8 @@ final class ConfiguracoesEmpresa
                     ? collect($meta['opcoes'])->map(fn ($rotulo, $v) => ['valor' => (string) $v, 'rotulo' => $rotulo])->values()->all()
                     : null,
                 'depende_de' => $meta['depende_de'] ?? null,
+                // Recurso não contratado: a tela mostra travado, com o motivo (o lote recusa mexer).
+                'bloqueado' => self::bloqueioDeContrato($empresa, $chave),
                 'grupo' => $meta['grupo'] ?? null,
                 'ativo_significa' => $meta['ativo_significa'] ?? null,
                 'padrao' => self::normalizar($tipo, $padrao['valor'], $meta, $padrao['valor']),
@@ -117,6 +119,17 @@ final class ConfiguracoesEmpresa
      *
      * @param  list<array{chave: string, valor?: mixed, ativo?: bool}>  $alteracoes
      */
+    /** Motivo de a configuração estar travada por recurso não contratado no plano; null = liberada. */
+    public static function bloqueioDeContrato(?Empresa $empresa, string $chave): ?string
+    {
+        $contrato = ParametrosMetadados::de($chave)['exige_contrato'] ?? null;
+        if ($contrato === null || ($empresa && $empresa->{$contrato['campo']})) {
+            return null;
+        }
+
+        return $contrato['motivo'];
+    }
+
     public static function salvarLote(Empresa $empresa, array $alteracoes): void
     {
         DB::transaction(function () use ($empresa, $alteracoes) {

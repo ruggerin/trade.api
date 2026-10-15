@@ -291,6 +291,7 @@ class EmpresaController extends Controller
                 'limite_pontos_venda' => $dados['limite_pontos_venda'] ?? null,
                 'limite_licencas' => $dados['limite_licencas'] ?? null,
                 'pedidos_venda_habilitado' => $dados['pedidos_venda_habilitado'] ?? false,
+                'faturamento_contratado' => $dados['faturamento_contratado'] ?? false,
                 'fuso' => $dados['fuso'] ?? Fuso::PADRAO,
             ]);
 

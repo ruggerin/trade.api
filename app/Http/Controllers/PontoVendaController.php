@@ -57,6 +57,7 @@ class PontoVendaController extends Controller
                 fn ($q) => $q->where('uuid', $request->string('rede_loja_uuid')),
             ))
             ->when($request->filled('cidade'), fn ($query) => $query->where('cidade', 'ilike', '%'.addcslashes($request->string('cidade'), '%_\\').'%'))
+            ->when($request->filled('uf'), fn ($query) => $query->where('uf', mb_strtoupper($request->string('uf')->trim()->toString())))
             // Loja sem nenhum promotor atribuído — pendência de configuração da carteira.
             ->when($request->boolean('sem_promotor'), fn ($query) => $query->doesntHave('promotores'))
             // Período por data local no fuso da empresa (docs/50 §4.3), não meia-noite UTC.

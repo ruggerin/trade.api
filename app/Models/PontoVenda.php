@@ -30,6 +30,7 @@ class PontoVenda extends Model
         'numero',
         'bairro',
         'cidade',
+        'uf',
         'cep',
         'telefone',
         'email',

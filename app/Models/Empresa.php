@@ -30,6 +30,8 @@ class Empresa extends Model
         'limite_licencas',
         // Módulo pago, só SUPERADMIN edita (docs/38-PEDIDO-VENDEDOR.md §12).
         'pedidos_venda_habilitado',
+        // Integração de faturamento contratada (docs/61), só SUPERADMIN edita.
+        'faturamento_contratado',
         'ativo',
         // docs/50 §4.3 — fuso (IANA) que define o corte de "dia" da empresa inteira.
         'fuso',
@@ -43,6 +45,7 @@ class Empresa extends Model
             'limite_pontos_venda' => 'integer',
             'limite_licencas' => 'integer',
             'pedidos_venda_habilitado' => 'boolean',
+            'faturamento_contratado' => 'boolean',
             'ativo' => 'boolean',
         ];
     }

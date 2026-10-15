@@ -25,6 +25,7 @@ class PontoVendaResource extends JsonResource
             'numero' => $this->numero,
             'bairro' => $this->bairro,
             'cidade' => $this->cidade,
+            'uf' => $this->uf,
             'cep' => $this->cep,
             'telefone' => $this->telefone,
             'email' => $this->email,

@@ -6,6 +6,7 @@ use App\Models\Empresa;
 use App\Models\PontoVenda;
 use App\Models\RamoAtividade;
 use App\Models\RedeLoja;
+use App\Models\Vendedor;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 
@@ -29,8 +30,10 @@ class ImportacaoPontosVenda
 
     /** Cabeçalho canônico — é o que o arquivo modelo traz, na ordem. */
     public const COLUNAS = [
-        'codigo_externo', 'cnpj', 'razao_social', 'fantasia', 'endereco', 'numero', 'bairro', 'cidade',
+        'codigo_externo', 'cnpj', 'razao_social', 'fantasia', 'endereco', 'numero', 'bairro', 'cidade', 'uf',
         'cep', 'telefone', 'email', 'latitude', 'longitude', 'rede', 'ramo_atividade', 'numero_checkouts', 'ativo',
+        // Carteira da loja (docs/78 §3): "374", "374 - DIEMY" ou "374|680". Preenchida substitui; vazia não mexe.
+        'vendedores',
     ];
 
     private const OBRIGATORIOS_NA_CRIACAO = ['razao_social', 'fantasia', 'endereco', 'cidade', 'latitude', 'longitude'];
@@ -44,6 +47,8 @@ class ImportacaoPontosVenda
         if (isset($linhas['erro'])) {
             return self::relatorio(0, 0, 0, [['linha' => 1, 'codigo_externo' => null, 'mensagem' => $linhas['erro']]], false);
         }
+
+        $vendedores = Vendedor::withoutGlobalScopes()->where('empresa_id', $empresa->id)->pluck('id', 'codigo_externo');
 
         $redes = RedeLoja::where('empresa_id', $empresa->id)->get()->keyBy(fn ($r) => self::chaveNome($r->descricao));
         $ramos = RamoAtividade::where('empresa_id', $empresa->id)->get()->keyBy(fn ($r) => self::chaveNome($r->descricao));
@@ -120,6 +125,23 @@ class ImportacaoPontosVenda
                 }
                 unset($dados['ramo_atividade']);
             }
+            if (isset($dados['uf'])) {
+                $dados['uf'] = Uf::normalizar($dados['uf']);
+                if (! in_array($dados['uf'], Uf::SIGLAS, true)) {
+                    $mensagens[] = "UF \"{$dados['uf']}\" inválida: use a sigla, como AM ou SP.";
+                }
+            }
+            // Fica fora de $dados (não é coluna da loja); vira a carteira depois de gravar as lojas.
+            $codigosVendedores = null;
+            if (isset($dados['vendedores'])) {
+                $codigosVendedores = self::codigosDeVendedores($dados['vendedores']);
+                foreach ($codigosVendedores as $codigoVendedor) {
+                    if (! $vendedores->has($codigoVendedor)) {
+                        $mensagens[] = "Vendedor {$codigoVendedor} não cadastrado: importe os vendedores antes.";
+                    }
+                }
+                unset($dados['vendedores']);
+            }
             if (isset($dados['ativo'])) {
                 $valor = LeitorCsv::booleano($dados['ativo']);
                 if ($valor !== null) {
@@ -174,7 +196,7 @@ class ImportacaoPontosVenda
                 continue;
             }
 
-            $operacoes[] = ['atual' => $atual, 'dados' => $dados];
+            $operacoes[] = ['atual' => $atual, 'dados' => $dados, 'vendedores' => $codigosVendedores];
         }
 
         $novas = count(array_filter($operacoes, fn ($o) => ! $o['atual']));
@@ -195,15 +217,50 @@ class ImportacaoPontosVenda
             return self::relatorio($novas, $atualizadas, count($linhas), $erros, false);
         }
 
-        DB::transaction(function () use ($empresa, $operacoes) {
+        $carteira = ['criadas' => 0, 'removidas' => 0];
+        DB::transaction(function () use ($empresa, $operacoes, &$carteira) {
             foreach ($operacoes as ['atual' => $atual, 'dados' => $dados]) {
                 $atual
                     ? $atual->update($dados)
                     : PontoVenda::create([...$dados, 'empresa_id' => $empresa->id]);
             }
+
+            // Carteira só das lojas com a coluna preenchida, pela mesma regra da importação de carteira
+            // (substitui a da loja). Tudo já validado acima, então não sobra erro aqui.
+            $vinculos = [];
+            foreach ($operacoes as $op) {
+                foreach ($op['vendedores'] ?? [] as $codigoVendedor) {
+                    $vinculos[] = ['numero' => 0, 'dados' => ['codigo_externo_loja' => $op['dados']['codigo_externo'], 'codigo_externo_vendedor' => $codigoVendedor]];
+                }
+            }
+            if ($vinculos) {
+                $carteira = CarteiraVendedores::executar($empresa, $vinculos, tudoOuNada: true);
+            }
         });
 
-        return self::relatorio($novas, $atualizadas, count($linhas), [], true);
+        return self::relatorio($novas, $atualizadas, count($linhas), [], true) + [
+            'vendedores_vinculados' => $carteira['criadas'],
+            'vendedores_removidos' => $carteira['removidas'],
+        ];
+    }
+
+    /**
+     * "374", "374 - DIEMY" ou "374|680 - FABIANO" → ["374", "680"]: o código vem antes do " - " (o
+     * nome do RCA que a planilha de rota já traz é ignorado).
+     *
+     * @return list<string>
+     */
+    public static function codigosDeVendedores(string $valor): array
+    {
+        $codigos = [];
+        foreach (explode('|', $valor) as $parte) {
+            $codigo = trim(explode(' - ', $parte, 2)[0]);
+            if ($codigo !== '') {
+                $codigos[$codigo] = true;
+            }
+        }
+
+        return array_keys($codigos);
     }
 
     private static function chaveNome(string $nome): string

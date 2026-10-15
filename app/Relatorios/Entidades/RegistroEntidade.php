@@ -58,7 +58,7 @@ final class RegistroEntidade extends Entidade
                 'motivoResolucao:id,uuid,descricao',
                 'visita:id,usuario_id,ponto_venda_id',
                 'visita.usuario:id,uuid,nome',
-                'visita.pontoVenda:id,uuid,fantasia,rede_loja_id',
+                'visita.pontoVenda:id,uuid,fantasia,rede_loja_id,uf',
                 'visita.pontoVenda.redeLoja:id,uuid,descricao',
             ])
             ->whereNull('cancelado_em')
@@ -85,6 +85,7 @@ final class RegistroEntidade extends Entidade
                     $operador === 'nao_em' ? $q->whereDoesntHave('visita', $naRede) : $q->whereHas('visita', $naRede);
                 },
                 agrupar: fn (VisitaRegistro $r) => self::grupoDe($r->visita?->pontoVenda?->redeLoja, 'descricao', 'Sem rede')),
+            self::campoUf('visita.pontoVenda', fn (VisitaRegistro $r) => $r->visita?->pontoVenda),
             new Campo('promotor', 'Promotor', Campo::RELACAO, ['em', 'nao_em'], fonte: 'usuarios',
                 filtrar: $daVisita('usuario_id', Usuario::class),
                 agrupar: fn (VisitaRegistro $r) => self::grupoDe($r->visita?->usuario, 'nome', 'Sem promotor')),

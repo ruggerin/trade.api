@@ -3,6 +3,7 @@
 namespace App\Http\Requests\PontoVenda;
 
 use Illuminate\Foundation\Http\FormRequest;
+use App\Support\Uf;
 use Illuminate\Validation\Rule;
 
 class UpdatePontoVendaRequest extends FormRequest
@@ -10,6 +11,13 @@ class UpdatePontoVendaRequest extends FormRequest
     public function authorize(): bool
     {
         return true;
+    }
+
+    protected function prepareForValidation(): void
+    {
+        if ($this->has('uf')) {
+            $this->merge(['uf' => Uf::normalizar($this->input('uf'))]);
+        }
     }
 
     public function rules(): array
@@ -30,6 +38,7 @@ class UpdatePontoVendaRequest extends FormRequest
             'numero' => ['sometimes', 'nullable', 'string', 'max:10'],
             'bairro' => ['sometimes', 'nullable', 'string', 'max:100'],
             'cidade' => ['sometimes', 'required', 'string', 'max:100'],
+            'uf' => ['sometimes', 'nullable', Rule::in(Uf::SIGLAS)],
             'cep' => ['sometimes', 'nullable', 'string', 'max:10'],
             'telefone' => ['sometimes', 'nullable', 'string', 'max:50'],
             'email' => ['sometimes', 'nullable', 'email', 'max:255'],

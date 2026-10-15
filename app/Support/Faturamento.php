@@ -20,7 +20,9 @@ final class Faturamento
 
     public static function habilitado(?Empresa $empresa): bool
     {
-        if ($empresa === null) {
+        // Sem o contrato (liberado pelo SUPERADMIN), o parâmetro não vale — nem se alguém o ligou
+        // pelo "Avançado" ou antes do contrato existir.
+        if ($empresa === null || ! $empresa->faturamento_contratado) {
             return false;
         }
 
