@@ -46,6 +46,7 @@ use App\Http\Controllers\RegistroController;
 use App\Http\Controllers\SecaoAuditoriaController;
 use App\Http\Controllers\SegurancaAparelhoController;
 use App\Http\Controllers\SortimentoPontoVendaController;
+use App\Http\Controllers\AcompanhamentoController;
 use App\Http\Controllers\EquipeComercialController;
 use App\Http\Controllers\MotivoNaoExecucaoController;
 use App\Http\Controllers\MotivoResolucaoAlertaController;
@@ -191,6 +192,14 @@ Route::middleware(['auth:sanctum', 'licenca', 'assinatura'])->group(function ():
     // (REGISTRO_CANCELAMENTO_PERMITIDO), ADMIN/GESTOR sempre podem. Ver
     // VisitaRegistroController::cancelar.
     Route::post('/visitas/{visita}/registros/{registro}/cancelar', [VisitaRegistroController::class, 'cancelar']);
+    // "Ainda está lá?" (docs/83): resposta do promotor na visita.
+    Route::post('/visitas/{visita}/acompanhamentos/{acompanhamento}/respostas', [AcompanhamentoController::class, 'responder'])->middleware('canal.mobile');
+    // Acompanhamentos no admin: lista (aba de Registros), linha do tempo e encerramento pelo gestor.
+    Route::middleware('permissao:tela.registros')->group(function (): void {
+        Route::get('/acompanhamentos', [AcompanhamentoController::class, 'index']);
+        Route::get('/acompanhamentos/{acompanhamento}', [AcompanhamentoController::class, 'show']);
+        Route::post('/acompanhamentos/{acompanhamento}/encerrar', [AcompanhamentoController::class, 'encerrar']);
+    });
     // Painel de Atividades: ADMIN/GESTOR marca um alerta como resolvido — ver
     // VisitaRegistroController::resolverAlerta e docs/17-PAINEL-ATIVIDADES.md.
     // Feedback em registro (docs/28 §3): feed de comentários promotor <-> admin/gestor + badge de

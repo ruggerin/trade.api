@@ -15,8 +15,10 @@ use App\Models\MotivoResolucaoAlerta;
 use App\Models\ProdutoAuditoria;
 use App\Models\SecaoAuditoria;
 use App\Models\TipoRegistro;
+use App\Models\AcompanhamentoRegistro;
 use App\Models\Visita;
 use App\Models\VisitaRegistro;
+use App\Support\Acompanhamentos;
 use App\Support\CancelamentoRegistro;
 use App\Support\HorarioDoCampo;
 use Illuminate\Http\JsonResponse;
@@ -100,6 +102,9 @@ class VisitaRegistroController extends Controller
             'ruptura' => $dados['ruptura'] ?? false,
             'observacao' => $dados['observacao'] ?? null,
             'valores_campos' => $dados['valores_campos'] ?? null,
+            'acompanhamento_id' => ! empty($dados['acompanhamento_uuid'])
+                ? AcompanhamentoRegistro::where('uuid', $dados['acompanhamento_uuid'])->value('id')
+                : null,
         ]);
         $registro->created_at = $criadoEm;
         $registro->recebido_em = now();
@@ -116,6 +121,11 @@ class VisitaRegistroController extends Controller
                 ->whereNull('respondido_em')
                 ->update(['respondido_em' => $criadoEm, 'updated_at' => now()]);
         }
+
+        // "Ainda está lá?" (docs/83): formulário com acompanhamento e gatilho satisfeito abre (e
+        // substitui o anterior do mesmo item na loja).
+        $registro->setRelation('visita', $visita);
+        Acompanhamentos::abrirSeAplica($registro);
 
         // Duas formas de anexar foto, combináveis — ver docs/21-EVIDENCIA-EM-FOTOS.md. `ordem`
         // segue a ordem em que cada uma aparece no envio: arquivos novos primeiro, depois as
@@ -183,6 +193,8 @@ class VisitaRegistroController extends Controller
         }
 
         $registro->update(['cancelado_em' => now()]);
+        // Acompanhamento aberto por este registro some junto (docs/83 §6).
+        Acompanhamentos::cancelarDoRegistro($registro);
 
         // Reabre o formulário na Ordem de Serviço se esse cancelamento tirou a única resposta
         // válida — sem isso a OS ficava marcada como respondida (respondido_em) mesmo sem

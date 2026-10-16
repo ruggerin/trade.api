@@ -3,6 +3,7 @@
 namespace App\Relatorios;
 
 use App\Models\TipoRegistro;
+use App\Relatorios\Entidades\AcompanhamentoEntidade;
 use App\Relatorios\Entidades\OrdemServicoEntidade;
 use App\Relatorios\Entidades\RegistroEntidade;
 use App\Relatorios\Entidades\VisitaEntidade;
@@ -44,6 +45,8 @@ final class ExecutorRelatorio
             'ordem_servico' => new OrdemServicoEntidade,
             'visita' => new VisitaEntidade,
             'registro' => new RegistroEntidade,
+            // "Ainda está lá?" (docs/83): duração do ponto extra, tempo de reposição da ruptura.
+            'acompanhamento' => new AcompanhamentoEntidade,
         ];
     }
 

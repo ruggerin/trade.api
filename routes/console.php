@@ -47,3 +47,6 @@ Schedule::command('visitas:calcular-afastamento')->everyTenMinutes();
 
 // Sessões do app (docs/67 §4.4): tokens revogados/vencidos há 30+ dias e desafios de atestação vencidos.
 Schedule::command('sessoes:limpar')->dailyAt('03:45');
+
+// "Ainda está lá?" (docs/83): prazo máximo vencido vira EXPIRADO.
+Schedule::command('acompanhamentos:expirar')->dailyAt('03:50');

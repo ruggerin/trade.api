@@ -85,6 +85,12 @@ class StoreVisitaRegistroRequest extends FormRequest
                 'bail', 'nullable', 'string', 'required_if:tipo_vinculo,MARCA', 'uuid',
                 Rule::exists('marcas_auditoria', 'uuid')->where('empresa_id', $empresaId),
             ],
+            // Registro gerado ao responder um acompanhamento ("Continua" com formulário ou a
+            // justificativa do "Acabou", docs/83) — não abre acompanhamento novo.
+            'acompanhamento_uuid' => [
+                'bail', 'nullable', 'string', 'uuid',
+                Rule::exists('acompanhamentos_registro', 'uuid')->where('empresa_id', $empresaId),
+            ],
             'ruptura' => ['nullable', 'boolean'],
             'observacao' => ['nullable', 'string'],
             // Valores dos campos customizados do tipo_registro escolhido — validados dinamicamente
