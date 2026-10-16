@@ -50,6 +50,9 @@ class VisitaRegistro extends Model
         'alerta_motivo_texto',
         // Registro gerado ao responder um acompanhamento (docs/83).
         'acompanhamento_id',
+        // Embalagem do registro por marca concorrente (docs/85).
+        'embalagem_quantidade',
+        'embalagem_unidade',
     ];
 
     protected function casts(): array
@@ -61,6 +64,7 @@ class VisitaRegistro extends Model
             'cancelado_em' => 'datetime',
             'alerta_resolvido_em' => 'datetime',
             'recebido_em' => 'datetime',
+            'embalagem_quantidade' => 'float',
         ];
     }
 

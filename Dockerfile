@@ -66,6 +66,11 @@ COPY docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 COPY docker/php.ini /usr/local/etc/php/conf.d/99-app.ini
 COPY docker/crontab /etc/crontabs/root
 COPY docker/entrypoint.sh /entrypoint.sh
+
+# Versão da API (data + commit) — o .git não entra na imagem (.dockerignore), então vem de fora,
+# pelo docker-compose.yml. Sem ela, a API se apresenta como "dev".
+ARG APP_VERSAO=dev
+ENV APP_VERSAO=${APP_VERSAO}
 RUN chmod +x /entrypoint.sh && chmod 0600 /etc/crontabs/root
 
 EXPOSE 80

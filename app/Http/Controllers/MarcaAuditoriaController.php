@@ -3,6 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Enums\Propriedade;
+use App\Enums\StatusAprovacao;
+use App\Support\JuntarMarcas;
+use Illuminate\Validation\Rule;
 use App\Http\Requests\MarcaAuditoria\StoreMarcaAuditoriaRequest;
 use App\Http\Requests\MarcaAuditoria\UpdateMarcaAuditoriaRequest;
 use App\Http\Resources\MarcaAuditoriaResource;
@@ -30,7 +33,11 @@ class MarcaAuditoriaController extends Controller
                 $request->filled('empresa_uuid'),
                 fn ($query) => $query->where('empresa_id', Empresa::where('uuid', $request->string('empresa_uuid'))->value('id')),
             )
-            ->with('empresa')
+            // Fila de aprovação (docs/85 §4.3): só as cadastradas pelo promotor ainda "a aprovar".
+            ->when($request->boolean('a_aprovar'), fn ($query) => $query->where('status_aprovacao', StatusAprovacao::PENDENTE->value))
+            // Juntada em outra (REJEITADO) não aparece mais em lista nenhuma.
+            ->where(fn ($q) => $q->whereNull('status_aprovacao')->orWhere('status_aprovacao', '!=', StatusAprovacao::REJEITADO->value))
+            ->with(['empresa', 'criadoPor:id,nome'])
             ->orderBy('descricao')
             // `por_pagina` opt-in: o app baixa o catálogo inteiro pro cache offline (docs/82 — antes
             // só via a 1ª página de 15). Sem ele, a paginação de sempre do admin.
@@ -63,6 +70,34 @@ class MarcaAuditoriaController extends Controller
         return response()->json([
             'marca' => new MarcaAuditoriaResource($marcaAuditoria),
         ]);
+    }
+
+    /** Marca cadastrada pelo promotor (docs/85 §4.2) deixa de ser "a aprovar". */
+    public function aprovar(MarcaAuditoria $marcaAuditoria): JsonResponse
+    {
+        abort_if($marcaAuditoria->status_aprovacao !== StatusAprovacao::PENDENTE, 422, 'Esta marca não está a aprovar.');
+
+        $marcaAuditoria->update(['status_aprovacao' => null, 'ativo' => true]);
+
+        return response()->json(['marca' => new MarcaAuditoriaResource($marcaAuditoria->load('criadoPor'))]);
+    }
+
+    /**
+     * Junta esta marca em outra que já existe (ex.: "DOWNY" do promotor em "Downy"): registros,
+     * listas e cadastros passam pra marca destino e esta fica inativa. Ver App\Support\JuntarMarcas.
+     */
+    public function juntar(Request $request, MarcaAuditoria $marcaAuditoria): JsonResponse
+    {
+        $dados = $request->validate([
+            'destino_uuid' => ['required', 'uuid', Rule::exists('marcas_auditoria', 'uuid')->where('empresa_id', $request->user()->empresa_id)],
+        ]);
+        $destino = MarcaAuditoria::where('uuid', $dados['destino_uuid'])->firstOrFail();
+        abort_if($destino->id === $marcaAuditoria->id, 422, 'Escolha outra marca pra juntar.');
+        abort_if($destino->status_aprovacao === StatusAprovacao::REJEITADO, 422, 'A marca destino já foi juntada em outra.');
+
+        JuntarMarcas::executar($marcaAuditoria, $destino);
+
+        return response()->json(['marca' => new MarcaAuditoriaResource($destino->refresh()->load('criadoPor'))]);
     }
 
     public function destroy(MarcaAuditoria $marcaAuditoria): JsonResponse

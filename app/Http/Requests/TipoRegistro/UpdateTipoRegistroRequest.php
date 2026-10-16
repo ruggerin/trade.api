@@ -54,6 +54,13 @@ class UpdateTipoRegistroRequest extends FormRequest
             // TipoRegistro::produtosPredefinidos.
             'produtos_uuids' => ['sometimes', 'nullable', 'array', 'max:500'],
             'produtos_uuids.*' => ['string', 'distinct', Rule::exists('produtos_auditoria', 'uuid')->where('empresa_id', $this->user()->empresa_id)],
+            // Concorrentes por marca e embalagem (docs/85) — só com granularidade MARCA.
+            'marcas_uuids' => ['sometimes', 'nullable', 'array', 'max:200'],
+            'marcas_uuids.*' => ['string', 'distinct', Rule::exists('marcas_auditoria', 'uuid')->where('empresa_id', $this->user()->empresa_id)],
+            'permite_marca_nova' => ['nullable', 'boolean'],
+            // Lista guiada da granularidade PRODUTO: fixa (a do admin) ou o Mix da loja (docs/85 §7).
+            'lista_produtos_origem' => ['nullable', Rule::in([\App\Models\TipoRegistro::LISTA_PRODUTOS_FIXA, \App\Models\TipoRegistro::LISTA_PRODUTOS_MIX_LOJA])],
+            'varias_embalagens' => ['nullable', 'boolean'],
             'pontos_venda_uuids' => ['sometimes', 'nullable', 'array', 'max:2000'],
             'pontos_venda_uuids.*' => ['string', 'distinct', Rule::exists('pontos_venda', 'uuid')->where('empresa_id', $this->user()->empresa_id)],
             'redes_lojas_uuids' => ['sometimes', 'nullable', 'array', 'max:500'],
@@ -173,6 +180,7 @@ class UpdateTipoRegistroRequest extends FormRequest
         $validator->after(function (Validator $validator): void {
             // Fora do `if campos`: ligar o acompanhamento sem reenviar as perguntas também valida.
             $this->validarAcompanhamento($validator);
+            $this->validarPorMarca($validator, $this->route('tipoRegistro'));
             if ($this->has('campos')) {
                 $chaves = collect($this->input('campos', []))->pluck('chave')->filter();
                 if ($chaves->count() !== $chaves->unique()->count()) {
@@ -269,6 +277,43 @@ class UpdateTipoRegistroRequest extends FormRequest
 
         if ($atual && $this->input('acompanha_formulario_acabou_uuid') === $atual->uuid) {
             $validator->errors()->add('acompanha_formulario_acabou_uuid', 'A justificativa precisa ser outro formulário.');
+        }
+    }
+
+    /**
+     * docs/85 §4.2: com granularidade MARCA, a lista só aceita marcas concorrentes, e o formulário
+     * precisa ter alguma marca na lista ou deixar o promotor cadastrar. Exceção por seção não
+     * vira MARCA (é granularidade do formulário inteiro).
+     */
+    private function validarPorMarca(Validator $validator, ?\App\Models\TipoRegistro $atual = null): void
+    {
+        foreach ((array) $this->input('excecoes_granularidade', []) as $i => $excecao) {
+            if (($excecao['granularidade'] ?? null) === GranularidadeResposta::MARCA->value) {
+                $validator->errors()->add("excecoes_granularidade.{$i}.granularidade", 'Exceção por seção só pode ser por produto ou por linha.');
+            }
+        }
+
+        $granularidade = $this->has('granularidade_padrao') ? $this->input('granularidade_padrao') : $atual?->granularidade_padrao?->value;
+        if ($granularidade !== GranularidadeResposta::MARCA->value) {
+            return;
+        }
+
+        $uuids = $this->has('marcas_uuids')
+            ? collect((array) $this->input('marcas_uuids', []))->filter(fn ($u) => is_string($u) && \Illuminate\Support\Str::isUuid($u))
+            : null;
+        if ($uuids !== null && $uuids->isNotEmpty()) {
+            $naoConcorrentes = \App\Models\MarcaAuditoria::whereIn('uuid', $uuids)
+                ->where('propriedade', '!=', \App\Enums\Propriedade::CONCORRENTE->value)
+                ->pluck('descricao');
+            if ($naoConcorrentes->isNotEmpty()) {
+                $validator->errors()->add('marcas_uuids', 'Só marcas concorrentes entram na lista: '.$naoConcorrentes->join(', ').'.');
+            }
+        }
+
+        $temMarcas = $uuids !== null ? $uuids->isNotEmpty() : ($atual?->marcasPredefinidas()->exists() ?? false);
+        $permiteNova = $this->has('permite_marca_nova') ? $this->boolean('permite_marca_nova') : ($atual?->permite_marca_nova ?? true);
+        if (! $temMarcas && ! $permiteNova) {
+            $validator->errors()->add('marcas_uuids', 'Escolha as marcas da lista ou deixe o promotor cadastrar marca nova.');
         }
     }
 }

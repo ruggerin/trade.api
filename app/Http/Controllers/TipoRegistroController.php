@@ -21,6 +21,7 @@ use App\Models\TipoRegistro;
 use App\Models\TipoRegistroSecaoExcecao;
 use App\Models\VisitaRegistro;
 use App\Support\LinhaAusente;
+use App\Support\ConcorrentesPorMarca;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -45,6 +46,8 @@ class TipoRegistroController extends Controller
         'ramosAtividade:id,uuid,descricao',
         // Lista predefinida de produtos (granularidade PRODUTO) — o mobile usa como opções de vínculo.
         'produtosPredefinidos:id,uuid,descricao,codigo_barras,codigo_externo',
+        // Lista de marcas concorrentes (granularidade MARCA, docs/85) — a lista do app.
+        'marcasPredefinidas:id,uuid,descricao,status_aprovacao',
     ];
 
     public function index(Request $request): JsonResponse
@@ -135,6 +138,9 @@ class TipoRegistroController extends Controller
                 'escolhe_secao' => $dados['escolhe_secao'] ?? false,
                 'lista_recorte' => $dados['lista_recorte'] ?? TipoRegistro::LISTA_PRIMEIRO_DA_LOJA,
                 'filtra_marca' => $dados['filtra_marca'] ?? false,
+                'permite_marca_nova' => $dados['permite_marca_nova'] ?? true,
+                'lista_produtos_origem' => $dados['lista_produtos_origem'] ?? TipoRegistro::LISTA_PRODUTOS_FIXA,
+                'varias_embalagens' => $dados['varias_embalagens'] ?? true,
                 ...self::camposAcompanhamento($dados),
                 'intervalo_dias' => $dados['intervalo_dias'] ?? 0,
                 'eh_ruptura' => $dados['eh_ruptura'] ?? false,
@@ -148,6 +154,7 @@ class TipoRegistroController extends Controller
             $this->sincronizarEscopoLinhaAusente($tipo, $dados);
             $this->sincronizarRamosAtividade($tipo, $dados);
             $this->sincronizarProdutosPredefinidos($tipo, $dados);
+            $this->sincronizarMarcasPredefinidas($tipo, $dados);
 
             return $tipo;
         });
@@ -182,7 +189,7 @@ class TipoRegistroController extends Controller
         // de manter o estado anterior ou salvar o novo por completo.
         DB::transaction(function () use ($tipoRegistro, $dados): void {
             $tipoRegistro->update(collect($dados)->except([
-                'campos', 'excecoes_granularidade', 'pontos_venda_uuids', 'redes_lojas_uuids', 'produtos_uuids',
+                'campos', 'excecoes_granularidade', 'pontos_venda_uuids', 'redes_lojas_uuids', 'produtos_uuids', 'marcas_uuids',
                 'escopo_tipo_vinculo', 'escopo_secao_uuid', 'escopo_departamento_uuid', 'escopo_marca_uuid', 'ramos_atividade_uuids',
             ])->all());
             // Mesma regra de store(): com escolha de recorte a granularidade é sempre LINHA.
@@ -204,8 +211,11 @@ class TipoRegistroController extends Controller
                 $this->sincronizarRamosAtividade($tipoRegistro->refresh(), $dados);
             }
             // Mesmo cuidado: update parcial (só descrição/ativo) não apaga a lista de produtos.
-            if (array_key_exists('produtos_uuids', $dados) || array_key_exists('granularidade_padrao', $dados)) {
+            if (array_key_exists('produtos_uuids', $dados) || array_key_exists('granularidade_padrao', $dados) || array_key_exists('lista_produtos_origem', $dados)) {
                 $this->sincronizarProdutosPredefinidos($tipoRegistro->refresh(), $dados);
+            }
+            if (array_key_exists('marcas_uuids', $dados) || array_key_exists('granularidade_padrao', $dados)) {
+                $this->sincronizarMarcasPredefinidas($tipoRegistro->refresh(), $dados);
             }
 
             if (array_key_exists('campos', $dados)) {
@@ -325,6 +335,29 @@ class TipoRegistroController extends Controller
      * período, depois do primeiro levantamento. "Entrou" = item aprovado do Mix que cobre o
      * recorte, criado nesse intervalo (o Mix é hard delete: item removido depois some da conta).
      */
+    /**
+     * "Quem ocupa o espaço" (docs/85 §3.4): por marca + embalagem, preço médio, R$ por litro/kg
+     * (do mais barato), lojas e circunstâncias, no período. Só formulário por marca concorrente.
+     */
+    public function concorrentes(Request $request, TipoRegistro $tipoRegistro): JsonResponse
+    {
+        abort_unless($tipoRegistro->porMarca(), 422, 'Só formulários por marca concorrente têm esta visão.');
+        $dados = $request->validate([
+            'inicio' => ['required', 'date'],
+            'fim' => ['required', 'date', 'after_or_equal:inicio'],
+        ]);
+        $tipoRegistro->load('campos');
+
+        $registros = VisitaRegistro::query()
+            ->where('tipo_registro_id', $tipoRegistro->id)
+            ->whereNull('cancelado_em')
+            ->whereBetween('created_at', [Carbon::parse($dados['inicio'])->startOfDay(), Carbon::parse($dados['fim'])->endOfDay()])
+            ->with(['marca:id,uuid,descricao,status_aprovacao', 'visita:id,ponto_venda_id'])
+            ->get();
+
+        return response()->json(ConcorrentesPorMarca::resumo($tipoRegistro, $registros));
+    }
+
     public function conversao(Request $request, TipoRegistro $tipoRegistro): JsonResponse
     {
         abort_if($tipoRegistro->escopo_acao !== EscopoAcaoTipoRegistro::LINHA_AUSENTE, 422, 'Só formulários de linha ausente têm conversão.');
@@ -383,7 +416,7 @@ class TipoRegistroController extends Controller
      */
     private function sincronizarProdutosPredefinidos(TipoRegistro $tipo, array $dados): void
     {
-        if ($tipo->granularidade_padrao?->value !== 'PRODUTO') {
+        if ($tipo->granularidade_padrao?->value !== 'PRODUTO' || $tipo->lista_produtos_origem === TipoRegistro::LISTA_PRODUTOS_MIX_LOJA) {
             $tipo->produtosPredefinidos()->detach();
 
             return;
@@ -401,6 +434,29 @@ class TipoRegistroController extends Controller
             }
         }
         $tipo->produtosPredefinidos()->sync($sync);
+    }
+
+    /** Lista de marcas (docs/85) — mesmo raciocínio dos produtos: só com granularidade MARCA. */
+    private function sincronizarMarcasPredefinidas(TipoRegistro $tipo, array $dados): void
+    {
+        if (! $tipo->porMarca()) {
+            $tipo->marcasPredefinidas()->detach();
+
+            return;
+        }
+        if (! array_key_exists('marcas_uuids', $dados)) {
+            return;
+        }
+
+        $uuids = array_values($dados['marcas_uuids'] ?? []);
+        $ids = MarcaAuditoria::whereIn('uuid', $uuids)->pluck('id', 'uuid');
+        $sync = [];
+        foreach ($uuids as $ordem => $uuid) {
+            if (isset($ids[$uuid])) {
+                $sync[$ids[$uuid]] = ['ordem' => $ordem];
+            }
+        }
+        $tipo->marcasPredefinidas()->sync($sync);
     }
 
     /** Configuração do "ainda está lá?" na criação (docs/83 §5.1). */
@@ -572,6 +628,9 @@ class TipoRegistroController extends Controller
                 'escolhe_secao' => $tipoRegistro->escolhe_secao,
                 'lista_recorte' => $tipoRegistro->lista_recorte,
                 'filtra_marca' => $tipoRegistro->filtra_marca,
+                'permite_marca_nova' => $tipoRegistro->permite_marca_nova,
+                'lista_produtos_origem' => $tipoRegistro->lista_produtos_origem,
+                'varias_embalagens' => $tipoRegistro->varias_embalagens,
                 'acompanha' => $tipoRegistro->acompanha,
                 'acompanha_gatilho_chave' => $tipoRegistro->acompanha_gatilho_chave,
                 'acompanha_gatilho_valor' => $tipoRegistro->acompanha_gatilho_valor,
@@ -635,6 +694,9 @@ class TipoRegistroController extends Controller
             // de Ação obrigatória/campanha, que a cópia nunca herda).
             $copia->produtosPredefinidos()->sync(
                 $tipoRegistro->produtosPredefinidos()->get()->mapWithKeys(fn ($p) => [$p->id => ['ordem' => $p->pivot->ordem]])->all(),
+            );
+            $copia->marcasPredefinidas()->sync(
+                $tipoRegistro->marcasPredefinidas()->get()->mapWithKeys(fn ($m) => [$m->id => ['ordem' => $m->pivot->ordem]])->all(),
             );
 
             return $copia;

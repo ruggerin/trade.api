@@ -34,6 +34,9 @@ return Application::configure(basePath: dirname(__DIR__))
 
         // Versão mínima do app (docs/67 Fase 2) — antes de tudo, inclusive do login.
         $middleware->api(prepend: [\App\Http\Middleware\EnsureVersaoApp::class]);
+
+        // Versão da API em toda resposta (inclusive no 426 acima e nos erros).
+        $middleware->api(prepend: [\App\Http\Middleware\AdicionarVersaoApi::class]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         // Garante resposta em JSON pra qualquer exceção em /api/*, independente do header

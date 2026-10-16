@@ -29,6 +29,13 @@ return [
     'env' => env('APP_ENV', 'production'),
 
     /*
+    | Versão da API (data + commit), carimbada no build da imagem Docker (ARG APP_VERSAO, ver
+    | Dockerfile/docker-compose.yml). Volta no cabeçalho X-Api-Version de toda resposta e em
+    | GET /api/versao — o app e o admin mostram, pra achar problema de integração no piloto.
+    */
+    'versao' => env('APP_VERSAO') ?: 'dev',
+
+    /*
     |--------------------------------------------------------------------------
     | Application Debug Mode
     |--------------------------------------------------------------------------

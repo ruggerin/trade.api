@@ -44,6 +44,10 @@ class TipoRegistro extends Model
         'escolhe_secao',
         'lista_recorte',
         'filtra_marca',
+        // Concorrentes por marca e embalagem (docs/85).
+        'permite_marca_nova',
+        'varias_embalagens',
+        'lista_produtos_origem',
         // "Ainda está lá?" (docs/83 §5.1).
         'acompanha',
         'acompanha_gatilho_chave',
@@ -75,6 +79,8 @@ class TipoRegistro extends Model
             'escolhe_departamento' => 'boolean',
             'escolhe_secao' => 'boolean',
             'filtra_marca' => 'boolean',
+            'permite_marca_nova' => 'boolean',
+            'varias_embalagens' => 'boolean',
             'acompanha' => 'boolean',
             'acompanha_intervalo_dias' => 'integer',
             'acompanha_prazo_dias' => 'integer',
@@ -158,6 +164,25 @@ class TipoRegistro extends Model
         return $this->belongsToMany(ProdutoAuditoria::class, 'tipo_registro_produtos', 'tipo_registro_id', 'produto_auditoria_id')
             ->withPivot('ordem')
             ->orderByPivot('ordem');
+    }
+
+    // Origem da lista guiada da granularidade PRODUTO (docs/85 §7).
+    public const LISTA_PRODUTOS_FIXA = 'FIXA';
+
+    public const LISTA_PRODUTOS_MIX_LOJA = 'MIX_LOJA';
+
+    /** Marcas da lista (granularidade MARCA, docs/85) — a ordem é a ordem no app. */
+    public function marcasPredefinidas(): BelongsToMany
+    {
+        return $this->belongsToMany(MarcaAuditoria::class, 'tipo_registro_marcas', 'tipo_registro_id', 'marca_id')
+            ->withPivot('ordem')
+            ->withTimestamps()
+            ->orderByPivot('ordem');
+    }
+
+    public function porMarca(): bool
+    {
+        return $this->granularidade_padrao === \App\Enums\GranularidadeResposta::MARCA;
     }
 
     /** Recorte do escopo LINHA_AUSENTE — preenchido conforme `escopo_tipo_vinculo`. */

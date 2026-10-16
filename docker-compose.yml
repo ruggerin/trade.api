@@ -4,6 +4,9 @@
 #
 # Uso:
 #   docker compose up -d --build              # só a API, usando o Postgres que você já tem
+#
+# Versão (aparece no app e no admin) — carimbe data + commit no build:
+#   APP_VERSAO=$(date +%Y.%m.%d)-$(git rev-parse --short HEAD) docker compose up -d --build
 #   docker compose --profile db up -d --build # API + um Postgres novo, containerizado aqui
 #
 # Variáveis lidas de api/.env (o MESMO .env do Laravel — Compose carrega automaticamente o
@@ -15,6 +18,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        APP_VERSAO: ${APP_VERSAO:-dev}
     image: pdv-app-api
     restart: unless-stopped
     # A VPS já tem outras aplicações rodando em portas variadas — troque API_PORT no seu

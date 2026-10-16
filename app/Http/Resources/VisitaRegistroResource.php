@@ -46,6 +46,12 @@ class VisitaRegistroResource extends JsonResource
                 'marca',
                 fn () => $this->marca ? ['id' => $this->marca->uuid, 'descricao' => $this->marca->descricao] : null,
             ),
+            // Embalagem do registro por marca concorrente (docs/85) — "500 ml".
+            'embalagem' => $this->embalagem_unidade ? [
+                'quantidade' => $this->embalagem_quantidade,
+                'unidade' => $this->embalagem_unidade,
+                'descricao' => \App\Enums\UnidadeEmbalagem::descrever($this->embalagem_quantidade, $this->embalagem_unidade),
+            ] : null,
             'ruptura' => $this->ruptura,
             'observacao' => $this->observacao,
             'valores_campos' => $this->valores_campos,

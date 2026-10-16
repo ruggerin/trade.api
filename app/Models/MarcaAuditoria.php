@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\Propriedade;
+use App\Enums\StatusAprovacao;
 use App\Models\Concerns\BelongsToEmpresa;
 use App\Models\Concerns\HasUuid;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -16,14 +17,21 @@ class MarcaAuditoria extends Model
 
     protected $table = 'marcas_auditoria';
 
-    protected $fillable = ['empresa_id', 'descricao', 'propriedade', 'ativo'];
+    protected $fillable = ['empresa_id', 'descricao', 'propriedade', 'ativo', 'criado_por_usuario_id', 'status_aprovacao'];
 
     protected function casts(): array
     {
         return [
             'propriedade' => Propriedade::class,
             'ativo' => 'boolean',
+            'status_aprovacao' => StatusAprovacao::class,
         ];
+    }
+
+    /** Promotor que cadastrou pela visita (docs/85 §4.1) — null no cadastro normal. */
+    public function criadoPor(): BelongsTo
+    {
+        return $this->belongsTo(Usuario::class, 'criado_por_usuario_id');
     }
 
     public function empresa(): BelongsTo

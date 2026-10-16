@@ -83,8 +83,14 @@ class StoreVisitaRegistroRequest extends FormRequest
             // Com tipo_vinculo SECAO/DEPARTAMENTO, a marca vem como filtro complementar (docs/82 §5.2).
             'marca_uuid' => [
                 'bail', 'nullable', 'string', 'required_if:tipo_vinculo,MARCA', 'uuid',
-                Rule::exists('marcas_auditoria', 'uuid')->where('empresa_id', $empresaId),
+                // Marca cadastrada pelo promotor offline (docs/85): o uuid foi gerado no celular e
+                // a marca ainda não existe — o controller cria junto do registro.
+                ...($this->filled('marca_nova_descricao') ? [] : [Rule::exists('marcas_auditoria', 'uuid')->where('empresa_id', $empresaId)]),
             ],
+            'marca_nova_descricao' => ['nullable', 'string', 'max:100'],
+            // Embalagem do registro por marca concorrente (docs/85) — quantidade + unidade.
+            'embalagem_quantidade' => ['nullable', 'numeric', 'gt:0', 'max:100000'],
+            'embalagem_unidade' => ['nullable', Rule::in(array_column(\App\Enums\UnidadeEmbalagem::cases(), 'value'))],
             // Registro gerado ao responder um acompanhamento ("Continua" com formulário ou a
             // justificativa do "Acabou", docs/83) — não abre acompanhamento novo.
             'acompanhamento_uuid' => [
@@ -128,6 +134,7 @@ class StoreVisitaRegistroRequest extends FormRequest
 
             $this->validarGranularidade($validator, $tipoRegistro);
             $this->validarEscolhaDeRecorte($validator, $tipoRegistro);
+            $this->validarPorMarca($validator, $tipoRegistro);
 
             $valores = $this->input('valores_campos', []);
             // Produto em ruptura: não tem o que coletar (preço, quantidade...) — as perguntas
@@ -440,6 +447,56 @@ class StoreVisitaRegistroRequest extends FormRequest
                 'produto_auditoria_uuid',
                 "O tipo de registro \"{$tipoRegistro->descricao}\" exige um produto específico, não aceita resposta pra seção/departamento/marca inteira.",
             );
+        }
+    }
+
+    /**
+     * Granularidade MARCA (docs/85 §4.2): marca (da lista, ou nova quando o formulário deixa) e
+     * embalagem obrigatórias; sem "várias embalagens", uma só por marca na visita.
+     */
+    private function validarPorMarca(Validator $validator, TipoRegistro $tipoRegistro): void
+    {
+        if (! $tipoRegistro->porMarca()) {
+            return;
+        }
+
+        $uuid = $this->input('marca_uuid');
+        $nova = trim((string) $this->input('marca_nova_descricao'));
+        if (! $uuid) {
+            $validator->errors()->add('marca_uuid', 'Escolha a marca.');
+
+            return;
+        }
+        if (! $this->filled('embalagem_quantidade') || ! $this->filled('embalagem_unidade')) {
+            $validator->errors()->add('embalagem_quantidade', 'Informe a embalagem: quantidade e unidade.');
+        }
+
+        $marca = Str::isUuid($uuid)
+            ? MarcaAuditoria::withoutGlobalScopes()->where('uuid', $uuid)->where('empresa_id', $this->user()->empresa_id)->first()
+            : null;
+        if (! $marca && $nova === '') {
+            $validator->errors()->add('marca_uuid', 'Marca não encontrada.');
+
+            return;
+        }
+        $naLista = $marca && $tipoRegistro->marcasPredefinidas()->whereKey($marca->id)->exists();
+        if (! $naLista && ! $tipoRegistro->permite_marca_nova) {
+            $validator->errors()->add('marca_uuid', "O formulário \"{$tipoRegistro->descricao}\" só aceita as marcas da lista.");
+
+            return;
+        }
+
+        if (! $tipoRegistro->varias_embalagens && $marca) {
+            /** @var Visita $visita */
+            $visita = $this->route('visita');
+            $jaTem = \App\Models\VisitaRegistro::where('visita_id', $visita->id)
+                ->where('tipo_registro_id', $tipoRegistro->id)
+                ->where('marca_id', $marca->id)
+                ->whereNull('cancelado_em')
+                ->exists();
+            if ($jaTem) {
+                $validator->errors()->add('embalagem_quantidade', "Este formulário aceita uma embalagem por marca, e {$marca->descricao} já foi registrada nesta visita.");
+            }
         }
     }
 }
