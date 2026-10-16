@@ -146,6 +146,8 @@ class PontoVendaController extends Controller
         return response()->json([
             'ponto_venda' => new PontoVendaResource($pontoVenda),
             'ultimos_registros_formulario' => $this->ultimosRegistrosComIntervalo($pontoVenda),
+            // "Ainda está lá?" (docs/83 §5.2): o que conferir nas próximas visitas, guardado offline.
+            'acompanhamentos_abertos' => \App\Support\Acompanhamentos::abertosDaLoja($pontoVenda),
         ]);
     }
 

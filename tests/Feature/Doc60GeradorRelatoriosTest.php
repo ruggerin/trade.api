@@ -99,7 +99,7 @@ class Doc60GeradorRelatoriosTest extends TestCase
     public function test_catalogo_lista_entidades_campos_e_metricas(): void
     {
         $this->getJson('/api/relatorios-personalizados/catalogo')
-            ->assertOk()->assertJsonCount(3, 'data');
+            ->assertOk()->assertJsonCount(4, 'data');
 
         $catalogo = $this->getJson('/api/relatorios-personalizados/catalogo?entidade=ordem_servico')->assertOk()->json('data');
         $this->assertSame('prazo_fim', $catalogo['campo_periodo_padrao']);

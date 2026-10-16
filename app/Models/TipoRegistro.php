@@ -44,6 +44,16 @@ class TipoRegistro extends Model
         'escolhe_secao',
         'lista_recorte',
         'filtra_marca',
+        // "Ainda está lá?" (docs/83 §5.1).
+        'acompanha',
+        'acompanha_gatilho_chave',
+        'acompanha_gatilho_valor',
+        'acompanha_intervalo_dias',
+        'acompanha_rotulo_continua',
+        'acompanha_rotulo_acabou',
+        'acompanha_ao_continuar',
+        'acompanha_formulario_acabou_id',
+        'acompanha_prazo_dias',
         'eh_ruptura',
         'eh_alerta',
         'usa_pontuacao',
@@ -65,6 +75,9 @@ class TipoRegistro extends Model
             'escolhe_departamento' => 'boolean',
             'escolhe_secao' => 'boolean',
             'filtra_marca' => 'boolean',
+            'acompanha' => 'boolean',
+            'acompanha_intervalo_dias' => 'integer',
+            'acompanha_prazo_dias' => 'integer',
             'eh_ruptura' => 'boolean',
             'eh_alerta' => 'boolean',
             'usa_pontuacao' => 'boolean',
@@ -96,6 +109,12 @@ class TipoRegistro extends Model
     public const LISTA_PRIMEIRO_DA_LOJA = 'PRIMEIRO_DA_LOJA';
 
     public const LISTA_SO_DA_LOJA = 'SO_DA_LOJA';
+
+    /** Formulário de justificativa ao responder "Acabou" (docs/83 §3.1.5). */
+    public function formularioAcabou(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(self::class, 'acompanha_formulario_acabou_id');
+    }
 
     public function soDaLoja(): bool
     {

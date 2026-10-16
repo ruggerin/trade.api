@@ -48,6 +48,8 @@ class VisitaRegistro extends Model
         // quando nenhum do catálogo serve), ver ResolverAlertaRequest.
         'alerta_motivo_id',
         'alerta_motivo_texto',
+        // Registro gerado ao responder um acompanhamento (docs/83).
+        'acompanhamento_id',
     ];
 
     protected function casts(): array

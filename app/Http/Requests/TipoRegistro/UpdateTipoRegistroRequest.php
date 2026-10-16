@@ -128,6 +128,19 @@ class UpdateTipoRegistroRequest extends FormRequest
             // docs/82 §6.1.
             'lista_recorte' => ['sometimes', Rule::in([TipoRegistro::LISTA_PRIMEIRO_DA_LOJA, TipoRegistro::LISTA_SO_DA_LOJA])],
             'filtra_marca' => ['sometimes', 'boolean'],
+            // "Ainda está lá?" (docs/83 §3.1).
+            'acompanha' => ['sometimes', 'boolean'],
+            'acompanha_gatilho_chave' => ['sometimes', 'nullable', 'string', 'max:100'],
+            'acompanha_gatilho_valor' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'acompanha_intervalo_dias' => ['sometimes', 'integer', 'min:0', 'max:365'],
+            'acompanha_rotulo_continua' => ['sometimes', 'nullable', 'string', 'max:60'],
+            'acompanha_rotulo_acabou' => ['sometimes', 'nullable', 'string', 'max:60'],
+            'acompanha_ao_continuar' => ['sometimes', Rule::in(\App\Support\Acompanhamentos::AO_CONTINUAR)],
+            'acompanha_formulario_acabou_uuid' => [
+                'sometimes', 'nullable', 'string', 'uuid',
+                Rule::exists('tipos_registro', 'uuid')->where('empresa_id', $this->user()->empresa_id),
+            ],
+            'acompanha_prazo_dias' => ['sometimes', 'nullable', 'integer', 'min:1', 'max:3650'],
             'granularidade_padrao' => ['nullable', Rule::in(array_column(GranularidadeResposta::cases(), 'value'))],
             // Quando enviado, substitui a lista inteira de exceções (ver
             // TipoRegistroController::sincronizarExcecoesGranularidade).
@@ -158,6 +171,8 @@ class UpdateTipoRegistroRequest extends FormRequest
     public function withValidator(Validator $validator): void
     {
         $validator->after(function (Validator $validator): void {
+            // Fora do `if campos`: ligar o acompanhamento sem reenviar as perguntas também valida.
+            $this->validarAcompanhamento($validator);
             if ($this->has('campos')) {
                 $chaves = collect($this->input('campos', []))->pluck('chave')->filter();
                 if ($chaves->count() !== $chaves->unique()->count()) {
@@ -218,6 +233,42 @@ class UpdateTipoRegistroRequest extends FormRequest
             if ($indicePorChave[$dependeDeChave] >= $indice) {
                 $validator->errors()->add("campos.{$indice}.depende_de_chave", 'Só pode depender de um campo anterior na ordem do formulário.');
             }
+        }
+    }
+
+    /**
+     * docs/83 §5.2: rótulos obrigatórios com o acompanhamento ligado; gatilho só com pergunta do
+     * próprio formulário que não seja Mix; justificativa diferente do próprio formulário.
+     */
+    protected function validarAcompanhamento(\Illuminate\Validation\Validator $validator): void
+    {
+        $atual = $this->route('tipoRegistro');
+        $valor = fn (string $campo) => $this->has($campo) ? $this->input($campo) : $atual?->{$campo};
+        if (! filter_var($valor('acompanha'), FILTER_VALIDATE_BOOLEAN)) {
+            return;
+        }
+
+        foreach (['acompanha_rotulo_continua' => 'Continua', 'acompanha_rotulo_acabou' => 'Acabou'] as $campo => $nome) {
+            if (trim((string) $valor($campo)) === '') {
+                $validator->errors()->add($campo, "Escreva o texto do botão \"{$nome}\".");
+            }
+        }
+
+        $chave = $valor('acompanha_gatilho_chave');
+        if ($chave !== null && $chave !== '') {
+            $campos = $this->has('campos')
+                ? collect($this->input('campos', []))->map(fn ($c) => ['chave' => $c['chave'] ?? null, 'tipo_campo' => $c['tipo_campo'] ?? null])
+                : ($atual?->campos ?? collect())->map(fn ($c) => ['chave' => $c->chave, 'tipo_campo' => $c->tipo_campo?->value ?? $c->tipo_campo]);
+            $campo = $campos->firstWhere('chave', $chave);
+            if (! $campo) {
+                $validator->errors()->add('acompanha_gatilho_chave', 'A pergunta do gatilho precisa ser deste formulário.');
+            } elseif ($campo['tipo_campo'] === 'SORTIMENTO') {
+                $validator->errors()->add('acompanha_gatilho_chave', 'O gatilho não pode ser uma pergunta de Mix.');
+            }
+        }
+
+        if ($atual && $this->input('acompanha_formulario_acabou_uuid') === $atual->uuid) {
+            $validator->errors()->add('acompanha_formulario_acabou_uuid', 'A justificativa precisa ser outro formulário.');
         }
     }
 }

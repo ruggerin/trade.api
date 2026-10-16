@@ -67,6 +67,18 @@ class TipoRegistroResource extends JsonResource
             // docs/82: o que a lista "Onde é" mostra e o filtro de marca depois da seção/departamento.
             'lista_recorte' => $this->lista_recorte ?? TipoRegistro::LISTA_PRIMEIRO_DA_LOJA,
             'filtra_marca' => (bool) $this->filtra_marca,
+            // "Ainda está lá?" (docs/83 §3.1).
+            'acompanha' => (bool) $this->acompanha,
+            'acompanha_gatilho_chave' => $this->acompanha_gatilho_chave,
+            'acompanha_gatilho_valor' => $this->acompanha_gatilho_valor,
+            'acompanha_intervalo_dias' => $this->acompanha_intervalo_dias ?? 0,
+            'acompanha_rotulo_continua' => $this->acompanha_rotulo_continua,
+            'acompanha_rotulo_acabou' => $this->acompanha_rotulo_acabou,
+            'acompanha_ao_continuar' => $this->acompanha_ao_continuar ?? 'CONFIRMA',
+            'acompanha_formulario_acabou' => $this->acompanha_formulario_acabou_id
+                ? (fn ($f) => $f ? ['id' => $f->uuid, 'descricao' => $f->descricao] : null)($this->formularioAcabou)
+                : null,
+            'acompanha_prazo_dias' => $this->acompanha_prazo_dias,
             // Marca a coluna "Ruptura" da grade de coleta (Fase 2) — ver
             // docs/16-GRANULARIDADE-CHECKLIST-AUDITORIA.md §9.
             'eh_ruptura' => $this->eh_ruptura,

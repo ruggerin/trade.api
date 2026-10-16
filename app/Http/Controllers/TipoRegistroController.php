@@ -135,6 +135,7 @@ class TipoRegistroController extends Controller
                 'escolhe_secao' => $dados['escolhe_secao'] ?? false,
                 'lista_recorte' => $dados['lista_recorte'] ?? TipoRegistro::LISTA_PRIMEIRO_DA_LOJA,
                 'filtra_marca' => $dados['filtra_marca'] ?? false,
+                ...self::camposAcompanhamento($dados),
                 'intervalo_dias' => $dados['intervalo_dias'] ?? 0,
                 'eh_ruptura' => $dados['eh_ruptura'] ?? false,
                 'eh_alerta' => $dados['eh_alerta'] ?? false,
@@ -164,6 +165,12 @@ class TipoRegistroController extends Controller
         if (array_key_exists('campanha_auditoria_uuid', $dados)) {
             $dados['campanha_auditoria_id'] = $this->resolverCampanhaAuditoriaId($dados['campanha_auditoria_uuid']);
             unset($dados['campanha_auditoria_uuid']);
+        }
+        if (array_key_exists('acompanha_formulario_acabou_uuid', $dados)) {
+            $dados['acompanha_formulario_acabou_id'] = $dados['acompanha_formulario_acabou_uuid']
+                ? TipoRegistro::where('uuid', $dados['acompanha_formulario_acabou_uuid'])->value('id')
+                : null;
+            unset($dados['acompanha_formulario_acabou_uuid']);
         }
         // Escopo deixou de ser CAMPANHA — não faz sentido manter a campanha antiga amarrada.
         if (($dados['escopo_acao'] ?? null) !== 'CAMPANHA' && array_key_exists('escopo_acao', $dados)) {
@@ -396,6 +403,26 @@ class TipoRegistroController extends Controller
         $tipo->produtosPredefinidos()->sync($sync);
     }
 
+    /** Configuração do "ainda está lá?" na criação (docs/83 §5.1). */
+    private static function camposAcompanhamento(array $dados): array
+    {
+        $acompanha = (bool) ($dados['acompanha'] ?? false);
+
+        return [
+            'acompanha' => $acompanha,
+            'acompanha_gatilho_chave' => $acompanha ? ($dados['acompanha_gatilho_chave'] ?? null) : null,
+            'acompanha_gatilho_valor' => $acompanha ? ($dados['acompanha_gatilho_valor'] ?? null) : null,
+            'acompanha_intervalo_dias' => $dados['acompanha_intervalo_dias'] ?? 0,
+            'acompanha_rotulo_continua' => $dados['acompanha_rotulo_continua'] ?? null,
+            'acompanha_rotulo_acabou' => $dados['acompanha_rotulo_acabou'] ?? null,
+            'acompanha_ao_continuar' => $dados['acompanha_ao_continuar'] ?? 'CONFIRMA',
+            'acompanha_formulario_acabou_id' => ! empty($dados['acompanha_formulario_acabou_uuid'])
+                ? TipoRegistro::where('uuid', $dados['acompanha_formulario_acabou_uuid'])->value('id')
+                : null,
+            'acompanha_prazo_dias' => $dados['acompanha_prazo_dias'] ?? null,
+        ];
+    }
+
     private function resolverCampanhaAuditoriaId(?string $campanhaUuid): ?int
     {
         if (! $campanhaUuid) {
@@ -545,6 +572,15 @@ class TipoRegistroController extends Controller
                 'escolhe_secao' => $tipoRegistro->escolhe_secao,
                 'lista_recorte' => $tipoRegistro->lista_recorte,
                 'filtra_marca' => $tipoRegistro->filtra_marca,
+                'acompanha' => $tipoRegistro->acompanha,
+                'acompanha_gatilho_chave' => $tipoRegistro->acompanha_gatilho_chave,
+                'acompanha_gatilho_valor' => $tipoRegistro->acompanha_gatilho_valor,
+                'acompanha_intervalo_dias' => $tipoRegistro->acompanha_intervalo_dias,
+                'acompanha_rotulo_continua' => $tipoRegistro->acompanha_rotulo_continua,
+                'acompanha_rotulo_acabou' => $tipoRegistro->acompanha_rotulo_acabou,
+                'acompanha_ao_continuar' => $tipoRegistro->acompanha_ao_continuar,
+                'acompanha_formulario_acabou_id' => $tipoRegistro->acompanha_formulario_acabou_id,
+                'acompanha_prazo_dias' => $tipoRegistro->acompanha_prazo_dias,
                 'intervalo_dias' => $tipoRegistro->intervalo_dias,
                 'eh_ruptura' => $tipoRegistro->eh_ruptura,
                 'eh_alerta' => $tipoRegistro->eh_alerta,
