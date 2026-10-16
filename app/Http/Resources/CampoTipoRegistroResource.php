@@ -41,6 +41,8 @@ class CampoTipoRegistroResource extends JsonResource
             'sortimento_marca' => $this->whenLoaded('sortimentoMarca', fn () => $this->sortimentoMarca ? [
                 'id' => $this->sortimentoMarca->uuid, 'descricao' => $this->sortimentoMarca->descricao,
             ] : null),
+            // true = o recorte vem da escolha do promotor no registro, não do cadastro (docs/79).
+            'sortimento_segue_escolha' => $this->sortimento_segue_escolha,
             'sortimento_produtos' => $this->whenLoaded('produtosFixos', fn () => $this->produtosFixos->map(fn ($produto) => [
                 'id' => $produto->uuid, 'descricao' => $produto->descricao,
             ])),

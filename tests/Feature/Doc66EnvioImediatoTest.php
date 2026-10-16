@@ -26,6 +26,8 @@ class Doc66EnvioImediatoTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        // Meio-dia fixo: o fim da vigência é endOfDay(), então "agora + 1h" não pode virar o dia.
+        $this->travelTo(now()->setTime(12, 0));
         $this->empresa = Empresa::factory()->create();
         $this->formulario = TipoRegistro::create(['empresa_id' => $this->empresa->id, 'descricao' => 'Auditoria de expositor']);
         Sanctum::actingAs(Usuario::factory()->admin()->create(['empresa_id' => $this->empresa->id]));

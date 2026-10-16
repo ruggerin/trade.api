@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\EscopoAcaoTipoRegistro;
 use App\Enums\GranularidadeResposta;
+use App\Enums\TipoItemCampanha;
 use App\Models\Concerns\BelongsToEmpresa;
 use App\Models\Concerns\HasUuid;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -29,7 +30,18 @@ class TipoRegistro extends Model
         'acao_obrigatoria',
         'escopo_acao',
         'campanha_auditoria_id',
+        // Recorte do escopo LINHA_AUSENTE (docs/80 §5.1) — NULL em qualquer outro escopo.
+        'escopo_tipo_vinculo',
+        'escopo_secao_id',
+        'escopo_departamento_id',
+        'escopo_marca_id',
+        // Intervalo entre cobranças da Ação, em dias (docs/80 §5.2) — 0 = toda visita.
+        'intervalo_dias',
         'granularidade_padrao',
+        // Promotor escolhe o recorte no início do formulário — ver docs/79 e temEscolhaDeRecorte().
+        'escolhe_marca',
+        'escolhe_departamento',
+        'escolhe_secao',
         'eh_ruptura',
         'eh_alerta',
         'usa_pontuacao',
@@ -44,7 +56,12 @@ class TipoRegistro extends Model
             'ativo' => 'boolean',
             'acao_obrigatoria' => 'boolean',
             'escopo_acao' => EscopoAcaoTipoRegistro::class,
+            'escopo_tipo_vinculo' => TipoItemCampanha::class,
+            'intervalo_dias' => 'integer',
             'granularidade_padrao' => GranularidadeResposta::class,
+            'escolhe_marca' => 'boolean',
+            'escolhe_departamento' => 'boolean',
+            'escolhe_secao' => 'boolean',
             'eh_ruptura' => 'boolean',
             'eh_alerta' => 'boolean',
             'usa_pontuacao' => 'boolean',
@@ -55,6 +72,26 @@ class TipoRegistro extends Model
     public function empresa(): BelongsTo
     {
         return $this->belongsTo(Empresa::class);
+    }
+
+    /**
+     * Recortes que o promotor pode escolher no início do formulário (docs/79) — vazio = o
+     * formulário não pede escolha (comportamento de antes).
+     *
+     * @return list<TipoItemCampanha>
+     */
+    public function recortesPermitidos(): array
+    {
+        return array_values(array_filter([
+            $this->escolhe_marca ? TipoItemCampanha::MARCA : null,
+            $this->escolhe_departamento ? TipoItemCampanha::DEPARTAMENTO : null,
+            $this->escolhe_secao ? TipoItemCampanha::SECAO : null,
+        ]));
+    }
+
+    public function temEscolhaDeRecorte(): bool
+    {
+        return $this->recortesPermitidos() !== [];
     }
 
     public function campos(): HasMany
@@ -89,6 +126,31 @@ class TipoRegistro extends Model
         return $this->belongsToMany(ProdutoAuditoria::class, 'tipo_registro_produtos', 'tipo_registro_id', 'produto_auditoria_id')
             ->withPivot('ordem')
             ->orderByPivot('ordem');
+    }
+
+    /** Recorte do escopo LINHA_AUSENTE — preenchido conforme `escopo_tipo_vinculo`. */
+    public function escopoSecao(): BelongsTo
+    {
+        return $this->belongsTo(SecaoAuditoria::class, 'escopo_secao_id');
+    }
+
+    public function escopoDepartamento(): BelongsTo
+    {
+        return $this->belongsTo(DepartamentoAuditoria::class, 'escopo_departamento_id');
+    }
+
+    public function escopoMarca(): BelongsTo
+    {
+        return $this->belongsTo(MarcaAuditoria::class, 'escopo_marca_id');
+    }
+
+    /**
+     * Filtro da Ação por ramo de atividade da loja (docs/80 §5.4) — vale pra qualquer escopo.
+     * Vazio = todos os ramos; loja sem ramo cadastrado passa.
+     */
+    public function ramosAtividade(): BelongsToMany
+    {
+        return $this->belongsToMany(RamoAtividade::class, 'tipo_registro_ramos_atividade');
     }
 
     /** Escopo LOJA_REDE — toda loja dessas redes também entra (OR com pontosVenda). */

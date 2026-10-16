@@ -318,4 +318,33 @@ class GaleriaFotosTest extends TestCase
         $this->assertCount(1, $response->json('registros'));
         $this->assertSame($pdvA->uuid, $response->json('registros.0.ponto_venda.id'));
     }
+
+    // docs/79 decisão 10: o registro conta uma vez, no recorte em que foi feito; o filtro sobe a
+    // hierarquia (departamento traz seções e produtos dele; seção traz produtos dela).
+    public function test_filtro_por_departamento_secao_e_marca_e_hierarquico(): void
+    {
+        Storage::fake('local');
+        $empresa = Empresa::factory()->create();
+        $pdv = PontoVenda::factory()->create(['empresa_id' => $empresa->id]);
+        $promotor = Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]);
+        $limpeza = \App\Models\DepartamentoAuditoria::create(['empresa_id' => $empresa->id, 'descricao' => 'Limpeza']);
+        $amaciante = \App\Models\SecaoAuditoria::create(['empresa_id' => $empresa->id, 'descricao' => 'Amaciante', 'departamento_id' => $limpeza->id]);
+        $outroDepartamento = \App\Models\DepartamentoAuditoria::create(['empresa_id' => $empresa->id, 'descricao' => 'Higiene']);
+        $marca = \App\Models\MarcaAuditoria::factory()->create(['empresa_id' => $empresa->id]);
+        $produto = \App\Models\ProdutoAuditoria::factory()->create([
+            'empresa_id' => $empresa->id, 'secao_id' => $amaciante->id, 'departamento_id' => $limpeza->id, 'marca_id' => $marca->id,
+        ]);
+
+        $noDepartamento = $this->criarRegistroComFoto($empresa, $pdv, $promotor, ['tipo_vinculo' => 'DEPARTAMENTO', 'departamento_uuid' => $limpeza->uuid]);
+        $naSecao = $this->criarRegistroComFoto($empresa, $pdv, $promotor, ['tipo_vinculo' => 'SECAO', 'secao_uuid' => $amaciante->uuid]);
+        $noProduto = $this->criarRegistroComFoto($empresa, $pdv, $promotor, ['produto_auditoria_uuid' => $produto->uuid]);
+        $this->criarRegistroComFoto($empresa, $pdv, $promotor, ['tipo_vinculo' => 'DEPARTAMENTO', 'departamento_uuid' => $outroDepartamento->uuid]);
+
+        Sanctum::actingAs(Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]));
+        $ids = fn (string $filtro) => collect($this->getJson("/api/galeria-fotos?{$filtro}")->assertOk()->json('registros'))->pluck('registro.id')->sort()->values()->all();
+
+        $this->assertEqualsCanonicalizing([$noDepartamento, $naSecao, $noProduto], $ids("departamento_uuid={$limpeza->uuid}"));
+        $this->assertEqualsCanonicalizing([$naSecao, $noProduto], $ids("secao_uuid={$amaciante->uuid}"));
+        $this->assertEqualsCanonicalizing([$noProduto], $ids("marca_uuid={$marca->uuid}"));
+    }
 }

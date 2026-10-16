@@ -14,12 +14,16 @@ use App\Models\Empresa;
 use App\Models\MarcaAuditoria;
 use App\Models\PontoVenda;
 use App\Models\ProdutoAuditoria;
+use App\Models\RamoAtividade;
 use App\Models\RedeLoja;
 use App\Models\SecaoAuditoria;
 use App\Models\TipoRegistro;
 use App\Models\TipoRegistroSecaoExcecao;
+use App\Models\VisitaRegistro;
+use App\Support\LinhaAusente;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 class TipoRegistroController extends Controller
@@ -35,6 +39,10 @@ class TipoRegistroController extends Controller
     // Escopo LOJA_REDE (docs/40) — o mobile resolve a Ação com esses uuids × a rede do PDV.
     private const RELACOES_ESCOPO = [
         'pontosVenda:id,uuid,fantasia', 'redesLojas:id,uuid,descricao',
+        // LINHA_AUSENTE e filtro por ramo (docs/80) — o mobile resolve a Ação com o Mix em cache.
+        'escopoSecao:id,uuid,descricao,departamento_id', 'escopoSecao.departamento:id,uuid',
+        'escopoDepartamento:id,uuid,descricao', 'escopoMarca:id,uuid,descricao',
+        'ramosAtividade:id,uuid,descricao',
         // Lista predefinida de produtos (granularidade PRODUTO) — o mobile usa como opções de vínculo.
         'produtosPredefinidos:id,uuid,descricao,codigo_barras,codigo_externo',
     ];
@@ -107,6 +115,7 @@ class TipoRegistroController extends Controller
         // campo rejeitado pelo banco que a validação não pegou) deixa um `TipoRegistro` órfão,
         // sem nenhum campo, em vez de nada ser salvo.
         $tipo = DB::transaction(function () use ($dados) {
+            $escolheRecorte = ($dados['escolhe_marca'] ?? false) || ($dados['escolhe_departamento'] ?? false) || ($dados['escolhe_secao'] ?? false);
             $tipo = TipoRegistro::create([
                 'descricao' => $dados['descricao'],
                 'icone' => $dados['icone'] ?? null,
@@ -119,7 +128,12 @@ class TipoRegistroController extends Controller
                 'acao_obrigatoria' => $dados['acao_obrigatoria'] ?? false,
                 'escopo_acao' => $dados['escopo_acao'] ?? null,
                 'campanha_auditoria_id' => $this->resolverCampanhaAuditoriaId($dados['campanha_auditoria_uuid'] ?? null),
-                'granularidade_padrao' => $dados['granularidade_padrao'] ?? null,
+                // Com escolha de recorte a resposta cobre a gôndola, nunca um produto (docs/79 §4.1).
+                'granularidade_padrao' => $escolheRecorte ? 'LINHA' : ($dados['granularidade_padrao'] ?? null),
+                'escolhe_marca' => $dados['escolhe_marca'] ?? false,
+                'escolhe_departamento' => $dados['escolhe_departamento'] ?? false,
+                'escolhe_secao' => $dados['escolhe_secao'] ?? false,
+                'intervalo_dias' => $dados['intervalo_dias'] ?? 0,
                 'eh_ruptura' => $dados['eh_ruptura'] ?? false,
                 'eh_alerta' => $dados['eh_alerta'] ?? false,
                 'usa_pontuacao' => $dados['usa_pontuacao'] ?? false,
@@ -128,6 +142,8 @@ class TipoRegistroController extends Controller
             $this->sincronizarCampos($tipo, $dados['campos'] ?? []);
             $this->sincronizarExcecoesGranularidade($tipo, $dados['excecoes_granularidade'] ?? []);
             $this->sincronizarEscopoLojaRede($tipo, $dados);
+            $this->sincronizarEscopoLinhaAusente($tipo, $dados);
+            $this->sincronizarRamosAtividade($tipo, $dados);
             $this->sincronizarProdutosPredefinidos($tipo, $dados);
 
             return $tipo;
@@ -156,13 +172,27 @@ class TipoRegistroController extends Controller
         // fazem delete-all + recreate — uma falha no meio deixaria o tipo sem NENHUM campo em vez
         // de manter o estado anterior ou salvar o novo por completo.
         DB::transaction(function () use ($tipoRegistro, $dados): void {
-            $tipoRegistro->update(collect($dados)->except(['campos', 'excecoes_granularidade', 'pontos_venda_uuids', 'redes_lojas_uuids', 'produtos_uuids'])->all());
+            $tipoRegistro->update(collect($dados)->except([
+                'campos', 'excecoes_granularidade', 'pontos_venda_uuids', 'redes_lojas_uuids', 'produtos_uuids',
+                'escopo_tipo_vinculo', 'escopo_secao_uuid', 'escopo_departamento_uuid', 'escopo_marca_uuid', 'ramos_atividade_uuids',
+            ])->all());
+            // Mesma regra de store(): com escolha de recorte a granularidade é sempre LINHA.
+            if ($tipoRegistro->temEscolhaDeRecorte() && $tipoRegistro->granularidade_padrao?->value !== 'LINHA') {
+                $tipoRegistro->update(['granularidade_padrao' => 'LINHA']);
+            }
 
             // Só mexe nas pivôs quando o escopo ou as listas vieram no request — um update parcial
             // (ex.: só `ativo`) não pode apagar a configuração de lojas/redes.
             if (array_key_exists('escopo_acao', $dados) || array_key_exists('acao_obrigatoria', $dados)
                 || array_key_exists('pontos_venda_uuids', $dados) || array_key_exists('redes_lojas_uuids', $dados)) {
                 $this->sincronizarEscopoLojaRede($tipoRegistro->refresh(), $dados);
+            }
+            if (array_key_exists('escopo_acao', $dados) || array_key_exists('acao_obrigatoria', $dados)
+                || array_key_exists('escopo_tipo_vinculo', $dados)) {
+                $this->sincronizarEscopoLinhaAusente($tipoRegistro->refresh(), $dados);
+            }
+            if (array_key_exists('ramos_atividade_uuids', $dados) || array_key_exists('acao_obrigatoria', $dados)) {
+                $this->sincronizarRamosAtividade($tipoRegistro->refresh(), $dados);
             }
             // Mesmo cuidado: update parcial (só descrição/ativo) não apaga a lista de produtos.
             if (array_key_exists('produtos_uuids', $dados) || array_key_exists('granularidade_padrao', $dados)) {
@@ -204,6 +234,138 @@ class TipoRegistroController extends Controller
         if (array_key_exists('redes_lojas_uuids', $dados)) {
             $tipo->redesLojas()->sync(RedeLoja::whereIn('uuid', $dados['redes_lojas_uuids'] ?? [])->pluck('id'));
         }
+    }
+
+    /**
+     * Recorte do escopo LINHA_AUSENTE (docs/80 §5.1). Qualquer outro escopo (ou Ação não
+     * obrigatória) zera as quatro colunas — mesmo raciocínio das pivôs de LOJA_REDE.
+     */
+    private function sincronizarEscopoLinhaAusente(TipoRegistro $tipo, array $dados): void
+    {
+        $tipoVinculo = $dados['escopo_tipo_vinculo'] ?? null;
+        $vale = $tipo->acao_obrigatoria && $tipo->escopo_acao === EscopoAcaoTipoRegistro::LINHA_AUSENTE;
+
+        if ($vale && $tipoVinculo === null) {
+            return; // update que não mexeu no recorte: mantém o que está salvo
+        }
+
+        $tipo->update([
+            'escopo_tipo_vinculo' => $vale ? $tipoVinculo : null,
+            'escopo_secao_id' => $vale && $tipoVinculo === 'SECAO'
+                ? SecaoAuditoria::where('uuid', $dados['escopo_secao_uuid'])->value('id') : null,
+            'escopo_departamento_id' => $vale && $tipoVinculo === 'DEPARTAMENTO'
+                ? DepartamentoAuditoria::where('uuid', $dados['escopo_departamento_uuid'])->value('id') : null,
+            'escopo_marca_id' => $vale && $tipoVinculo === 'MARCA'
+                ? MarcaAuditoria::where('uuid', $dados['escopo_marca_uuid'])->value('id') : null,
+        ]);
+    }
+
+    /** Filtro por ramo de atividade (docs/80 §5.4) — só vale em Ação obrigatória; senão limpa. */
+    private function sincronizarRamosAtividade(TipoRegistro $tipo, array $dados): void
+    {
+        if (! $tipo->acao_obrigatoria) {
+            $tipo->ramosAtividade()->detach();
+
+            return;
+        }
+
+        if (array_key_exists('ramos_atividade_uuids', $dados)) {
+            $tipo->ramosAtividade()->sync(RamoAtividade::whereIn('uuid', $dados['ramos_atividade_uuids'] ?? [])->pluck('id'));
+        }
+    }
+
+    /**
+     * Lojas onde a Ação vale, pro "Enviar agora" (docs/66) quando o escopo depende do Mix
+     * (LINHA_AUSENTE) ou há filtro por ramo (docs/80). Campanha fica de fora: depende da visita.
+     */
+    public function lojasDaAcao(TipoRegistro $tipoRegistro): JsonResponse
+    {
+        $tipoRegistro->load(['pontosVenda:id', 'redesLojas:id', 'ramosAtividade:id', 'escopoSecao']);
+        $escopo = $tipoRegistro->acao_obrigatoria ? $tipoRegistro->escopo_acao : null;
+        $ramos = $tipoRegistro->ramosAtividade->pluck('id');
+        $lojas = $tipoRegistro->pontosVenda->pluck('id');
+        $redes = $tipoRegistro->redesLojas->pluck('id');
+
+        $pontosVenda = PontoVenda::query()
+            ->where('ativo', true)
+            ->when($ramos->isNotEmpty(), fn ($q) => $q->where(fn ($q) => $q->whereIn('ramo_atividade_id', $ramos)->orWhereNull('ramo_atividade_id')))
+            ->when($escopo === EscopoAcaoTipoRegistro::CONTRATO, fn ($q) => $q->whereHas('contratosAtivos'))
+            ->when(
+                $escopo === EscopoAcaoTipoRegistro::LOJA_REDE && ($lojas->isNotEmpty() || $redes->isNotEmpty()),
+                fn ($q) => $q->where(fn ($q) => $q->whereIn('id', $lojas)->orWhereIn('rede_loja_id', $redes)),
+            )
+            ->when($escopo === EscopoAcaoTipoRegistro::LINHA_AUSENTE, fn ($q) => $q->with([
+                'sortimento' => fn ($s) => $s->whereNull('status_aprovacao')
+                    ->with(['produto:id,secao_id,departamento_id,marca_id', 'secao:id,departamento_id']),
+            ]))
+            ->orderBy('fantasia')
+            ->get(['id', 'uuid', 'fantasia']);
+
+        if ($escopo === EscopoAcaoTipoRegistro::LINHA_AUSENTE) {
+            $pontosVenda = $pontosVenda->filter(fn (PontoVenda $pdv) => LinhaAusente::valeComMix($tipoRegistro, $pdv->sortimento));
+        }
+
+        return response()->json([
+            'pontos_venda' => $pontosVenda->map(fn (PontoVenda $pdv) => ['id' => $pdv->uuid, 'fantasia' => $pdv->fantasia])->values(),
+        ]);
+    }
+
+    /**
+     * Conversão do levantamento de linha ausente (docs/80 §5.3): das lojas onde este formulário
+     * foi respondido até o fim do período, quantas passaram a ter a linha no Mix dentro do
+     * período, depois do primeiro levantamento. "Entrou" = item aprovado do Mix que cobre o
+     * recorte, criado nesse intervalo (o Mix é hard delete: item removido depois some da conta).
+     */
+    public function conversao(Request $request, TipoRegistro $tipoRegistro): JsonResponse
+    {
+        abort_if($tipoRegistro->escopo_acao !== EscopoAcaoTipoRegistro::LINHA_AUSENTE, 422, 'Só formulários de linha ausente têm conversão.');
+        $dados = $request->validate([
+            'inicio' => ['required', 'date'],
+            'fim' => ['required', 'date', 'after_or_equal:inicio'],
+        ]);
+        $inicio = Carbon::parse($dados['inicio'])->startOfDay();
+        $fim = Carbon::parse($dados['fim'])->endOfDay();
+        $tipoRegistro->load('escopoSecao');
+
+        $primeiros = VisitaRegistro::query()
+            ->join('visitas', 'visitas.id', '=', 'visita_registros.visita_id')
+            ->where('visita_registros.tipo_registro_id', $tipoRegistro->id)
+            ->whereNull('visita_registros.cancelado_em')
+            ->where('visita_registros.created_at', '<=', $fim)
+            ->groupBy('visitas.ponto_venda_id')
+            ->selectRaw('visitas.ponto_venda_id, min(visita_registros.created_at) as primeiro')
+            ->pluck('primeiro', 'ponto_venda_id');
+
+        $pontosVenda = PontoVenda::query()
+            ->whereIn('id', $primeiros->keys())
+            ->with(['sortimento' => fn ($s) => $s->whereNull('status_aprovacao')
+                ->whereBetween('created_at', [$inicio, $fim])
+                ->with(['produto:id,secao_id,departamento_id,marca_id', 'secao:id,departamento_id'])])
+            ->orderBy('fantasia')
+            ->get(['id', 'uuid', 'fantasia']);
+
+        $convertidas = $pontosVenda->map(function (PontoVenda $pdv) use ($tipoRegistro, $primeiros) {
+            $primeiro = Carbon::parse($primeiros[$pdv->id]);
+            $entrou = $pdv->sortimento
+                ->filter(fn ($item) => $item->created_at->gt($primeiro) && LinhaAusente::cobre($tipoRegistro, $item))
+                ->min('created_at');
+
+            return $entrou ? [
+                'id' => $pdv->uuid,
+                'fantasia' => $pdv->fantasia,
+                'primeiro_levantamento_em' => $primeiro->toIso8601String(),
+                'linha_entrou_em' => $entrou->toIso8601String(),
+            ] : null;
+        })->filter()->values();
+
+        $monitoradas = $pontosVenda->count();
+
+        return response()->json([
+            'monitoradas' => $monitoradas,
+            'convertidas' => $convertidas->count(),
+            'percentual' => $monitoradas > 0 ? round($convertidas->count() * 100 / $monitoradas, 1) : null,
+            'lojas_convertidas' => $convertidas,
+        ]);
     }
 
     /**
@@ -300,6 +462,12 @@ class TipoRegistroController extends Controller
         $idsPorChave = [];
         $criados = [];
         foreach (array_values($campos) as $indice => $campo) {
+            // Mix que segue a escolha do promotor não guarda recorte fixo (docs/79 §4.1).
+            $segueEscolha = (bool) ($campo['sortimento_segue_escolha'] ?? false);
+            if ($segueEscolha) {
+                unset($campo['sortimento_tipo_vinculo'], $campo['sortimento_secao_uuid'], $campo['sortimento_departamento_uuid'], $campo['sortimento_marca_uuid']);
+            }
+
             $criado = CampoTipoRegistro::create([
                 'tipo_registro_id' => $tipo->id,
                 'chave' => $campo['chave'],
@@ -322,6 +490,7 @@ class TipoRegistroController extends Controller
                 'sortimento_marca_id' => isset($campo['sortimento_marca_uuid'])
                     ? MarcaAuditoria::where('uuid', $campo['sortimento_marca_uuid'])->value('id')
                     : null,
+                'sortimento_segue_escolha' => $segueEscolha,
                 'confirmar_ruptura_ausentes' => $campo['confirmar_ruptura_ausentes'] ?? false,
             ]);
 
@@ -366,7 +535,13 @@ class TipoRegistroController extends Controller
                 'acao_obrigatoria' => false,
                 'escopo_acao' => null,
                 'campanha_auditoria_id' => null,
+                // O recorte de LINHA_AUSENTE e os ramos são da "forma" do formulário, mas só valem com
+                // Ação obrigatória — que a cópia nunca herda. Ficam vazios, como as pivôs de LOJA_REDE.
                 'granularidade_padrao' => $tipoRegistro->granularidade_padrao,
+                'escolhe_marca' => $tipoRegistro->escolhe_marca,
+                'escolhe_departamento' => $tipoRegistro->escolhe_departamento,
+                'escolhe_secao' => $tipoRegistro->escolhe_secao,
+                'intervalo_dias' => $tipoRegistro->intervalo_dias,
                 'eh_ruptura' => $tipoRegistro->eh_ruptura,
                 'eh_alerta' => $tipoRegistro->eh_alerta,
                 'usa_pontuacao' => $tipoRegistro->usa_pontuacao,
@@ -390,6 +565,7 @@ class TipoRegistroController extends Controller
                     'sortimento_secao_id' => $original->sortimento_secao_id,
                     'sortimento_departamento_id' => $original->sortimento_departamento_id,
                     'sortimento_marca_id' => $original->sortimento_marca_id,
+                    'sortimento_segue_escolha' => $original->sortimento_segue_escolha,
                     'confirmar_ruptura_ausentes' => $original->confirmar_ruptura_ausentes,
                 ]);
                 $criado->produtosFixos()->sync($original->produtosFixos->pluck('id'));

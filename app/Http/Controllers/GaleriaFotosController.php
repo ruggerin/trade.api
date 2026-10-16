@@ -14,6 +14,7 @@ use App\Models\SecaoAuditoria;
 use App\Models\TipoRegistro;
 use App\Models\Usuario;
 use App\Models\VisitaRegistro;
+use App\Support\FiltroRecorteRegistro;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -97,9 +98,10 @@ class GaleriaFotosController extends Controller
                 fn ($q) => $q->whereDate('created_at', '<=', $request->string('data_fim')),
             )
             ->when($tipoRegistroId, fn ($q) => $q->where('tipo_registro_id', $tipoRegistroId))
-            ->when($departamentoId, fn ($q) => $q->where('departamento_id', $departamentoId))
-            ->when($secaoId, fn ($q) => $q->where('secao_id', $secaoId))
-            ->when($marcaId, fn ($q) => $q->where('marca_id', $marcaId))
+            // Hierárquico (docs/79 decisão 10): departamento traz também as seções e os produtos dele.
+            ->when($departamentoId, fn ($q) => FiltroRecorteRegistro::departamento($q, [$departamentoId]))
+            ->when($secaoId, fn ($q) => FiltroRecorteRegistro::secao($q, [$secaoId]))
+            ->when($marcaId, fn ($q) => FiltroRecorteRegistro::marca($q, [$marcaId]))
             ->when($produtoId, fn ($q) => $q->where('produto_auditoria_id', $produtoId))
             ->when($request->has('ruptura'), fn ($q) => $q->where('ruptura', $request->boolean('ruptura')))
             ->with([

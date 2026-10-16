@@ -18,7 +18,7 @@ use Illuminate\Support\Collection;
 class FormatadorValoresCampos
 {
     /**
-     * @return list<array{chave: string, rotulo: string, tipo_campo: string, valor: string|null, sortimento: array{presentes: list<array{id: string, descricao: string}>, ausentes: list<array{id: string, descricao: string}>}|null}>
+     * @return list<array{chave: string, rotulo: string, tipo_campo: string, valor: string|null, sortimento: array{presentes: list<array{id: string, descricao: string, fora_do_mix: bool}>, ausentes: list<array{id: string, descricao: string, fora_do_mix: bool}>}|null}>
      */
     public static function formatar(TipoRegistro $tipoRegistro, ?array $valoresCampos): array
     {
@@ -87,10 +87,16 @@ class FormatadorValoresCampos
     private static function montarSortimento(string $bruto, Collection $produtosPorUuid): array
     {
         $decodificado = json_decode($bruto, true);
+        // Adicionado pelo promotor de fora do mix da loja (docs/79 decisão 8).
+        $foraDoMix = collect(is_array($decodificado) && is_array($decodificado['fora_do_mix'] ?? null) ? $decodificado['fora_do_mix'] : []);
         $resolver = fn (array $uuids) => collect($uuids)
             ->map(fn ($uuid) => $produtosPorUuid->get($uuid))
             ->filter()
-            ->map(fn (ProdutoAuditoria $produto) => ['id' => $produto->uuid, 'descricao' => $produto->descricao])
+            ->map(fn (ProdutoAuditoria $produto) => [
+                'id' => $produto->uuid,
+                'descricao' => $produto->descricao,
+                'fora_do_mix' => $foraDoMix->contains($produto->uuid),
+            ])
             ->values()
             ->all();
 

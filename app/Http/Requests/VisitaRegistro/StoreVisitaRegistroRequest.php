@@ -6,6 +6,8 @@ use App\Enums\GranularidadeResposta;
 use App\Enums\TipoCampoRegistro;
 use App\Enums\TipoItemCampanha;
 use App\Models\CampoTipoRegistro;
+use App\Models\DepartamentoAuditoria;
+use App\Models\MarcaAuditoria;
 use App\Models\ProdutoAuditoria;
 use App\Models\SecaoAuditoria;
 use App\Models\TipoRegistro;
@@ -28,7 +30,7 @@ class StoreVisitaRegistroRequest extends FormRequest
     public function rules(): array
     {
         $empresaId = $this->user()->empresa_id;
-        /** @var \App\Models\Visita $visita */
+        /** @var Visita $visita */
         $visita = $this->route('visita');
 
         return [
@@ -116,6 +118,7 @@ class StoreVisitaRegistroRequest extends FormRequest
             }
 
             $this->validarGranularidade($validator, $tipoRegistro);
+            $this->validarEscolhaDeRecorte($validator, $tipoRegistro);
 
             $valores = $this->input('valores_campos', []);
             // Produto em ruptura: não tem o que coletar (preço, quantidade...) — as perguntas
@@ -139,6 +142,7 @@ class StoreVisitaRegistroRequest extends FormRequest
 
                 if ($campo->obrigatorio && ! $emRuptura && ($valor === null || $valor === '')) {
                     $validator->errors()->add("valores_campos.{$campo->chave}", "O campo \"{$campo->rotulo}\" é obrigatório.");
+
                     continue;
                 }
 
@@ -200,9 +204,30 @@ class StoreVisitaRegistroRequest extends FormRequest
         $ausentes = collect($decodificado['ausentes']);
 
         if ($presentes->intersect($ausentes)->isNotEmpty()) {
-            $validator->errors()->add("valores_campos.{$campo->chave}", "Um produto não pode estar marcado como presente e ausente ao mesmo tempo.");
+            $validator->errors()->add("valores_campos.{$campo->chave}", 'Um produto não pode estar marcado como presente e ausente ao mesmo tempo.');
 
             return;
+        }
+
+        // Produtos adicionados pelo promotor de fora do mix da loja (docs/79 decisão 8) — sempre
+        // um subconjunto de `presentes`, só no Mix que segue a escolha do promotor.
+        $foraDoMix = collect($decodificado['fora_do_mix'] ?? []);
+        if (! is_array($decodificado['fora_do_mix'] ?? []) || $foraDoMix->diff($presentes)->isNotEmpty()) {
+            $validator->errors()->add("valores_campos.{$campo->chave}", "Valor inválido pro campo \"{$campo->rotulo}\".");
+
+            return;
+        }
+
+        [$tipoRecorte, $recorteId] = $this->recorteDoRegistro();
+
+        if ($foraDoMix->isNotEmpty()) {
+            $dentroDoRecorte = $campo->sortimento_segue_escolha && $tipoRecorte && $recorteId
+                && ResolverSortimentoCampo::catalogoDoRecorte($tipoRecorte, $recorteId)->whereIn('uuid', $foraDoMix->filter(fn ($u) => is_string($u) && Str::isUuid($u)))->count() === $foraDoMix->unique()->count();
+            if (! $dentroDoRecorte) {
+                $validator->errors()->add("valores_campos.{$campo->chave}", 'Um ou mais produtos adicionados não fazem parte do recorte escolhido.');
+
+                return;
+            }
         }
 
         /** @var Visita|null $visita */
@@ -210,12 +235,54 @@ class StoreVisitaRegistroRequest extends FormRequest
         $pontoVenda = $visita?->pontoVenda;
 
         $produtosValidos = $pontoVenda
-            ? ResolverSortimentoCampo::resolver($campo, $pontoVenda)->pluck('uuid')
+            ? ResolverSortimentoCampo::resolver($campo, $pontoVenda, $tipoRecorte, $recorteId)->pluck('uuid')
             : collect();
 
-        if ($presentes->merge($ausentes)->diff($produtosValidos)->isNotEmpty()) {
-            $validator->errors()->add("valores_campos.{$campo->chave}", "Um ou mais produtos não fazem parte do sortimento configurado pra este campo.");
+        if ($presentes->merge($ausentes)->diff($foraDoMix)->diff($produtosValidos)->isNotEmpty()) {
+            $validator->errors()->add("valores_campos.{$campo->chave}", 'Um ou mais produtos não fazem parte do sortimento configurado pra este campo.');
         }
+    }
+
+    /**
+     * Formulário em que o promotor escolhe marca/departamento/seção (docs/79 §4.2): o registro
+     * precisa vir vinculado a um desses recortes, entre os que o formulário libera.
+     */
+    private function validarEscolhaDeRecorte(Validator $validator, TipoRegistro $tipoRegistro): void
+    {
+        $permitidos = $tipoRegistro->recortesPermitidos();
+        if ($permitidos === []) {
+            return;
+        }
+
+        $tipoVinculo = TipoItemCampanha::tryFrom((string) $this->input('tipo_vinculo'));
+        if (! in_array($tipoVinculo, $permitidos, true)) {
+            $nomes = implode(', ', array_map(fn (TipoItemCampanha $t) => mb_strtolower($t->value === 'SECAO' ? 'seção' : $t->value), $permitidos));
+            $validator->errors()->add('tipo_vinculo', "O formulário \"{$tipoRegistro->descricao}\" pede onde é o registro: escolha {$nomes}.");
+        }
+    }
+
+    /** @return array{0: ?TipoItemCampanha, 1: ?int} recorte escolhido no registro, se houver. */
+    private function recorteDoRegistro(): array
+    {
+        $tipo = TipoItemCampanha::tryFrom((string) $this->input('tipo_vinculo'));
+        [$modelo, $campoUuid] = match ($tipo) {
+            TipoItemCampanha::SECAO => [SecaoAuditoria::class, 'secao_uuid'],
+            TipoItemCampanha::DEPARTAMENTO => [DepartamentoAuditoria::class, 'departamento_uuid'],
+            TipoItemCampanha::MARCA => [MarcaAuditoria::class, 'marca_uuid'],
+            default => [null, null],
+        };
+
+        $uuid = $campoUuid ? $this->input($campoUuid) : null;
+        if (! $modelo || ! is_string($uuid) || ! Str::isUuid($uuid)) {
+            return [null, null];
+        }
+
+        $id = $modelo::withoutGlobalScopes()
+            ->where('empresa_id', $this->user()->empresa_id)
+            ->where('uuid', $uuid)
+            ->value('id');
+
+        return $id ? [$tipo, (int) $id] : [null, null];
     }
 
     /** dd/mm/aaaa estrito — Carbon::createFromFormat aceita "31/02/2026" e normaliza pra março, então confere o round-trip pra rejeitar datas inválidas de verdade. */

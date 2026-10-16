@@ -4,11 +4,13 @@ namespace App\Relatorios\Entidades;
 
 use App\Enums\TipoCampoRegistro;
 use App\Models\CampoTipoRegistro;
+use App\Models\DepartamentoAuditoria;
 use App\Models\MarcaAuditoria;
 use App\Models\MotivoResolucaoAlerta;
 use App\Models\PontoVenda;
 use App\Models\ProdutoAuditoria;
 use App\Models\RedeLoja;
+use App\Models\SecaoAuditoria;
 use App\Models\TipoRegistro;
 use App\Models\Usuario;
 use App\Models\VisitaRegistro;
@@ -16,6 +18,7 @@ use App\Relatorios\Campo;
 use App\Relatorios\Entidade;
 use App\Relatorios\Metrica;
 use App\Relatorios\Periodo;
+use App\Support\FiltroRecorteRegistro;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -52,9 +55,14 @@ final class RegistroEntidade extends Entidade
         return VisitaRegistro::query()
             ->with([
                 'tipoRegistro:id,uuid,descricao,eh_alerta,eh_ruptura',
-                'produtoAuditoria:id,uuid,descricao,marca_id',
+                'produtoAuditoria:id,uuid,descricao,marca_id,secao_id,departamento_id',
                 'produtoAuditoria.marca:id,uuid,descricao',
+                'produtoAuditoria.secao:id,uuid,descricao',
+                'produtoAuditoria.departamento:id,uuid,descricao',
                 'marca:id,uuid,descricao',
+                'secao:id,uuid,descricao,departamento_id',
+                'secao.departamento:id,uuid,descricao',
+                'departamento:id,uuid,descricao',
                 'motivoResolucao:id,uuid,descricao',
                 'visita:id,usuario_id,ponto_venda_id',
                 'visita.usuario:id,uuid,nome',
@@ -95,12 +103,31 @@ final class RegistroEntidade extends Entidade
             // A marca do produto; registro feito direto na marca (sem produto) usa a dele.
             new Campo('marca', 'Marca', Campo::RELACAO, ['em', 'nao_em'], fonte: 'marcas',
                 filtrar: function (Builder $q, string $operador, mixed $valor): void {
-                    $ids = fn () => MarcaAuditoria::query()->whereIn('uuid', (array) $valor)->select('id');
-                    $daMarca = fn (Builder $s) => $s->whereIn('marca_id', $ids())
-                        ->orWhereHas('produtoAuditoria', fn (Builder $p) => $p->whereIn('marca_id', $ids()));
+                    $ids = MarcaAuditoria::query()->whereIn('uuid', (array) $valor)->pluck('id')->all();
+                    $daMarca = fn (Builder $s) => FiltroRecorteRegistro::marca($s, $ids);
                     $operador === 'nao_em' ? $q->whereNot($daMarca) : $q->where($daMarca);
                 },
                 agrupar: fn (VisitaRegistro $r) => self::grupoDe($r->produtoAuditoria?->marca ?? $r->marca, 'descricao', 'Sem marca')),
+            // Hierárquicos (docs/79 decisão 10): o registro conta uma vez, no recorte em que foi
+            // feito; o filtro de departamento traz também as seções e os produtos dele.
+            new Campo('departamento', 'Departamento', Campo::RELACAO, ['em', 'nao_em'], fonte: 'departamentos',
+                filtrar: function (Builder $q, string $operador, mixed $valor): void {
+                    $ids = DepartamentoAuditoria::query()->whereIn('uuid', (array) $valor)->pluck('id')->all();
+                    $doDepartamento = fn (Builder $s) => FiltroRecorteRegistro::departamento($s, $ids);
+                    $operador === 'nao_em' ? $q->whereNot($doDepartamento) : $q->where($doDepartamento);
+                },
+                agrupar: fn (VisitaRegistro $r) => self::grupoDe(
+                    $r->produtoAuditoria?->departamento ?? $r->departamento ?? $r->secao?->departamento,
+                    'descricao',
+                    'Sem departamento',
+                )),
+            new Campo('secao', 'Seção', Campo::RELACAO, ['em', 'nao_em'], fonte: 'secoes',
+                filtrar: function (Builder $q, string $operador, mixed $valor): void {
+                    $ids = SecaoAuditoria::query()->whereIn('uuid', (array) $valor)->pluck('id')->all();
+                    $daSecao = fn (Builder $s) => FiltroRecorteRegistro::secao($s, $ids);
+                    $operador === 'nao_em' ? $q->whereNot($daSecao) : $q->where($daSecao);
+                },
+                agrupar: fn (VisitaRegistro $r) => self::grupoDe($r->produtoAuditoria?->secao ?? $r->secao, 'descricao', 'Sem seção')),
             new Campo('ruptura', 'Ruptura', Campo::BOOLEANO, ['igual'],
                 filtrar: fn (Builder $q, string $operador, mixed $valor) => $q->where('ruptura', filter_var($valor, FILTER_VALIDATE_BOOLEAN)),
                 agrupar: fn (VisitaRegistro $r) => $r->ruptura ? ['sim', 'Com ruptura'] : ['nao', 'Sem ruptura']),
