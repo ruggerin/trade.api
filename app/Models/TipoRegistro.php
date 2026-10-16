@@ -42,6 +42,8 @@ class TipoRegistro extends Model
         'escolhe_marca',
         'escolhe_departamento',
         'escolhe_secao',
+        'lista_recorte',
+        'filtra_marca',
         'eh_ruptura',
         'eh_alerta',
         'usa_pontuacao',
@@ -62,6 +64,7 @@ class TipoRegistro extends Model
             'escolhe_marca' => 'boolean',
             'escolhe_departamento' => 'boolean',
             'escolhe_secao' => 'boolean',
+            'filtra_marca' => 'boolean',
             'eh_ruptura' => 'boolean',
             'eh_alerta' => 'boolean',
             'usa_pontuacao' => 'boolean',
@@ -87,6 +90,16 @@ class TipoRegistro extends Model
             $this->escolhe_departamento ? TipoItemCampanha::DEPARTAMENTO : null,
             $this->escolhe_secao ? TipoItemCampanha::SECAO : null,
         ]));
+    }
+
+    /** docs/82 §5.1: lista "Na loja" primeiro (padrão) ou só o que a loja tem no Mix. */
+    public const LISTA_PRIMEIRO_DA_LOJA = 'PRIMEIRO_DA_LOJA';
+
+    public const LISTA_SO_DA_LOJA = 'SO_DA_LOJA';
+
+    public function soDaLoja(): bool
+    {
+        return $this->lista_recorte === self::LISTA_SO_DA_LOJA;
     }
 
     public function temEscolhaDeRecorte(): bool

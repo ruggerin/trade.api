@@ -124,7 +124,8 @@ class Doc79MixPorEscolhaTest extends TestCase
     public function test_mix_que_segue_a_escolha_devolve_o_mix_inteiro_com_secao_e_os_recortes_escolhiveis(): void
     {
         $marca = MarcaAuditoria::factory()->create(['empresa_id' => $this->empresa->id, 'descricao' => 'Brisa']);
-        MarcaDepartamento::create(['marca_id' => $marca->id, 'departamento_id' => $this->limpeza->id]);
+        // Marca vem do próprio produto (docs/82 §5.3), não de MarcaDepartamento.
+        $this->amacianteAzul->update(['marca_id' => $marca->id]);
         $this->noMix('PRODUTO', ['produto_id' => $this->amacianteAzul->id]);
         $this->noMix('PRODUTO', ['produto_id' => $this->sabaoPo->id]);
         $campo = $this->formularioPontoExtra()->campos()->first();
@@ -136,6 +137,8 @@ class Doc79MixPorEscolhaTest extends TestCase
             ->assertJsonPath('recortes.departamentos.0.uuid', $this->limpeza->uuid)
             ->assertJsonPath('recortes.marcas.0.uuid', $marca->uuid)
             ->assertJsonPath('recortes.marcas.0.departamentos_uuids.0', $this->limpeza->uuid)
+            ->assertJsonPath('recortes.marcas.0.secoes_uuids', [$this->amaciante->uuid])
+            ->assertJsonCount(1, 'recortes.marcas')
             ->assertJsonCount(2, 'recortes.secoes');
 
         $amaciante = collect($response->json('produtos'))->firstWhere('produto_uuid', $this->amacianteAzul->uuid);

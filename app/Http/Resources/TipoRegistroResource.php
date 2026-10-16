@@ -64,6 +64,9 @@ class TipoRegistroResource extends JsonResource
             'escolhe_marca' => $this->escolhe_marca,
             'escolhe_departamento' => $this->escolhe_departamento,
             'escolhe_secao' => $this->escolhe_secao,
+            // docs/82: o que a lista "Onde é" mostra e o filtro de marca depois da seção/departamento.
+            'lista_recorte' => $this->lista_recorte ?? TipoRegistro::LISTA_PRIMEIRO_DA_LOJA,
+            'filtra_marca' => (bool) $this->filtra_marca,
             // Marca a coluna "Ruptura" da grade de coleta (Fase 2) — ver
             // docs/16-GRANULARIDADE-CHECKLIST-AUDITORIA.md §9.
             'eh_ruptura' => $this->eh_ruptura,

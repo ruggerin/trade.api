@@ -125,6 +125,9 @@ class UpdateTipoRegistroRequest extends FormRequest
             'escolhe_marca' => ['sometimes', 'boolean'],
             'escolhe_departamento' => ['sometimes', 'boolean'],
             'escolhe_secao' => ['sometimes', 'boolean'],
+            // docs/82 §6.1.
+            'lista_recorte' => ['sometimes', Rule::in([TipoRegistro::LISTA_PRIMEIRO_DA_LOJA, TipoRegistro::LISTA_SO_DA_LOJA])],
+            'filtra_marca' => ['sometimes', 'boolean'],
             'granularidade_padrao' => ['nullable', Rule::in(array_column(GranularidadeResposta::cases(), 'value'))],
             // Quando enviado, substitui a lista inteira de exceções (ver
             // TipoRegistroController::sincronizarExcecoesGranularidade).

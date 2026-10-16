@@ -45,29 +45,45 @@ class LinhaAusente
     /** O item do Mix cobre o recorte do formulário? `produto` e `secao` do item carregados. */
     public static function cobre(TipoRegistro $tipo, SortimentoPontoVenda $item): bool
     {
-        $departamentoDaSecao = $tipo->escopoSecao?->departamento_id;
+        $id = match ($tipo->escopo_tipo_vinculo) {
+            TipoItemCampanha::SECAO => $tipo->escopo_secao_id,
+            TipoItemCampanha::DEPARTAMENTO => $tipo->escopo_departamento_id,
+            TipoItemCampanha::MARCA => $tipo->escopo_marca_id,
+            default => null,
+        };
+
+        // Sem recorte configurado: nada a levantar.
+        return $id === null || self::cobreRecorte($tipo->escopo_tipo_vinculo, $id, $tipo->escopoSecao?->departamento_id, $item);
+    }
+
+    /**
+     * O item do Mix cobre o recorte? Usado também pela lista "Na loja" do doc 82 (mesma regra).
+     * `$departamentoDaSecao` = o departamento da seção, quando o recorte é seção (item de
+     * departamento cobre as seções dele). `produto` e `secao` do item carregados.
+     */
+    public static function cobreRecorte(TipoItemCampanha $tipo, int $id, ?int $departamentoDaSecao, SortimentoPontoVenda $item): bool
+    {
         $produto = $item->produto;
 
-        return match ($tipo->escopo_tipo_vinculo) {
+        return match ($tipo) {
             TipoItemCampanha::SECAO => match ($item->tipo_item) {
-                TipoItemCampanha::PRODUTO => $produto?->secao_id === $tipo->escopo_secao_id,
-                TipoItemCampanha::SECAO => $item->secao_id === $tipo->escopo_secao_id,
+                TipoItemCampanha::PRODUTO => $produto?->secao_id === $id,
+                TipoItemCampanha::SECAO => $item->secao_id === $id,
                 TipoItemCampanha::DEPARTAMENTO => $departamentoDaSecao !== null && $item->departamento_id === $departamentoDaSecao,
                 default => false,
             },
             TipoItemCampanha::DEPARTAMENTO => match ($item->tipo_item) {
-                TipoItemCampanha::PRODUTO => $produto?->departamento_id === $tipo->escopo_departamento_id,
-                TipoItemCampanha::SECAO => $item->secao?->departamento_id === $tipo->escopo_departamento_id,
-                TipoItemCampanha::DEPARTAMENTO => $item->departamento_id === $tipo->escopo_departamento_id,
+                TipoItemCampanha::PRODUTO => $produto?->departamento_id === $id,
+                TipoItemCampanha::SECAO => $item->secao?->departamento_id === $id,
+                TipoItemCampanha::DEPARTAMENTO => $item->departamento_id === $id,
                 default => false,
             },
             TipoItemCampanha::MARCA => match ($item->tipo_item) {
-                TipoItemCampanha::PRODUTO => $produto?->marca_id === $tipo->escopo_marca_id,
-                TipoItemCampanha::MARCA => $item->marca_id === $tipo->escopo_marca_id,
+                TipoItemCampanha::PRODUTO => $produto?->marca_id === $id,
+                TipoItemCampanha::MARCA => $item->marca_id === $id,
                 default => false,
             },
-            // Sem recorte configurado: nada a levantar.
-            default => true,
+            default => false,
         };
     }
 }

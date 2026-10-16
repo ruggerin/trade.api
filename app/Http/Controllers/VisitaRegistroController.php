@@ -75,6 +75,13 @@ class VisitaRegistroController extends Controller
                 TipoItemCampanha::PRODUTO => null, // já resolvido acima via produto_auditoria_uuid
             };
         }
+        // Marca como complemento de seção/departamento ("Biscoito · Piraquê", docs/82 §5.2), só
+        // quando o formulário libera o filtro de marca.
+        if (in_array($dados['tipo_vinculo'] ?? null, [TipoItemCampanha::SECAO->value, TipoItemCampanha::DEPARTAMENTO->value], true)
+            && ! empty($dados['marca_uuid'])
+            && TipoRegistro::whereKey($tipoRegistroId)->value('filtra_marca')) {
+            $marcaId = MarcaAuditoria::where('uuid', $dados['marca_uuid'])->value('id');
+        }
 
         // Hora do campo (docs/51 §3.5): o registro feito offline mantém a hora em que foi salvo no
         // celular — é o created_at que o feed, a galeria e os relatórios usam. `new` + save (em vez

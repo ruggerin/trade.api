@@ -8,6 +8,7 @@ use App\Enums\SortimentoOrigemCampo;
 use App\Enums\TipoCampoRegistro;
 use App\Support\IconeTipoRegistro;
 use Illuminate\Foundation\Http\FormRequest;
+use App\Models\TipoRegistro;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
 
@@ -136,6 +137,9 @@ class StoreTipoRegistroRequest extends FormRequest
             'escolhe_marca' => ['nullable', 'boolean'],
             'escolhe_departamento' => ['nullable', 'boolean'],
             'escolhe_secao' => ['nullable', 'boolean'],
+            // docs/82 §6.1.
+            'lista_recorte' => ['nullable', Rule::in([TipoRegistro::LISTA_PRIMEIRO_DA_LOJA, TipoRegistro::LISTA_SO_DA_LOJA])],
+            'filtra_marca' => ['nullable', 'boolean'],
             'granularidade_padrao' => ['nullable', Rule::in(array_column(GranularidadeResposta::cases(), 'value'))],
             // Lista completa de exceções por seção — mesma semântica de "campos": sempre
             // substituída inteira (ver TipoRegistroController::sincronizarExcecoesGranularidade).

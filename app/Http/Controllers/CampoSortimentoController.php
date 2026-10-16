@@ -4,7 +4,6 @@ namespace App\Http\Controllers;
 
 use App\Enums\TipoCampoRegistro;
 use App\Models\CampoTipoRegistro;
-use App\Models\MarcaDepartamento;
 use App\Models\PontoVenda;
 use App\Models\ProdutoAuditoria;
 use App\Models\TipoRegistro;
@@ -51,6 +50,9 @@ class CampoSortimentoController extends Controller
                 'secao_descricao' => $produto->secao?->descricao,
                 'departamento_uuid' => $produto->departamento?->uuid,
                 'departamento_descricao' => $produto->departamento?->descricao,
+                // Marca do próprio produto (docs/82 §5.3): checklist por marca e filtro de marca.
+                'marca_uuid' => $produto->marca?->uuid,
+                'marca_descricao' => $produto->marca?->descricao,
             ])->values(),
         ];
 
@@ -68,16 +70,16 @@ class CampoSortimentoController extends Controller
     {
         $departamentos = $produtos->pluck('departamento')->filter()->unique('id')->sortBy('descricao')->values();
 
-        $marcas = MarcaDepartamento::with('marca')
-            ->whereIn('departamento_id', $departamentos->pluck('id'))
-            ->get()
+        // Marcas pelos PRODUTOS do mix (docs/82 §5.3), cada uma com onde aparece nesta loja — o
+        // filtro de marca depois da seção mostra só as marcas daquela seção (§5.2).
+        $marcas = $produtos->filter(fn ($p) => $p->marca)
             ->groupBy('marca_id')
-            ->map(fn (Collection $vinculos) => [
-                'uuid' => $vinculos->first()->marca?->uuid,
-                'descricao' => $vinculos->first()->marca?->descricao,
-                'departamentos_uuids' => $departamentos->whereIn('id', $vinculos->pluck('departamento_id'))->pluck('uuid')->values(),
+            ->map(fn (Collection $daMarca) => [
+                'uuid' => $daMarca->first()->marca->uuid,
+                'descricao' => $daMarca->first()->marca->descricao,
+                'departamentos_uuids' => $daMarca->pluck('departamento.uuid')->filter()->unique()->values(),
+                'secoes_uuids' => $daMarca->pluck('secao.uuid')->filter()->unique()->values(),
             ])
-            ->filter(fn (array $marca) => $marca['uuid'] !== null)
             ->sortBy('descricao')
             ->values();
 

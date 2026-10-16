@@ -11,6 +11,8 @@ use App\Models\MarcaAuditoria;
 use App\Models\ProdutoAuditoria;
 use App\Models\SecaoAuditoria;
 use App\Models\TipoRegistro;
+use App\Support\LinhaAusente;
+use App\Models\SortimentoPontoVenda;
 use App\Models\Visita;
 use App\Support\GranularidadeChecklist;
 use App\Support\ResolverSortimentoCampo;
@@ -78,6 +80,7 @@ class StoreVisitaRegistroRequest extends FormRequest
                 'bail', 'nullable', 'string', 'required_if:tipo_vinculo,DEPARTAMENTO', 'uuid',
                 Rule::exists('departamentos_auditoria', 'uuid')->where('empresa_id', $empresaId),
             ],
+            // Com tipo_vinculo SECAO/DEPARTAMENTO, a marca vem como filtro complementar (docs/82 §5.2).
             'marca_uuid' => [
                 'bail', 'nullable', 'string', 'required_if:tipo_vinculo,MARCA', 'uuid',
                 Rule::exists('marcas_auditoria', 'uuid')->where('empresa_id', $empresaId),
@@ -218,11 +221,11 @@ class StoreVisitaRegistroRequest extends FormRequest
             return;
         }
 
-        [$tipoRecorte, $recorteId] = $this->recorteDoRegistro();
+        [$tipoRecorte, $recorteId, $marcaFiltro] = $this->recorteDoRegistro($campo->tipoRegistro);
 
         if ($foraDoMix->isNotEmpty()) {
             $dentroDoRecorte = $campo->sortimento_segue_escolha && $tipoRecorte && $recorteId
-                && ResolverSortimentoCampo::catalogoDoRecorte($tipoRecorte, $recorteId)->whereIn('uuid', $foraDoMix->filter(fn ($u) => is_string($u) && Str::isUuid($u)))->count() === $foraDoMix->unique()->count();
+                && ResolverSortimentoCampo::catalogoDoRecorte($tipoRecorte, $recorteId, $marcaFiltro)->whereIn('uuid', $foraDoMix->filter(fn ($u) => is_string($u) && Str::isUuid($u)))->count() === $foraDoMix->unique()->count();
             if (! $dentroDoRecorte) {
                 $validator->errors()->add("valores_campos.{$campo->chave}", 'Um ou mais produtos adicionados não fazem parte do recorte escolhido.');
 
@@ -235,7 +238,7 @@ class StoreVisitaRegistroRequest extends FormRequest
         $pontoVenda = $visita?->pontoVenda;
 
         $produtosValidos = $pontoVenda
-            ? ResolverSortimentoCampo::resolver($campo, $pontoVenda, $tipoRecorte, $recorteId)->pluck('uuid')
+            ? ResolverSortimentoCampo::resolver($campo, $pontoVenda, $tipoRecorte, $recorteId, $marcaFiltro)->pluck('uuid')
             : collect();
 
         if ($presentes->merge($ausentes)->diff($foraDoMix)->diff($produtosValidos)->isNotEmpty()) {
@@ -258,11 +261,50 @@ class StoreVisitaRegistroRequest extends FormRequest
         if (! in_array($tipoVinculo, $permitidos, true)) {
             $nomes = implode(', ', array_map(fn (TipoItemCampanha $t) => mb_strtolower($t->value === 'SECAO' ? 'seção' : $t->value), $permitidos));
             $validator->errors()->add('tipo_vinculo', "O formulário \"{$tipoRegistro->descricao}\" pede onde é o registro: escolha {$nomes}.");
+
+            return;
+        }
+
+        // "Só o que a loja tem" (docs/82 §5.1): o recorte precisa estar no Mix aprovado da loja —
+        // exceto loja com Mix vazio, que libera tudo (decisão 5: o promotor nunca fica travado).
+        if ($tipoRegistro->soDaLoja()) {
+            [$tipo, $id] = $this->recorteDoRegistro($tipoRegistro);
+            $pontoVenda = $this->route('visita')?->pontoVenda;
+            if ($tipo && $id && $pontoVenda) {
+                $itens = SortimentoPontoVenda::where('ponto_venda_id', $pontoVenda->id)
+                    ->whereNull('status_aprovacao')
+                    ->with(['produto:id,secao_id,departamento_id,marca_id', 'secao:id,departamento_id'])
+                    ->get();
+                $departamentoDaSecao = $tipo === TipoItemCampanha::SECAO ? SecaoAuditoria::withoutGlobalScopes()->whereKey($id)->value('departamento_id') : null;
+                if ($itens->isNotEmpty() && ! $itens->contains(fn ($item) => LinhaAusente::cobreRecorte($tipo, $id, $departamentoDaSecao, $item))) {
+                    $validator->errors()->add('tipo_vinculo', "O formulário \"{$tipoRegistro->descricao}\" só aceita o que a loja tem no Mix, e esta loja não tem essa escolha.");
+                }
+            }
         }
     }
 
-    /** @return array{0: ?TipoItemCampanha, 1: ?int} recorte escolhido no registro, se houver. */
-    private function recorteDoRegistro(): array
+    /**
+     * Recorte escolhido no registro, se houver, e a marca como filtro complementar (docs/82 §5.2):
+     * só com tipo SECAO/DEPARTAMENTO e formulário com `filtra_marca`.
+     *
+     * @return array{0: ?TipoItemCampanha, 1: ?int, 2: ?int}
+     */
+    private function recorteDoRegistro(?TipoRegistro $tipoRegistro = null): array
+    {
+        [$tipo, $id] = $this->recortePrincipal();
+        $marcaFiltro = null;
+        if ($tipo !== null && in_array($tipo, [TipoItemCampanha::SECAO, TipoItemCampanha::DEPARTAMENTO], true) && $tipoRegistro?->filtra_marca) {
+            $uuid = $this->input('marca_uuid');
+            $marcaFiltro = is_string($uuid) && Str::isUuid($uuid)
+                ? MarcaAuditoria::withoutGlobalScopes()->where('empresa_id', $this->user()->empresa_id)->where('uuid', $uuid)->value('id')
+                : null;
+        }
+
+        return [$tipo, $id, $marcaFiltro !== null ? (int) $marcaFiltro : null];
+    }
+
+    /** @return array{0: ?TipoItemCampanha, 1: ?int} */
+    private function recortePrincipal(): array
     {
         $tipo = TipoItemCampanha::tryFrom((string) $this->input('tipo_vinculo'));
         [$modelo, $campoUuid] = match ($tipo) {

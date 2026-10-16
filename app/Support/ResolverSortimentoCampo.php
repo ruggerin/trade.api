@@ -5,7 +5,6 @@ namespace App\Support;
 use App\Enums\SortimentoOrigemCampo;
 use App\Enums\TipoItemCampanha;
 use App\Models\CampoTipoRegistro;
-use App\Models\MarcaDepartamento;
 use App\Models\PontoVenda;
 use App\Models\ProdutoAuditoria;
 use App\Models\SortimentoPontoVenda;
@@ -33,29 +32,34 @@ class ResolverSortimentoCampo
         PontoVenda $pontoVenda,
         ?TipoItemCampanha $tipoRecorte = null,
         ?int $recorteId = null,
+        ?int $marcaId = null,
     ): Collection {
         return $campo->sortimento_origem === SortimentoOrigemCampo::FIXO
             ? self::resolverFixo($campo)
-            : self::resolverDinamico($campo, $pontoVenda, $tipoRecorte, $recorteId);
+            : self::resolverDinamico($campo, $pontoVenda, $tipoRecorte, $recorteId, $marcaId);
     }
 
     /**
      * Produtos ativos do catálogo dentro de um recorte, estejam ou não no mix de alguma loja.
-     * Marca = os departamentos ligados a ela em MarcaDepartamento, mesmo critério de
-     * CampanhaAuditoriaController::disponiveis.
+     * Marca = a marca do PRÓPRIO produto (docs/82 §5.3). Antes era "os departamentos ligados à
+     * marca" (MarcaDepartamento), que num departamento compartilhado trazia as outras marcas
+     * junto. A campanha por marca (CampanhaAuditoriaController) segue no critério antigo.
+     * `$marcaId` = filtro de marca depois da seção/departamento (docs/82 §5.2): interseção.
      *
      * @return Builder<ProdutoAuditoria>
      */
-    public static function catalogoDoRecorte(TipoItemCampanha $tipo, int $id): Builder
+    public static function catalogoDoRecorte(TipoItemCampanha $tipo, int $id, ?int $marcaId = null): Builder
     {
         $query = ProdutoAuditoria::query()->where('ativo', true);
 
-        return match ($tipo) {
+        $query = match ($tipo) {
             TipoItemCampanha::PRODUTO => $query->where('id', $id),
             TipoItemCampanha::SECAO => $query->where('secao_id', $id),
             TipoItemCampanha::DEPARTAMENTO => $query->where('departamento_id', $id),
-            TipoItemCampanha::MARCA => $query->whereIn('departamento_id', MarcaDepartamento::where('marca_id', $id)->pluck('departamento_id')),
+            TipoItemCampanha::MARCA => $query->where('marca_id', $id),
         };
+
+        return $marcaId !== null ? $query->where('marca_id', $marcaId) : $query;
     }
 
     /** Lista curada no cadastro do campo — ignora o sortimento real do PDV. */
@@ -77,6 +81,7 @@ class ResolverSortimentoCampo
         PontoVenda $pontoVenda,
         ?TipoItemCampanha $tipoRecorte,
         ?int $recorteId,
+        ?int $marcaId = null,
     ): Collection {
         [$tipo, $id] = $campo->sortimento_segue_escolha
             ? [$tipoRecorte, $recorteId]
@@ -103,20 +108,21 @@ class ResolverSortimentoCampo
         $porTipo = fn (TipoItemCampanha $t, string $coluna) => $itens->where('tipo_item', $t)->pluck($coluna)->filter()->unique()->values();
         $produtoIds = $porTipo(TipoItemCampanha::PRODUTO, 'produto_id');
         $secaoIds = $porTipo(TipoItemCampanha::SECAO, 'secao_id');
-        $departamentoIds = $porTipo(TipoItemCampanha::DEPARTAMENTO, 'departamento_id')->merge(
-            MarcaDepartamento::whereIn('marca_id', $porTipo(TipoItemCampanha::MARCA, 'marca_id'))->pluck('departamento_id'),
-        )->unique()->values();
+        $departamentoIds = $porTipo(TipoItemCampanha::DEPARTAMENTO, 'departamento_id');
+        // Item "marca inteira" = todos os produtos daquela marca (docs/82 §5.3).
+        $marcaIds = $porTipo(TipoItemCampanha::MARCA, 'marca_id');
 
         $query = ($tipo !== null && $id !== null)
-            ? self::catalogoDoRecorte($tipo, $id)
+            ? self::catalogoDoRecorte($tipo, $id, $campo->sortimento_segue_escolha ? $marcaId : null)
             : ProdutoAuditoria::query()->where('ativo', true);
 
         return $query
             ->where(fn (Builder $q) => $q
                 ->whereIn('id', $produtoIds)
                 ->orWhereIn('secao_id', $secaoIds)
-                ->orWhereIn('departamento_id', $departamentoIds))
-            ->with(['secao', 'departamento'])
+                ->orWhereIn('departamento_id', $departamentoIds)
+                ->orWhereIn('marca_id', $marcaIds))
+            ->with(['secao', 'departamento', 'marca'])
             ->orderBy('descricao')
             ->get();
     }
