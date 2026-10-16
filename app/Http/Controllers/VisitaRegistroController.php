@@ -19,6 +19,7 @@ use App\Models\AcompanhamentoRegistro;
 use App\Models\Visita;
 use App\Models\VisitaRegistro;
 use App\Support\Acompanhamentos;
+use App\Support\ConcorrentesPorMarca;
 use App\Support\CancelamentoRegistro;
 use App\Support\HorarioDoCampo;
 use Illuminate\Http\JsonResponse;
@@ -85,6 +86,22 @@ class VisitaRegistroController extends Controller
             $marcaId = MarcaAuditoria::where('uuid', $dados['marca_uuid'])->value('id');
         }
 
+        // Concorrentes por marca e embalagem (docs/85): a marca (inclusive a cadastrada offline
+        // pelo promotor, que nasce aqui "a aprovar") e o vínculo saem do formulário, não do app.
+        $tipoRegistroModel = TipoRegistro::find($tipoRegistroId);
+        $embalagem = [];
+        if ($tipoRegistroModel?->porMarca()) {
+            $marcaId = ConcorrentesPorMarca::resolverMarca($dados['marca_uuid'] ?? null, $dados['marca_nova_descricao'] ?? null, $request->user())?->id;
+            $vinculo = ConcorrentesPorMarca::vinculo($tipoRegistroModel);
+            $dados['tipo_vinculo'] = $vinculo['tipo_vinculo'];
+            $secaoId = $vinculo['secao_id'];
+            $departamentoId = $vinculo['departamento_id'];
+            $embalagem = [
+                'embalagem_quantidade' => $dados['embalagem_quantidade'] ?? null,
+                'embalagem_unidade' => $dados['embalagem_unidade'] ?? null,
+            ];
+        }
+
         // Hora do campo (docs/51 §3.5): o registro feito offline mantém a hora em que foi salvo no
         // celular — é o created_at que o feed, a galeria e os relatórios usam. `new` + save (em vez
         // de create) porque o Eloquent respeita um created_at já preenchido.
@@ -105,6 +122,7 @@ class VisitaRegistroController extends Controller
             'acompanhamento_id' => ! empty($dados['acompanhamento_uuid'])
                 ? AcompanhamentoRegistro::where('uuid', $dados['acompanhamento_uuid'])->value('id')
                 : null,
+            ...$embalagem,
         ]);
         $registro->created_at = $criadoEm;
         $registro->recebido_em = now();

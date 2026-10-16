@@ -60,6 +60,16 @@ class TipoRegistroResource extends JsonResource
             'ramos_atividade_escopo' => $this->whenLoaded('ramosAtividade', fn () => $this->ramosAtividade->map(fn ($r) => ['id' => $r->uuid, 'descricao' => $r->descricao])->values()),
             // Ver App\Support\GranularidadeChecklist e docs/16-GRANULARIDADE-CHECKLIST-AUDITORIA.md.
             'granularidade_padrao' => $this->granularidade_padrao?->value,
+            // Lista guiada (PRODUTO): FIXA = produtos_predefinidos; MIX_LOJA = nossos produtos do Mix da loja.
+            'lista_produtos_origem' => $this->lista_produtos_origem ?? 'FIXA',
+            // Concorrentes por marca e embalagem (docs/85).
+            'permite_marca_nova' => (bool) ($this->permite_marca_nova ?? true),
+            'varias_embalagens' => (bool) ($this->varias_embalagens ?? true),
+            'marcas_predefinidas' => $this->whenLoaded('marcasPredefinidas', fn () => $this->marcasPredefinidas->map(fn ($m) => [
+                'id' => $m->uuid,
+                'descricao' => $m->descricao,
+                'a_aprovar' => $m->status_aprovacao === \App\Enums\StatusAprovacao::PENDENTE,
+            ])->values()),
             // Promotor escolhe marca/departamento/seção no início do formulário — ver docs/79.
             'escolhe_marca' => $this->escolhe_marca,
             'escolhe_departamento' => $this->escolhe_departamento,

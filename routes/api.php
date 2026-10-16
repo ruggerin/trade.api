@@ -60,6 +60,12 @@ use Illuminate\Support\Facades\Route;
 // Saúde do servidor pro Uptime Kuma (docs/71): público, só o veredito; o detalhe exige X-Saude-Token.
 Route::get('/saude', \App\Http\Controllers\SaudeController::class)->middleware('throttle:60,1');
 
+// Versão da API e ambiente — público, o app mostra no Perfil e o admin no menu do usuário.
+Route::get('/versao', fn () => response()->json([
+    'versao' => config('app.versao'),
+    'ambiente' => config('app.env'),
+])->header('Cache-Control', 'no-store, max-age=0'))->middleware('throttle:60,1');
+
 // Público — signup de empresa (cria o tenant) e login.
 Route::post('/empresas/signup', [EmpresaController::class, 'signup']);
 // docs/67 §2 (B8): limite de tentativas por e-mail+IP e por IP (RateLimiter 'login' no AppServiceProvider).
@@ -418,6 +424,9 @@ Route::middleware(['auth:sanctum', 'licenca', 'assinatura'])->group(function ():
         Route::post('/marcas-auditoria', [MarcaAuditoriaController::class, 'store']);
         Route::put('/marcas-auditoria/{marcaAuditoria}', [MarcaAuditoriaController::class, 'update']);
         Route::delete('/marcas-auditoria/{marcaAuditoria}', [MarcaAuditoriaController::class, 'destroy']);
+        // Marca cadastrada pelo promotor (docs/85 §4.2): aprovar, ou juntar numa existente.
+        Route::post('/marcas-auditoria/{marcaAuditoria}/aprovar', [MarcaAuditoriaController::class, 'aprovar']);
+        Route::post('/marcas-auditoria/{marcaAuditoria}/juntar', [MarcaAuditoriaController::class, 'juntar']);
 
         Route::post('/produtos-auditoria', [ProdutoAuditoriaController::class, 'store']);
         Route::put('/produtos-auditoria/{produtoAuditoria}', [ProdutoAuditoriaController::class, 'update']);
@@ -460,6 +469,8 @@ Route::middleware(['auth:sanctum', 'licenca', 'assinatura'])->group(function ():
         Route::get('/tipos-registro/{tipoRegistro}/lojas-da-acao', [TipoRegistroController::class, 'lojasDaAcao']);
         // Conversão do levantamento de linha ausente (docs/80 §5.3).
         Route::get('/tipos-registro/{tipoRegistro}/conversao', [TipoRegistroController::class, 'conversao']);
+        // Quem ocupa o espaço: marca, embalagem, preço e R$/litro (docs/85 §3.4).
+        Route::get('/tipos-registro/{tipoRegistro}/concorrentes', [TipoRegistroController::class, 'concorrentes']);
 
         Route::post('/planogramas', [PlanogramaController::class, 'store']);
         Route::put('/planogramas/{planograma}', [PlanogramaController::class, 'update']);

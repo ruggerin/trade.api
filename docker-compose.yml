@@ -1,6 +1,11 @@
+# Versão (aparece no app, no admin e como release no Sentry) — carimbe data + commit no build:
+#   APP_VERSAO=$(date +%Y.%m.%d)-$(git rev-parse --short HEAD) docker compose up -d --build
 services:
   app:
-    build: .
+    build:
+      context: .
+      args:
+        APP_VERSAO: ${APP_VERSAO:-dev}
     container_name: tradeteste_api
     restart: unless-stopped
     env_file:

@@ -128,6 +128,13 @@ final class RegistroEntidade extends Entidade
                     $operador === 'nao_em' ? $q->whereNot($daSecao) : $q->where($daSecao);
                 },
                 agrupar: fn (VisitaRegistro $r) => self::grupoDe($r->produtoAuditoria?->secao ?? $r->secao, 'descricao', 'Sem seção')),
+            // Embalagem do registro por marca concorrente (docs/85 §3.4) — só agrupamento ("500 ml").
+            new Campo('embalagem', 'Embalagem', Campo::ENUM,
+                agrupar: function (VisitaRegistro $r): array {
+                    $texto = \App\Enums\UnidadeEmbalagem::descrever($r->embalagem_quantidade, $r->embalagem_unidade);
+
+                    return $texto ? [$texto, $texto] : ['sem', 'Sem embalagem'];
+                }),
             new Campo('ruptura', 'Ruptura', Campo::BOOLEANO, ['igual'],
                 filtrar: fn (Builder $q, string $operador, mixed $valor) => $q->where('ruptura', filter_var($valor, FILTER_VALIDATE_BOOLEAN)),
                 agrupar: fn (VisitaRegistro $r) => $r->ruptura ? ['sim', 'Com ruptura'] : ['nao', 'Sem ruptura']),

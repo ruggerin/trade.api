@@ -11,4 +11,6 @@ enum GranularidadeResposta: string
 {
     case LINHA = 'LINHA';
     case PRODUTO = 'PRODUTO';
+    // Cada marca concorrente, com embalagem (docs/85): uma resposta por marca + embalagem.
+    case MARCA = 'MARCA';
 }

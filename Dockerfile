@@ -63,6 +63,11 @@ COPY docker/crontab /etc/crontabs/www-data
 COPY deploy/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
+# Versão da API (data + commit) — o .git não entra na imagem (.dockerignore), então vem de fora,
+# pelo docker-compose.yml (build arg). Sem ela, a API se apresenta como "dev".
+ARG APP_VERSAO=dev
+ENV APP_VERSAO=${APP_VERSAO}
+
 EXPOSE 8080
 
 ENTRYPOINT ["docker-entrypoint.sh"]
