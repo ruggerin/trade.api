@@ -2,11 +2,12 @@
 
 namespace App\Http\Resources;
 
+use App\Models\SortimentoPontoVenda;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /**
- * @mixin \App\Models\SortimentoPontoVenda
+ * @mixin SortimentoPontoVenda
  */
 class SortimentoPontoVendaResource extends JsonResource
 {
@@ -31,9 +32,17 @@ class SortimentoPontoVendaResource extends JsonResource
                 // docs/27-BUSCA-MULTIPLA-DE-PRODUTOS.md.
                 'departamento_uuid' => $this->produto->departamento?->uuid,
                 'departamento_descricao' => $this->produto->departamento?->descricao,
+                // Escopo LINHA_AUSENTE por marca (docs/80 §5.1).
+                'marca_uuid' => $this->produto->marca?->uuid,
             ] : null),
             'departamento' => $this->whenLoaded('departamento', fn () => $this->departamento ? ['id' => $this->departamento->uuid, 'descricao' => $this->departamento->descricao] : null),
-            'secao' => $this->whenLoaded('secao', fn () => $this->secao ? ['id' => $this->secao->uuid, 'descricao' => $this->secao->descricao] : null),
+            // departamento_uuid: escopo LINHA_AUSENTE por departamento (docs/80 §5.1) — item SECAO de
+            // uma seção do departamento cobre o departamento.
+            'secao' => $this->whenLoaded('secao', fn () => $this->secao ? [
+                'id' => $this->secao->uuid,
+                'descricao' => $this->secao->descricao,
+                'departamento_uuid' => $this->secao->departamento?->uuid,
+            ] : null),
             'marca' => $this->whenLoaded('marca', fn () => $this->marca ? ['id' => $this->marca->uuid, 'descricao' => $this->marca->descricao] : null),
             // NULL = cadastrado pelo admin web; preenchido = promotor pela visita.
             'usuario' => $this->whenLoaded('usuario', fn () => $this->usuario ? ['id' => $this->usuario->uuid, 'nome' => $this->usuario->nome] : null),

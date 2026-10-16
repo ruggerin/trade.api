@@ -26,7 +26,8 @@ class CampoTipoRegistro extends Model
         'limite_dias_retroativos',
         'depende_de_campo_id', 'depende_de_valor',
         'sortimento_origem', 'sortimento_tipo_vinculo', 'sortimento_secao_id',
-        'sortimento_departamento_id', 'sortimento_marca_id', 'confirmar_ruptura_ausentes',
+        'sortimento_departamento_id', 'sortimento_marca_id', 'sortimento_segue_escolha',
+        'confirmar_ruptura_ausentes',
     ];
 
     protected function casts(): array
@@ -38,6 +39,7 @@ class CampoTipoRegistro extends Model
             'limite_dias_retroativos' => 'integer',
             'sortimento_origem' => SortimentoOrigemCampo::class,
             'sortimento_tipo_vinculo' => TipoItemCampanha::class,
+            'sortimento_segue_escolha' => 'boolean',
             'confirmar_ruptura_ausentes' => 'boolean',
         ];
     }

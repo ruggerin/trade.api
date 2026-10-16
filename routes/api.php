@@ -447,6 +447,10 @@ Route::middleware(['auth:sanctum', 'licenca', 'assinatura'])->group(function ():
         // Duplicar (decisão 6 de docs/20-FORMULARIO-DINAMICO-CAMPANHA.md) — clona um tipo
         // existente (com todos os campos) como ponto de partida de um formulário novo.
         Route::post('/tipos-registro/{tipoRegistro}/duplicar', [TipoRegistroController::class, 'duplicar']);
+        // Lojas onde a Ação vale — pré-seleção do "Enviar agora" (docs/80 §5.1 e §5.4).
+        Route::get('/tipos-registro/{tipoRegistro}/lojas-da-acao', [TipoRegistroController::class, 'lojasDaAcao']);
+        // Conversão do levantamento de linha ausente (docs/80 §5.3).
+        Route::get('/tipos-registro/{tipoRegistro}/conversao', [TipoRegistroController::class, 'conversao']);
 
         Route::post('/planogramas', [PlanogramaController::class, 'store']);
         Route::put('/planogramas/{planograma}', [PlanogramaController::class, 'update']);

@@ -16,4 +16,8 @@ enum EscopoAcaoTipoRegistro: string
     // tipo_registro_redes_lojas) — loja OU rede basta; as duas listas vazias = todas as lojas.
     // Ver docs/40-ACAO-OBRIGATORIA-LOJA-REDE.md.
     case LOJA_REDE = 'LOJA_REDE';
+    // Onde nenhum item do Mix do PDV cobre o recorte (seção/departamento/marca) escolhido no
+    // próprio TipoRegistro — levantamento de concorrência onde a linha não está. Mix vazio não
+    // cobra. Ver docs/80-MONITORAMENTO-LINHA-AUSENTE.md §5.1 e App\Support\LinhaAusente.
+    case LINHA_AUSENTE = 'LINHA_AUSENTE';
 }

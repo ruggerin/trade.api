@@ -32,7 +32,9 @@ class MarcaAuditoriaController extends Controller
             )
             ->with('empresa')
             ->orderBy('descricao')
-            ->paginate();
+            // `por_pagina` opt-in: o app baixa o catálogo inteiro pro cache offline (docs/82 — antes
+            // só via a 1ª página de 15). Sem ele, a paginação de sempre do admin.
+            ->paginate($request->filled('por_pagina') ? max(1, min($request->integer('por_pagina'), 1000)) : null);
 
         return response()->json([
             'marcas' => MarcaAuditoriaResource::collection($marcas->items()),

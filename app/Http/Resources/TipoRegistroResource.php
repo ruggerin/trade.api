@@ -2,11 +2,12 @@
 
 namespace App\Http\Resources;
 
+use App\Models\TipoRegistro;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /**
- * @mixin \App\Models\TipoRegistro
+ * @mixin TipoRegistro
  */
 class TipoRegistroResource extends JsonResource
 {
@@ -38,8 +39,34 @@ class TipoRegistroResource extends JsonResource
             'redes_lojas_uuids' => $this->whenLoaded('redesLojas', fn () => $this->redesLojas->pluck('uuid')->values()),
             'pontos_venda_escopo' => $this->whenLoaded('pontosVenda', fn () => $this->pontosVenda->map(fn ($p) => ['id' => $p->uuid, 'fantasia' => $p->fantasia])->values()),
             'redes_lojas_escopo' => $this->whenLoaded('redesLojas', fn () => $this->redesLojas->map(fn ($r) => ['id' => $r->uuid, 'descricao' => $r->descricao])->values()),
+            // Escopo LINHA_AUSENTE (docs/80 §5.1): o recorte que não pode estar no Mix. A seção leva o
+            // departamento junto — o app usa pra "item DEPARTAMENTO cobre a seção".
+            'escopo_tipo_vinculo' => $this->escopo_tipo_vinculo?->value,
+            'escopo_secao' => $this->whenLoaded('escopoSecao', fn () => $this->escopoSecao ? [
+                'id' => $this->escopoSecao->uuid,
+                'descricao' => $this->escopoSecao->descricao,
+                'departamento_uuid' => $this->escopoSecao->departamento?->uuid,
+            ] : null),
+            'escopo_departamento' => $this->whenLoaded('escopoDepartamento', fn () => $this->escopoDepartamento ? [
+                'id' => $this->escopoDepartamento->uuid, 'descricao' => $this->escopoDepartamento->descricao,
+            ] : null),
+            'escopo_marca' => $this->whenLoaded('escopoMarca', fn () => $this->escopoMarca ? [
+                'id' => $this->escopoMarca->uuid, 'descricao' => $this->escopoMarca->descricao,
+            ] : null),
+            // Intervalo entre cobranças da Ação, em dias (docs/80 §5.2) — 0 = toda visita.
+            'intervalo_dias' => $this->intervalo_dias ?? 0,
+            // Filtro da Ação por ramo de atividade da loja (docs/80 §5.4) — vazio = todos.
+            'ramos_atividade_uuids' => $this->whenLoaded('ramosAtividade', fn () => $this->ramosAtividade->pluck('uuid')->values()),
+            'ramos_atividade_escopo' => $this->whenLoaded('ramosAtividade', fn () => $this->ramosAtividade->map(fn ($r) => ['id' => $r->uuid, 'descricao' => $r->descricao])->values()),
             // Ver App\Support\GranularidadeChecklist e docs/16-GRANULARIDADE-CHECKLIST-AUDITORIA.md.
             'granularidade_padrao' => $this->granularidade_padrao?->value,
+            // Promotor escolhe marca/departamento/seção no início do formulário — ver docs/79.
+            'escolhe_marca' => $this->escolhe_marca,
+            'escolhe_departamento' => $this->escolhe_departamento,
+            'escolhe_secao' => $this->escolhe_secao,
+            // docs/82: o que a lista "Onde é" mostra e o filtro de marca depois da seção/departamento.
+            'lista_recorte' => $this->lista_recorte ?? TipoRegistro::LISTA_PRIMEIRO_DA_LOJA,
+            'filtra_marca' => (bool) $this->filtra_marca,
             // Marca a coluna "Ruptura" da grade de coleta (Fase 2) — ver
             // docs/16-GRANULARIDADE-CHECKLIST-AUDITORIA.md §9.
             'eh_ruptura' => $this->eh_ruptura,

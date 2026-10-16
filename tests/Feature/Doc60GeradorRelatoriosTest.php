@@ -560,6 +560,31 @@ class Doc60GeradorRelatoriosTest extends TestCase
             ->assertOk()->assertJsonPath('totais.registros', 1);
     }
 
+    // docs/79 decisão 10: filtro de departamento sobe a hierarquia; agrupar conta cada registro uma
+    // vez só, no recorte em que foi feito.
+    public function test_registros_filtram_e_agrupam_por_departamento_e_secao_hierarquicamente(): void
+    {
+        $limpeza = \App\Models\DepartamentoAuditoria::create(['empresa_id' => $this->empresa->id, 'descricao' => 'Limpeza']);
+        $amaciante = \App\Models\SecaoAuditoria::create(['empresa_id' => $this->empresa->id, 'descricao' => 'Amaciante', 'departamento_id' => $limpeza->id]);
+        $higiene = \App\Models\DepartamentoAuditoria::create(['empresa_id' => $this->empresa->id, 'descricao' => 'Higiene']);
+        $produto = \App\Models\ProdutoAuditoria::factory()->create(['empresa_id' => $this->empresa->id, 'secao_id' => $amaciante->id, 'departamento_id' => $limpeza->id]);
+        $pontoExtra = $this->formulario('Ponto extra');
+        $this->registro($pontoExtra, [], ['tipo_vinculo' => 'DEPARTAMENTO', 'departamento_id' => $limpeza->id]);
+        $this->registro($pontoExtra, [], ['tipo_vinculo' => 'SECAO', 'secao_id' => $amaciante->id]);
+        $this->registro($pontoExtra, [], ['produto_auditoria_id' => $produto->id]);
+        $this->registro($pontoExtra, [], ['tipo_vinculo' => 'DEPARTAMENTO', 'departamento_id' => $higiene->id]);
+
+        $this->executar($this->definicaoRegistro(['filtros' => ['regras' => [['campo' => 'departamento', 'operador' => 'em', 'valor' => [$limpeza->uuid]]]]]))
+            ->assertOk()->assertJsonPath('totais.registros', 3);
+        $this->executar($this->definicaoRegistro(['filtros' => ['regras' => [['campo' => 'secao', 'operador' => 'em', 'valor' => [$amaciante->uuid]]]]]))
+            ->assertOk()->assertJsonPath('totais.registros', 2);
+
+        $linhas = collect($this->executar($this->definicaoRegistro(['agrupar' => [['campo' => 'departamento']]]))->assertOk()->json('linhas'))
+            ->mapWithKeys(fn ($l) => [$l['dimensoes']['departamento']['rotulo'] => $l['valores']['registros'] ?? null]);
+        $this->assertSame(3, $linhas['Limpeza']);
+        $this->assertSame(1, $linhas['Higiene']);
+    }
+
     public function test_tipo_de_registro_agrupa_nas_linhas_e_conta_nas_metricas(): void
     {
         $foto = $this->formulario('Foto');

@@ -14,12 +14,15 @@ use App\Models\Empresa;
 use App\Models\PontoVenda;
 use App\Models\RamoAtividade;
 use App\Models\RedeLoja;
+use App\Models\TipoRegistro;
 use App\Models\Usuario;
+use App\Models\VisitaRegistro;
 use App\Support\Fuso;
 use App\Support\ImportacaoPontosVenda;
 use App\Support\VisibilidadePontosVenda;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -137,12 +140,39 @@ class PontoVendaController extends Controller
     {
         // Sortimento carregado só no detalhe, não na listagem (evita inflar a resposta da lista
         // de PDVs) — ver docs/14-SORTIMENTO-PONTO-VENDA.md §4.
-        $pontoVenda->load(['promotores', 'vendedores.supervisor', 'redeLoja', 'ramoAtividade', 'contratosAtivos', 'sortimento.produto.secao', 'sortimento.produto.departamento', 'sortimento.departamento', 'sortimento.secao', 'sortimento.marca', 'sortimento.usuario']);
+        $pontoVenda->load(['promotores', 'vendedores.supervisor', 'redeLoja', 'ramoAtividade', 'contratosAtivos', 'sortimento.produto.secao', 'sortimento.produto.departamento', 'sortimento.produto.marca:id,uuid', 'sortimento.departamento', 'sortimento.secao.departamento:id,uuid', 'sortimento.marca', 'sortimento.usuario']);
         $pontoVenda->loadExists(['contratos as tem_contrato_ativo' => fn ($query) => $query->where('ativo', true)]);
 
         return response()->json([
             'ponto_venda' => new PontoVendaResource($pontoVenda),
+            'ultimos_registros_formulario' => $this->ultimosRegistrosComIntervalo($pontoVenda),
         ]);
+    }
+
+    /**
+     * Último registro (não cancelado, de qualquer promotor) de cada formulário obrigatório com
+     * intervalo nesta loja — o app decide offline se a Ação já pode voltar (docs/80 §5.2).
+     * Objeto `{uuid_do_formulario: data ISO}`; só formulários com registro aparecem.
+     *
+     * @return array<string, string>|\stdClass
+     */
+    private function ultimosRegistrosComIntervalo(PontoVenda $pontoVenda): array|\stdClass
+    {
+        $tipos = TipoRegistro::where('acao_obrigatoria', true)->where('intervalo_dias', '>', 0)->pluck('uuid', 'id');
+        if ($tipos->isEmpty()) {
+            return new \stdClass;
+        }
+
+        $ultimos = VisitaRegistro::query()
+            ->whereNull('cancelado_em')
+            ->whereIn('tipo_registro_id', $tipos->keys())
+            ->whereHas('visita', fn ($q) => $q->where('ponto_venda_id', $pontoVenda->id))
+            ->groupBy('tipo_registro_id')
+            ->selectRaw('tipo_registro_id, max(created_at) as ultimo')
+            ->get()
+            ->mapWithKeys(fn ($linha) => [$tipos[$linha->tipo_registro_id] => Carbon::parse($linha->ultimo)->toIso8601String()]);
+
+        return $ultimos->isEmpty() ? new \stdClass : $ultimos->all();
     }
 
     /**

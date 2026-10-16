@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Enums\Permissao;
 use App\Enums\UserType;
 use App\Http\Resources\RelatorioPersonalizadoResource;
+use App\Models\DepartamentoAuditoria;
 use App\Models\Empresa;
 use App\Models\MarcaAuditoria;
 use App\Models\MotivoNaoExecucao;
@@ -14,6 +15,7 @@ use App\Models\PontoVenda;
 use App\Models\ProdutoAuditoria;
 use App\Models\RedeLoja;
 use App\Models\RelatorioPersonalizado;
+use App\Models\SecaoAuditoria;
 use App\Models\TipoRegistro;
 use App\Models\TipoVisita;
 use App\Models\Usuario;
@@ -263,6 +265,8 @@ class RelatorioPersonalizadoController extends Controller
         'formularios' => [TipoRegistro::class, 'descricao'],
         'produtos' => [ProdutoAuditoria::class, 'descricao'],
         'marcas' => [MarcaAuditoria::class, 'descricao'],
+        'departamentos' => [DepartamentoAuditoria::class, 'descricao'],
+        'secoes' => [SecaoAuditoria::class, 'descricao'],
         'motivos_resolucao' => [MotivoResolucaoAlerta::class, 'descricao'],
     ];
 
