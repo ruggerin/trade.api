@@ -16,8 +16,8 @@ use Illuminate\Validation\Rule;
 
 /**
  * Vendedores e supervisores espelhados do ERP (docs/73 Fase 1). Tudo com `vendedores.gerenciar`
- * (rotas): o integrador grava por `sincronizar*`, o admin confere e ajusta só contato e o vínculo
- * com o usuário do Horus — código, nome e hierarquia são do ERP.
+ * (rotas): o integrador grava por `sincronizar*`; o admin também cadastra, edita e exclui na mão
+ * (docs/73 §11.2). A próxima carga do ERP sobrescreve o que vier preenchido nela.
  */
 class EquipeComercialController extends Controller
 {
@@ -56,18 +56,64 @@ class EquipeComercialController extends Controller
         ]);
     }
 
+    public function criarSupervisor(Request $request): JsonResponse
+    {
+        $supervisor = Supervisor::create($this->dados($request, new Supervisor));
+        // Vendedores que chegaram antes dele, pelo `codsupervisor` do ERP.
+        EquipeComercial::religarVendedores($request->user()->empresa, [$supervisor->codigo_externo]);
+
+        return response()->json(['supervisor' => $this->supervisorJson($supervisor->load('usuario:id,uuid,nome')->loadCount('vendedores'))], 201);
+    }
+
     public function atualizarSupervisor(Request $request, Supervisor $supervisor): JsonResponse
     {
-        $supervisor->update($this->contato($request, $supervisor, 'supervisores'));
+        $codigoAnterior = $supervisor->codigo_externo;
+        $supervisor->update($this->dados($request, $supervisor));
+
+        if ($supervisor->codigo_externo !== $codigoAnterior) {
+            // O código cru dos vendedores dele acompanha o novo, senão o vínculo fica apontando
+            // pra um código que não existe mais.
+            $supervisor->vendedores()->update(['codigo_supervisor' => $supervisor->codigo_externo]);
+            EquipeComercial::religarVendedores($request->user()->empresa, [$supervisor->codigo_externo]);
+        }
 
         return response()->json(['supervisor' => $this->supervisorJson($supervisor->load('usuario:id,uuid,nome')->loadCount('vendedores'))]);
     }
 
+    /** Os vendedores dele ficam sem supervisor (FK `nullOnDelete`), mas guardam o código cru. */
+    public function excluirSupervisor(Supervisor $supervisor): JsonResponse
+    {
+        $supervisor->delete();
+
+        return response()->json(null, 204);
+    }
+
+    public function criarVendedor(Request $request): JsonResponse
+    {
+        $vendedor = Vendedor::create($this->dados($request, new Vendedor, $this->regrasSupervisor($request)));
+
+        return response()->json(['vendedor' => $this->vendedorJson($this->carregarVendedor($vendedor))], 201);
+    }
+
     public function atualizarVendedor(Request $request, Vendedor $vendedor): JsonResponse
     {
-        $vendedor->update($this->contato($request, $vendedor, 'vendedores'));
+        $vendedor->update($this->dados($request, $vendedor, $this->regrasSupervisor($request)));
 
-        return response()->json(['vendedor' => $this->vendedorJson($vendedor->load(['usuario:id,uuid,nome', 'supervisor:id,uuid,codigo_externo,nome']))]);
+        return response()->json(['vendedor' => $this->vendedorJson($this->carregarVendedor($vendedor))]);
+    }
+
+    /** A carteira dele (`vendedor_ponto_venda`) sai junto, por cascata. */
+    public function excluirVendedor(Vendedor $vendedor): JsonResponse
+    {
+        $vendedor->delete();
+
+        return response()->json(null, 204);
+    }
+
+    private function carregarVendedor(Vendedor $vendedor): Vendedor
+    {
+        return $vendedor->load(['usuario:id,uuid,nome', 'supervisor:id,uuid,codigo_externo,nome'])
+            ->loadCount('pontosVenda as lojas_count');
     }
 
     /** Integrador do ERP: lote JSON, idempotente por `codigo_externo`. Grava o que é válido. */
@@ -138,27 +184,57 @@ class EquipeComercialController extends Controller
             ->all();
     }
 
-    /** Só contato e vínculo com usuário: o resto vem do ERP. */
-    private function contato(Request $request, Model $pessoa, string $tabela): array
+    /**
+     * Campos do formulário, comuns a vendedor e supervisor. Na criação `$pessoa` é uma instância
+     * nova (`exists = false`): código e nome passam a ser obrigatórios.
+     */
+    private function dados(Request $request, Model $pessoa, array $regrasExtras = []): array
     {
+        $empresaId = $request->user()->empresa_id;
+        $obrigatorio = $pessoa->exists ? 'sometimes' : 'required';
         $dados = $request->validate([
+            'codigo_externo' => [
+                $obrigatorio, 'string', 'max:64',
+                Rule::unique($pessoa->getTable(), 'codigo_externo')->where('empresa_id', $empresaId)->ignore($pessoa->getKey()),
+            ],
+            'nome' => [$obrigatorio, 'string', 'max:255'],
             'telefone' => ['sometimes', 'nullable', 'string', 'max:30'],
             'email' => ['sometimes', 'nullable', 'string', 'email', 'max:255'],
+            'ativo' => ['sometimes', 'boolean'],
             'usuario_uuid' => [
                 'sometimes', 'nullable', 'string', 'uuid',
-                Rule::exists('usuarios', 'uuid')->where('empresa_id', $request->user()->empresa_id),
+                Rule::exists('usuarios', 'uuid')->where('empresa_id', $empresaId),
             ],
+        ] + $regrasExtras, [
+            'codigo_externo.unique' => 'Já existe um cadastro com este código.',
         ]);
 
         if (array_key_exists('usuario_uuid', $dados)) {
             $usuarioId = $dados['usuario_uuid'] ? Usuario::where('uuid', $dados['usuario_uuid'])->value('id') : null;
-            $ocupado = $usuarioId && $pessoa->newQuery()->where('usuario_id', $usuarioId)->whereKeyNot($pessoa->getKey())->exists();
+            $ocupado = $usuarioId && $pessoa->newQuery()->where('usuario_id', $usuarioId)
+                ->when($pessoa->exists, fn ($q) => $q->whereKeyNot($pessoa->getKey()))->exists();
             abort_if($ocupado, 422, 'Este usuário já está vinculado a outro cadastro.');
             $dados['usuario_id'] = $usuarioId;
             unset($dados['usuario_uuid']);
         }
 
+        // Supervisor escolhido na tela: grava o vínculo e o código cru, como a carga do ERP faz.
+        if (array_key_exists('supervisor_uuid', $dados)) {
+            $supervisor = $dados['supervisor_uuid'] ? Supervisor::where('uuid', $dados['supervisor_uuid'])->first() : null;
+            $dados['supervisor_id'] = $supervisor?->id;
+            $dados['codigo_supervisor'] = $supervisor?->codigo_externo;
+            unset($dados['supervisor_uuid']);
+        }
+
         return $dados;
+    }
+
+    private function regrasSupervisor(Request $request): array
+    {
+        return ['supervisor_uuid' => [
+            'sometimes', 'nullable', 'string', 'uuid',
+            Rule::exists('supervisores', 'uuid')->where('empresa_id', $request->user()->empresa_id),
+        ]];
     }
 
     private function filtrar(Builder $query, Request $request): Builder

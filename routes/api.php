@@ -378,11 +378,15 @@ Route::middleware(['auth:sanctum', 'licenca', 'assinatura'])->group(function ():
         Route::get('/supervisores', [EquipeComercialController::class, 'supervisores']);
         Route::post('/supervisores/sincronizar', [EquipeComercialController::class, 'sincronizarSupervisores']);
         Route::post('/supervisores/importar', [ImportacaoDadosController::class, 'supervisores']);
+        Route::post('/supervisores', [EquipeComercialController::class, 'criarSupervisor']);
         Route::put('/supervisores/{supervisor}', [EquipeComercialController::class, 'atualizarSupervisor']);
+        Route::delete('/supervisores/{supervisor}', [EquipeComercialController::class, 'excluirSupervisor']);
         Route::get('/vendedores', [EquipeComercialController::class, 'vendedores']);
         Route::post('/vendedores/sincronizar', [EquipeComercialController::class, 'sincronizarVendedores']);
         Route::post('/vendedores/importar', [ImportacaoDadosController::class, 'vendedores']);
+        Route::post('/vendedores', [EquipeComercialController::class, 'criarVendedor']);
         Route::put('/vendedores/{vendedor}', [EquipeComercialController::class, 'atualizarVendedor']);
+        Route::delete('/vendedores/{vendedor}', [EquipeComercialController::class, 'excluirVendedor']);
         // Carteira vendedor × loja (N × N): lote do ERP/planilha substitui a carteira de cada loja
         // enviada; na tela da loja, vínculo 1 a 1.
         Route::post('/carteira-vendedores/sincronizar', [EquipeComercialController::class, 'sincronizarCarteira']);

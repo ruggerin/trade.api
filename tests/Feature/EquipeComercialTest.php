@@ -148,25 +148,84 @@ class EquipeComercialTest extends TestCase
         $this->assertSame('S1', Vendedor::where('codigo_externo', 'V1')->value('codigo_supervisor'));
     }
 
-    public function test_tela_ajusta_contato_e_vinculo_com_usuario_mas_nao_o_codigo(): void
+    public function test_tela_edita_cadastro_contato_e_vinculo_com_usuario(): void
     {
         $vendedor = Vendedor::create(['empresa_id' => $this->empresa->id, 'codigo_externo' => 'V1', 'nome' => 'Carlos']);
         $outro = Vendedor::create(['empresa_id' => $this->empresa->id, 'codigo_externo' => 'V2', 'nome' => 'Dora']);
         $usuario = Usuario::factory()->promotor()->create(['empresa_id' => $this->empresa->id]);
 
         $this->putJson("/api/vendedores/{$vendedor->uuid}", [
-            'telefone' => '92 3333-4444', 'usuario_uuid' => $usuario->uuid, 'codigo_externo' => 'TROCADO', 'nome' => 'Trocado',
+            'telefone' => '92 3333-4444', 'usuario_uuid' => $usuario->uuid, 'codigo_externo' => 'V10', 'nome' => 'Carlos Silva', 'ativo' => false,
         ])->assertOk()
             ->assertJsonPath('vendedor.usuario.id', $usuario->uuid)
-            ->assertJsonPath('vendedor.codigo_externo', 'V1')
-            ->assertJsonPath('vendedor.nome', 'Carlos')
+            ->assertJsonPath('vendedor.codigo_externo', 'V10')
+            ->assertJsonPath('vendedor.nome', 'Carlos Silva')
+            ->assertJsonPath('vendedor.ativo', false)
             ->assertJsonPath('vendedor.telefone', '92 3333-4444');
 
+        // Código é a chave do ERP: não pode repetir.
+        $this->putJson("/api/vendedores/{$outro->uuid}", ['codigo_externo' => 'V10'])->assertStatus(422)
+            ->assertJsonValidationErrors('codigo_externo');
         // Um login, um cadastro.
         $this->putJson("/api/vendedores/{$outro->uuid}", ['usuario_uuid' => $usuario->uuid])->assertStatus(422);
 
         $this->putJson("/api/vendedores/{$vendedor->uuid}", ['usuario_uuid' => null])->assertOk()
             ->assertJsonPath('vendedor.usuario', null);
+    }
+
+    public function test_tela_cria_vendedor_com_supervisor_e_supervisor_religa_quem_chegou_antes(): void
+    {
+        $this->postJson('/api/vendedores', ['nome' => 'Sem código'])->assertStatus(422)->assertJsonValidationErrors('codigo_externo');
+
+        // Vendedor do ERP que aponta pra um supervisor ainda inexistente.
+        $this->postJson('/api/vendedores/sincronizar', ['vendedores' => [['codigo_externo' => 'V1', 'nome' => 'Carlos', 'codigo_supervisor' => 'S1']]]);
+
+        $supervisor = $this->postJson('/api/supervisores', ['codigo_externo' => 'S1', 'nome' => 'Ana', 'email' => 'ana@exemplo.com'])
+            ->assertCreated()
+            ->assertJsonPath('supervisor.ativo', true)
+            ->assertJsonPath('supervisor.vendedores_count', 1)
+            ->json('supervisor');
+
+        $this->postJson('/api/vendedores', ['codigo_externo' => 'V2', 'nome' => 'Dora', 'supervisor_uuid' => $supervisor['id']])
+            ->assertCreated()
+            ->assertJsonPath('vendedor.supervisor.nome', 'Ana')
+            ->assertJsonPath('vendedor.codigo_supervisor', 'S1')
+            ->assertJsonPath('vendedor.lojas_count', 0);
+        $this->postJson('/api/vendedores', ['codigo_externo' => 'V2', 'nome' => 'Repetido'])->assertStatus(422);
+
+        // Trocar o código do supervisor leva o código cru dos vendedores junto.
+        $this->putJson("/api/supervisores/{$supervisor['id']}", ['codigo_externo' => 'S100'])->assertOk();
+        $this->assertSame(['S100', 'S100'], Vendedor::orderBy('codigo_externo')->pluck('codigo_supervisor')->all());
+
+        // Tirar o supervisor pela tela limpa o vínculo e o código.
+        $v2 = Vendedor::where('codigo_externo', 'V2')->firstOrFail();
+        $this->putJson("/api/vendedores/{$v2->uuid}", ['supervisor_uuid' => null])->assertOk()
+            ->assertJsonPath('vendedor.supervisor', null)
+            ->assertJsonPath('vendedor.codigo_supervisor', null);
+    }
+
+    public function test_excluir_vendedor_leva_a_carteira_e_excluir_supervisor_solta_os_vendedores(): void
+    {
+        $loja = PontoVenda::factory()->create(['empresa_id' => $this->empresa->id]);
+        $supervisor = Supervisor::create(['empresa_id' => $this->empresa->id, 'codigo_externo' => 'S1', 'nome' => 'Ana']);
+        $v1 = Vendedor::create(['empresa_id' => $this->empresa->id, 'codigo_externo' => 'V1', 'nome' => 'Carlos', 'codigo_supervisor' => 'S1', 'supervisor_id' => $supervisor->id]);
+        $v2 = Vendedor::create(['empresa_id' => $this->empresa->id, 'codigo_externo' => 'V2', 'nome' => 'Dora']);
+        $loja->vendedores()->attach([$v1->id, $v2->id]);
+
+        $this->deleteJson("/api/vendedores/{$v2->uuid}")->assertNoContent();
+        $this->assertModelMissing($v2);
+        $this->assertSame([$v1->id], $loja->vendedores()->pluck('vendedores.id')->all());
+
+        $this->deleteJson("/api/supervisores/{$supervisor->uuid}")->assertNoContent();
+        $v1->refresh();
+        $this->assertNull($v1->supervisor_id);
+        $this->assertSame('S1', $v1->codigo_supervisor);
+
+        // Empresa vizinha não enxerga (nem exclui) o cadastro.
+        $vizinha = Empresa::factory()->create();
+        Sanctum::actingAs(Usuario::factory()->admin()->create(['empresa_id' => $vizinha->id]));
+        $this->deleteJson("/api/vendedores/{$v1->uuid}")->assertNotFound();
+        $this->putJson("/api/vendedores/{$v1->uuid}", ['nome' => 'X'])->assertNotFound();
     }
 
     public function test_lista_filtra_por_busca_supervisor_e_sem_supervisor(): void
