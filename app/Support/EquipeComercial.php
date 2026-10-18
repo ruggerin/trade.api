@@ -107,7 +107,7 @@ final class EquipeComercial
     }
 
     /** Liga ao supervisor os vendedores que chegaram antes dele (mesmo `codigo_supervisor`). */
-    private static function religarVendedores(Empresa $empresa, array $codigos): void
+    public static function religarVendedores(Empresa $empresa, array $codigos): void
     {
         $supervisores = Supervisor::withoutGlobalScopes()->where('empresa_id', $empresa->id)
             ->whereIn('codigo_externo', $codigos)->pluck('id', 'codigo_externo');
