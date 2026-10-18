@@ -33,11 +33,14 @@ class ImportacaoDadosController extends Controller
     {
         // Arquivo maior que os outros: todo PDV × cada produto do mix (até 50.000 linhas).
         $this->validarArquivo($request, 10);
+        // Substituir apaga + insere até 50.000 linhas na mesma transação.
+        set_time_limit(120);
 
         return response()->json(ImportacaoSortimento::executar(
             $request->user()->empresa,
             $request->file('arquivo')->get(),
             $request->boolean('simular'),
+            $request->boolean('substituir'),
         ));
     }
 
@@ -66,6 +69,8 @@ class ImportacaoDadosController extends Controller
             $request->file('arquivo')->get(),
             $request->boolean('simular'),
             $request->input('promotor_padrao'),
+            $request->boolean('substituir'),
+            $request->user(),
         ));
     }
 
@@ -105,6 +110,8 @@ class ImportacaoDadosController extends Controller
         $request->validate([
             'arquivo' => ['required', 'file', 'max:'.($megas * 1024), 'mimes:csv,txt'],
             'simular' => ['nullable', 'boolean'],
+            // Vínculo e rota (docs/42 §4.3.1, docs/78 §4.1): apaga/desativa o que não veio no arquivo.
+            'substituir' => ['nullable', 'boolean'],
         ], [
             'arquivo.mimes' => 'Envie um arquivo .csv (no Excel: Salvar como → CSV).',
             'arquivo.max' => "Arquivo grande demais (máximo {$megas} MB) — divida em partes.",

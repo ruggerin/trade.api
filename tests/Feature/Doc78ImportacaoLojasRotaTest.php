@@ -2,14 +2,18 @@
 
 namespace Tests\Feature;
 
+use App\Enums\OrigemOrdemServico;
 use App\Enums\RecorrenciaAgendaVisita;
+use App\Enums\StatusOrdemServico;
 use App\Models\AgendaVisita;
 use App\Models\Empresa;
+use App\Models\OrdemServico;
 use App\Models\PontoVenda;
 use App\Models\Usuario;
 use App\Models\Vendedor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -228,5 +232,135 @@ class Doc78ImportacaoLojasRotaTest extends TestCase
         Sanctum::actingAs(Usuario::factory()->gestor()->create(['empresa_id' => $this->empresa->id]));
 
         $this->csv('/api/agendas-visita/importar', ['codigo_externo_loja;promotor;seg', 'L1;x@x.com;X'])->assertForbidden();
+    }
+
+    // ---- Rota de visitas: substituir (docs/78 §4.1) ----
+
+    private function regra(PontoVenda $loja, Usuario $promotor, int $dia): AgendaVisita
+    {
+        return AgendaVisita::create(['empresa_id' => $this->empresa->id, 'ponto_venda_id' => $loja->id, 'usuario_id' => $promotor->id, 'recorrencia' => RecorrenciaAgendaVisita::SEMANAL, 'dia_semana' => $dia, 'prioridade' => 'MEDIA', 'obrigatoria' => true, 'ativo' => true]);
+    }
+
+    private function osDeHoje(AgendaVisita $agenda, StatusOrdemServico $status): OrdemServico
+    {
+        return OrdemServico::factory()->create([
+            'empresa_id' => $this->empresa->id, 'ponto_venda_id' => $agenda->ponto_venda_id, 'usuario_id' => $agenda->usuario_id,
+            'origem' => OrigemOrdemServico::AGENDA, 'agenda_visita_id' => $agenda->id, 'status' => $status,
+            'prazo_inicio' => now()->startOfDay(), 'prazo_fim' => now()->endOfDay(),
+        ]);
+    }
+
+    /**
+     * Jonatas: L1 (seg, fica no arquivo), L2 e L3 (hoje, saem). Em L3 ele ainda tem uma visita
+     * pontual futura. Outro promotor em L2. OS de hoje: pendente em L2, em andamento em L3.
+     */
+    private function cenarioSubstituir(): array
+    {
+        [$l1, $l2, $l3] = [$this->loja('L1'), $this->loja('L2'), $this->loja('L3')];
+        $jonatas = $this->promotor('jonatas@exemplo.com');
+        $outro = $this->promotor('outro@exemplo.com');
+        $hoje = now()->dayOfWeek;
+
+        $this->regra($l1, $jonatas, 1);
+        $r2 = $this->regra($l2, $jonatas, $hoje);
+        $r3 = $this->regra($l3, $jonatas, $hoje);
+        $this->regra($l2, $outro, 3);
+        AgendaVisita::create(['empresa_id' => $this->empresa->id, 'ponto_venda_id' => $l3->id, 'usuario_id' => $jonatas->id, 'recorrencia' => RecorrenciaAgendaVisita::DATA_UNICA, 'data' => now()->addWeek()->toDateString(), 'prioridade' => 'MEDIA', 'obrigatoria' => true, 'ativo' => true]);
+        foreach ([$l1, $l2, $l3] as $loja) {
+            $loja->promotores()->attach($jonatas->id);
+        }
+        $l2->promotores()->attach($outro->id);
+
+        return [
+            'lojas' => [$l1, $l2, $l3], 'jonatas' => $jonatas, 'outro' => $outro,
+            'pendente' => $this->osDeHoje($r2, StatusOrdemServico::PENDENTE),
+            'em_andamento' => $this->osDeHoje($r3, StatusOrdemServico::EM_ANDAMENTO),
+        ];
+    }
+
+    private function rotaSubstituindo(array $linhas, bool $simular = false)
+    {
+        $arquivo = UploadedFile::fake()->createWithContent('dados.csv', implode("\r\n", $linhas));
+
+        return $this->post('/api/agendas-visita/importar', ['arquivo' => $arquivo, 'simular' => $simular ? '1' : '0', 'substituir' => '1'], ['Accept' => 'application/json']);
+    }
+
+    private function atendidaPor(PontoVenda $loja, Usuario $promotor): bool
+    {
+        return $loja->promotores()->where('usuarios.id', $promotor->id)->exists();
+    }
+
+    public function test_rota_substituir_tira_do_promotor_as_lojas_fora_do_arquivo(): void
+    {
+        ['lojas' => [$l1, $l2, $l3], 'jonatas' => $jonatas, 'outro' => $outro, 'pendente' => $pendente, 'em_andamento' => $emAndamento] = $this->cenarioSubstituir();
+        $linhas = ['codigo_externo_loja;promotor;seg', 'L1;jonatas@exemplo.com;X'];
+
+        // Prévia: conta tudo, não muda nada.
+        $this->rotaSubstituindo($linhas, simular: true)->assertOk()
+            ->assertJsonPath('aplicado', false)->assertJsonPath('agendas_desativadas', 2)
+            ->assertJsonPath('lojas_saindo', 2)->assertJsonPath('os_canceladas', 1)->assertJsonPath('promotores_desatribuidos', 1);
+        $this->assertSame(StatusOrdemServico::PENDENTE, $pendente->fresh()->status);
+        $this->assertTrue($this->atendidaPor($l2, $jonatas));
+
+        $this->rotaSubstituindo($linhas)->assertOk()->assertJsonPath('aplicado', true)->assertJsonPath('agendas_desativadas', 2);
+
+        $this->assertSame([1], $this->dias($l1, $jonatas));
+        $this->assertSame([], $this->dias($l2, $jonatas));
+        $this->assertSame([], $this->dias($l3, $jonatas));
+        $this->assertSame([3], $this->dias($l2, $outro), 'outro promotor não muda');
+        $this->assertSame(5, AgendaVisita::count(), 'desativa, nunca apaga');
+        $this->assertTrue(AgendaVisita::where('recorrencia', RecorrenciaAgendaVisita::DATA_UNICA)->where('ativo', true)->exists());
+
+        // Visita de hoje não iniciada é cancelada com rastro; a já iniciada fica, com o vínculo.
+        $pendente->refresh();
+        $this->assertSame(StatusOrdemServico::CANCELADA, $pendente->status);
+        $this->assertNotNull($pendente->cancelada_por_id);
+        $this->assertSame(StatusOrdemServico::EM_ANDAMENTO, $emAndamento->fresh()->status);
+        $this->assertNotNull($emAndamento->fresh()->agenda_visita_id);
+
+        // Sai do app só onde ficou sem agenda nenhuma (L3 ainda tem a pontual futura).
+        $this->assertTrue($this->atendidaPor($l1, $jonatas));
+        $this->assertFalse($this->atendidaPor($l2, $jonatas));
+        $this->assertTrue($this->atendidaPor($l3, $jonatas));
+        $this->assertTrue($this->atendidaPor($l2, $outro));
+    }
+
+    public function test_rota_sem_substituir_nao_mexe_em_loja_fora_do_arquivo(): void
+    {
+        ['lojas' => [, $l2], 'jonatas' => $jonatas, 'pendente' => $pendente] = $this->cenarioSubstituir();
+
+        $resposta = $this->csv('/api/agendas-visita/importar', ['codigo_externo_loja;promotor;seg', 'L1;jonatas@exemplo.com;X'])
+            ->assertOk()->assertJsonPath('aplicado', true)->assertJsonPath('agendas_desativadas', 0);
+
+        $this->assertArrayNotHasKey('lojas_saindo', $resposta->json());
+        $this->assertSame([now()->dayOfWeek], $this->dias($l2, $jonatas));
+        $this->assertSame(StatusOrdemServico::PENDENTE, $pendente->fresh()->status);
+    }
+
+    public function test_rota_substituir_com_linha_invalida_nao_desativa_nada(): void
+    {
+        ['lojas' => [, $l2], 'jonatas' => $jonatas] = $this->cenarioSubstituir();
+
+        $this->rotaSubstituindo(['codigo_externo_loja;promotor;seg', 'L1;jonatas@exemplo.com;X', 'L9;jonatas@exemplo.com;X'])
+            ->assertOk()->assertJsonPath('aplicado', false)->assertJsonPath('erros.0.linha', 3);
+
+        $this->assertSame([now()->dayOfWeek], $this->dias($l2, $jonatas));
+    }
+
+    public function test_rota_substituir_desfaz_tudo_se_a_gravacao_falhar(): void
+    {
+        ['lojas' => [, $l2], 'jonatas' => $jonatas, 'pendente' => $pendente] = $this->cenarioSubstituir();
+        // Falha no último passo (tirar o promotor da loja), depois de desativar e cancelar.
+        DB::listen(function ($query) {
+            if (str_starts_with($query->sql, 'delete from "promotor_pontos_venda"')) {
+                throw new \RuntimeException('falha simulada');
+            }
+        });
+
+        $this->rotaSubstituindo(['codigo_externo_loja;promotor;seg', 'L1;jonatas@exemplo.com;X'])->assertStatus(500);
+
+        $this->assertSame([now()->dayOfWeek], $this->dias($l2, $jonatas));
+        $this->assertSame(StatusOrdemServico::PENDENTE, $pendente->fresh()->status);
+        $this->assertTrue($this->atendidaPor($l2, $jonatas));
     }
 }
