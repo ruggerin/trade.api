@@ -189,6 +189,54 @@ class VisitaRegistroController extends Controller
     }
 
     /**
+     * Uma foto do registro, enviada depois dele (o app manda o registro com `imagens_a_enviar` e
+     * as fotos em seguida, uma por vez, cada uma com a própria retentativa). Idempotente por
+     * `idempotency_key` dentro da visita: reenviar depois de perder a resposta devolve a mesma
+     * foto. Aceita visita já finalizada (o check-out pode ter sido forçado pelo gestor enquanto a
+     * foto subia) — só a cancelada recusa.
+     */
+    public function adicionarImagem(Request $request, Visita $visita, VisitaRegistro $registro): JsonResponse
+    {
+        $this->autorizarAcesso($request, $visita);
+        abort_if($registro->visita_id !== $visita->id, 404);
+
+        if ($visita->status === StatusVisita::CANCELADA) {
+            return response()->json(['message' => 'Esta visita foi cancelada, não é possível anexar fotos.'], 422);
+        }
+
+        $dados = $request->validate([
+            'imagem' => ['required', 'file', 'image', 'max:8192'],
+            'idempotency_key' => ['nullable', 'string', 'max:100'],
+        ]);
+
+        $imagem = ! empty($dados['idempotency_key'])
+            ? ImagemRegistro::where('visita_id', $visita->id)->where('idempotency_key', $dados['idempotency_key'])->first()
+            : null;
+
+        if (! $imagem) {
+            $arquivo = $request->file('imagem');
+            $nomeArquivo = Str::uuid()->toString().'.'.($arquivo->extension() ?: 'jpg');
+            $arquivo->storeAs("visitas/{$visita->id}", $nomeArquivo, config('filesystems.default'));
+            $imagem = ImagemRegistro::create([
+                'visita_id' => $visita->id,
+                'caminho' => "visitas/{$visita->id}/{$nomeArquivo}",
+                'idempotency_key' => $dados['idempotency_key'] ?? null,
+            ]);
+        }
+
+        if (! $registro->imagens()->whereKey($imagem->id)->exists()) {
+            // Vai pro fim: as fotos chegam na ordem em que o promotor tirou.
+            $ultima = DB::table('visita_registro_imagem')->where('visita_registro_id', $registro->id)->max('ordem');
+            $registro->imagens()->attach($imagem->id, ['ordem' => $ultima === null ? 0 : $ultima + 1]);
+        }
+
+        $registro->setRelation('visita', $visita);
+        $registro->load(['produtoAuditoria', 'tipoRegistro.campos', 'secao', 'departamento', 'marca', 'imagens']);
+
+        return response()->json(['registro' => new VisitaRegistroResource($registro)], 201);
+    }
+
+    /**
      * Cancela (soft — nunca apaga) um registro já feito, com confirmação do lado do cliente
      * antes de chamar aqui. PROMOTOR só cancela registro da própria visita, e só se a empresa
      * permitir (`REGISTRO_CANCELAMENTO_PERMITIDO`, ver App\Support\CancelamentoRegistro);

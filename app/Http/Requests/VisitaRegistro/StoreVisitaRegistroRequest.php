@@ -42,6 +42,9 @@ class StoreVisitaRegistroRequest extends FormRequest
             'imagens.*' => ['file', 'image', 'max:8192'],
             // Foto já existente NESTA MESMA visita (evidência compartilhada entre respostas) —
             // só cria o vínculo, sem reenviar arquivo.
+            // Fotos que o app manda logo depois, uma por vez (POST .../registros/{r}/imagens) — o
+            // registro sobe sem esperar o upload em rede lenta. Conta pra exigência de foto.
+            'imagens_a_enviar' => ['nullable', 'integer', 'min:0', 'max:20'],
             'imagens_existentes_uuids' => ['nullable', 'array'],
             'imagens_existentes_uuids.*' => [
                 'bail', 'string', 'uuid',
@@ -128,7 +131,8 @@ class StoreVisitaRegistroRequest extends FormRequest
             }
 
             $totalImagens = ($this->hasFile('imagens') ? count($this->file('imagens')) : 0)
-                + count($this->input('imagens_existentes_uuids', []));
+                + count($this->input('imagens_existentes_uuids', []))
+                + (int) $this->input('imagens_a_enviar', 0);
             if ($tipoRegistro->exige_foto && $totalImagens === 0) {
                 $validator->errors()->add('imagens', "Obrigatória para o tipo de registro \"{$tipoRegistro->descricao}\".");
             }

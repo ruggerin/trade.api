@@ -16,10 +16,11 @@ use App\Models\NivelExibicao;
 use App\Models\ProdutoAuditoria;
 use App\Models\SecaoAuditoria;
 use App\Support\AutonomiaSortimento;
+use App\Support\ImagemProduto;
+use App\Support\ImportacaoImagensProdutos;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ProdutoAuditoriaController extends Controller
@@ -28,6 +29,8 @@ class ProdutoAuditoriaController extends Controller
     {
         $produtos = ProdutoAuditoria::query()
             ->when($request->has('ativo'), fn ($query) => $query->where('ativo', $request->boolean('ativo')))
+            // "Sem foto" da lista do admin — achar o que faltou depois da importação de imagens (docs/89).
+            ->when($request->boolean('sem_imagem'), fn ($query) => $query->where(fn ($q) => $q->whereNull('imagem_url')->orWhere('imagem_url', '')))
             // Usado pelo seletor "+ adicionar produto loja" no mobile (ver
             // docs/14-SORTIMENTO-PONTO-VENDA.md §8/§9) — busca por nome entre potencialmente
             // centenas de produtos do catálogo.
@@ -159,7 +162,7 @@ class ProdutoAuditoriaController extends Controller
         // Trocou a foto enviada por uma URL externa (ou limpou o campo) — o arquivo antigo fica
         // órfão no storage, então sai junto.
         if ($imagemAnterior !== $produtoAuditoria->imagem_url) {
-            $this->apagarImagemPropria($imagemAnterior);
+            ImagemProduto::apagarPropria($imagemAnterior);
         }
         $produtoAuditoria->load(['departamento', 'secao', 'marca', 'nivelExibicao']);
 
@@ -169,27 +172,16 @@ class ProdutoAuditoriaController extends Controller
     }
 
     /**
-     * Upload da foto do produto pelo admin — alternativa a colar uma URL externa. Grava no
-     * mesmo disco das fotos de registro de visita (`config('filesystems.default')`) e salva em
-     * `imagem_url` a URL absoluta da rota pública `imagem` abaixo, então todo consumidor do campo
-     * (app mobile com `<Image uri>`, admin com `<img>`, planograma) continua igual, sem saber
-     * se a foto é externa ou nossa. Nome aleatório a cada envio: a URL muda junto com a foto
-     * (sem cache velho) e não dá pra adivinhar a de outro produto/empresa. A foto anterior,
-     * se também foi enviada por aqui, é apagada.
+     * Upload da foto do produto pelo admin — alternativa a colar uma URL externa. Ver
+     * App\Support\ImagemProduto (storage, URL pública, troca da foto anterior).
      */
     public function uploadImagem(Request $request, ProdutoAuditoria $produtoAuditoria): JsonResponse
     {
         $request->validate([
-            'imagem' => ['required', 'file', 'max:5120', 'mimes:jpg,jpeg,png,webp'],
+            'imagem' => ['required', ...ImagemProduto::regraArquivo()],
         ]);
 
-        $arquivo = $request->file('imagem');
-        $nomeArquivo = Str::uuid().'.'.($arquivo->extension() ?: 'jpg');
-        $arquivo->storeAs('produtos', $nomeArquivo, config('filesystems.default'));
-
-        $imagemAnterior = $produtoAuditoria->imagem_url;
-        $produtoAuditoria->update(['imagem_url' => url("/api/produtos-auditoria/imagens/{$nomeArquivo}")]);
-        $this->apagarImagemPropria($imagemAnterior);
+        ImagemProduto::gravar($produtoAuditoria, $request->file('imagem'));
         $produtoAuditoria->load(['departamento', 'secao', 'marca', 'nivelExibicao']);
 
         return response()->json([
@@ -198,40 +190,61 @@ class ProdutoAuditoriaController extends Controller
     }
 
     /**
-     * Serve a foto enviada por `uploadImagem`. Pública de propósito (fora do auth:sanctum):
+     * Importação de imagens (docs/89), etapa 1: só os nomes dos arquivos, sem arquivo nenhum —
+     * diz, nome a nome, com qual produto casa (ou por que não casa).
+     */
+    public function simularImportacaoImagens(Request $request): JsonResponse
+    {
+        $dados = $request->validate([
+            'chave' => ['required', 'in:'.implode(',', ImportacaoImagensProdutos::CHAVES)],
+            'substituir' => ['sometimes', 'boolean'],
+            'nomes' => ['required', 'array', 'max:'.ImportacaoImagensProdutos::MAXIMO_NOMES],
+            'nomes.*' => ['required', 'string', 'max:255'],
+        ]);
+
+        return response()->json(ImportacaoImagensProdutos::resolver(
+            $request->user()->empresa,
+            $dados['chave'],
+            array_values($dados['nomes']),
+            $request->boolean('substituir'),
+        ));
+    }
+
+    /**
+     * Importação de imagens (docs/89), etapa 2: os arquivos, em lotes pequenos. Cada arquivo é
+     * revalidado (a prévia pode estar velha) e gravado de forma independente.
+     */
+    public function importarImagens(Request $request): JsonResponse
+    {
+        $dados = $request->validate([
+            'chave' => ['required', 'in:'.implode(',', ImportacaoImagensProdutos::CHAVES)],
+            'substituir' => ['sometimes', 'boolean'],
+            'imagens' => ['required', 'array', 'max:'.ImportacaoImagensProdutos::MAXIMO_ARQUIVOS_POR_LOTE],
+            'imagens.*' => ['required', ...ImagemProduto::regraArquivo()],
+        ]);
+
+        return response()->json(ImportacaoImagensProdutos::importar(
+            $request->user()->empresa,
+            $dados['chave'],
+            array_values($request->file('imagens')),
+            $request->boolean('substituir'),
+        ));
+    }
+
+    /**
+     * Serve a foto enviada (unitário ou importação). Pública de propósito (fora do auth:sanctum):
      * foto de catálogo não é sensível, e `imagem_url` é lido como URL comum em vários lugares —
      * o app mobile usa `<Image source={{ uri }}>` sem header (ver ImagemAutenticada.tsx sobre
      * por que rota autenticada no RN é problema). O nome é um UUID aleatório.
      */
     public function imagem(string $arquivo): StreamedResponse
     {
-        $caminho = "produtos/{$arquivo}";
+        $caminho = ImagemProduto::PASTA.'/'.$arquivo;
         $disco = Storage::disk(config('filesystems.default'));
         abort_unless($disco->exists($caminho), 404);
 
         // Nome muda a cada envio, então o conteúdo de uma URL nunca muda — cache longo.
         return $disco->response($caminho, headers: ['Cache-Control' => 'public, max-age=31536000, immutable']);
-    }
-
-    private function apagarImagemPropria(?string $url): void
-    {
-        $caminho = self::caminhoImagemPropria($url);
-        if ($caminho) {
-            Storage::disk(config('filesystems.default'))->delete($caminho);
-        }
-    }
-
-    /**
-     * Caminho no storage se a URL aponta pra uma foto enviada por `uploadImagem`; null se é URL
-     * externa. Compara só o path (não o host) — a URL guardada é absoluta com o APP_URL da época.
-     */
-    public static function caminhoImagemPropria(?string $url): ?string
-    {
-        $path = $url ? parse_url($url, PHP_URL_PATH) : null;
-
-        return is_string($path) && preg_match('#^/api/produtos-auditoria/imagens/([0-9a-f-]{36}\.[a-z0-9]+)$#', $path, $m)
-            ? "produtos/{$m[1]}"
-            : null;
     }
 
     public function destroy(ProdutoAuditoria $produtoAuditoria): JsonResponse
