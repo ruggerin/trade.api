@@ -441,6 +441,9 @@ Route::middleware(['auth:sanctum', 'licenca', 'assinatura'])->group(function ():
         Route::delete('/produtos-auditoria/{produtoAuditoria}', [ProdutoAuditoriaController::class, 'destroy']);
         // Upload da foto (alternativa a colar URL) — ver ProdutoAuditoriaController::uploadImagem.
         Route::post('/produtos-auditoria/{produtoAuditoria}/imagem', [ProdutoAuditoriaController::class, 'uploadImagem']);
+        // Importação de imagens pelo nome do arquivo (docs/89): prévia só com nomes, depois lotes de arquivos.
+        Route::post('/produtos-auditoria/imagens/simular', [ProdutoAuditoriaController::class, 'simularImportacaoImagens']);
+        Route::post('/produtos-auditoria/imagens/importar', [ProdutoAuditoriaController::class, 'importarImagens']);
         // Painel de aprovação de produto cadastrado por promotor (self-service) — ver
         // docs/14-SORTIMENTO-PONTO-VENDA.md §9.
         Route::post('/produtos-auditoria/{produtoAuditoria}/aprovar', [ProdutoAuditoriaController::class, 'aprovar']);
