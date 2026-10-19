@@ -18,6 +18,7 @@ use App\Models\SortimentoPontoVenda;
 use App\Models\Usuario;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -162,6 +163,102 @@ class ImportacaoDadosTest extends TestCase
             ->assertJsonPath('erros.0.linha', 3)
             ->assertJsonPath('erros.0.mensagem', 'Loja com código "L9" não encontrada.');
         $this->assertSame(0, SortimentoPontoVenda::count());
+    }
+
+    // ---- Vínculo: substituir (docs/42 §4.3.1) ----
+
+    private function substituir(array $linhas, bool $simular = false)
+    {
+        $arquivo = UploadedFile::fake()->createWithContent('dados.csv', implode("\r\n", $linhas));
+
+        return $this->post('/api/sortimentos/importar', ['arquivo' => $arquivo, 'simular' => $simular ? '1' : '0', 'substituir' => '1'], ['Accept' => 'application/json']);
+    }
+
+    private function vinculo(PontoVenda $loja, ProdutoAuditoria $produto, ?StatusAprovacao $status = null): SortimentoPontoVenda
+    {
+        return SortimentoPontoVenda::create(['ponto_venda_id' => $loja->id, 'tipo_item' => TipoItemCampanha::PRODUTO, 'produto_id' => $produto->id, 'status_aprovacao' => $status]);
+    }
+
+    /** L1 tem P1 (no arquivo), P3 e P4 pendente (fora) e um item de seção; L2 (fora do arquivo) tem P3. */
+    private function cenarioSubstituir(): array
+    {
+        $l1 = PontoVenda::factory()->create(['empresa_id' => $this->empresa->id, 'codigo_externo' => 'L1']);
+        $l2 = PontoVenda::factory()->create(['empresa_id' => $this->empresa->id, 'codigo_externo' => 'L2']);
+        $p = [];
+        foreach (['P1', 'P2', 'P3', 'P4'] as $codigo) {
+            $p[$codigo] = ProdutoAuditoria::factory()->create(['empresa_id' => $this->empresa->id, 'codigo_externo' => $codigo]);
+        }
+        $this->vinculo($l1, $p['P1']);
+        $this->vinculo($l1, $p['P3']);
+        $this->vinculo($l1, $p['P4'], StatusAprovacao::PENDENTE);
+        $secao = SecaoAuditoria::factory()->create(['empresa_id' => $this->empresa->id]);
+        SortimentoPontoVenda::create(['ponto_venda_id' => $l1->id, 'tipo_item' => TipoItemCampanha::SECAO, 'secao_id' => $secao->id]);
+        $this->vinculo($l2, $p['P3']);
+
+        return [$l1, $l2, $p];
+    }
+
+    /** Produtos (códigos) vinculados à loja, só itens de produto. */
+    private function produtosDaLoja(PontoVenda $loja): array
+    {
+        return SortimentoPontoVenda::where('ponto_venda_id', $loja->id)->where('tipo_item', TipoItemCampanha::PRODUTO)
+            ->with('produto')->get()->pluck('produto.codigo_externo')->sort()->values()->all();
+    }
+
+    public function test_vinculo_substituir_deixa_cada_loja_do_arquivo_so_com_os_produtos_listados(): void
+    {
+        [$l1, $l2] = $this->cenarioSubstituir();
+        $linhas = ['codigo_externo_loja;codigo_externo_produto', 'L1;P1', 'L1;P2'];
+
+        // Prévia conta o que sai e não apaga nada.
+        $this->substituir($linhas, simular: true)->assertOk()
+            ->assertJsonPath('aplicado', false)->assertJsonPath('criadas', 1)
+            ->assertJsonPath('removidas', 2)->assertJsonPath('lojas', 1);
+        $this->assertSame(['P1', 'P3', 'P4'], $this->produtosDaLoja($l1));
+
+        $this->substituir($linhas)->assertOk()
+            ->assertJsonPath('aplicado', true)->assertJsonPath('criadas', 1)
+            ->assertJsonPath('ja_existentes', 1)->assertJsonPath('removidas', 2);
+
+        $this->assertSame(['P1', 'P2'], $this->produtosDaLoja($l1), 'P3 e o pendente P4 saem');
+        $this->assertTrue(SortimentoPontoVenda::where('ponto_venda_id', $l1->id)->where('tipo_item', TipoItemCampanha::SECAO)->exists(), 'item de seção fica');
+        $this->assertSame(['P3'], $this->produtosDaLoja($l2), 'loja fora do arquivo não muda');
+    }
+
+    public function test_vinculo_sem_substituir_continua_so_adicionando(): void
+    {
+        [$l1] = $this->cenarioSubstituir();
+
+        $resposta = $this->enviar('/api/sortimentos/importar', ['codigo_externo_loja;codigo_externo_produto', 'L1;P2'])
+            ->assertOk()->assertJsonPath('aplicado', true);
+
+        $this->assertArrayNotHasKey('removidas', $resposta->json());
+        $this->assertSame(['P1', 'P2', 'P3', 'P4'], $this->produtosDaLoja($l1));
+    }
+
+    public function test_vinculo_substituir_com_linha_invalida_nao_apaga_nada(): void
+    {
+        [$l1] = $this->cenarioSubstituir();
+
+        $this->substituir(['codigo_externo_loja;codigo_externo_produto', 'L1;P1', 'L1;P9'])->assertOk()
+            ->assertJsonPath('aplicado', false)->assertJsonPath('erros.0.linha', 3);
+
+        $this->assertSame(['P1', 'P3', 'P4'], $this->produtosDaLoja($l1));
+    }
+
+    public function test_vinculo_substituir_desfaz_a_remocao_se_a_gravacao_falhar(): void
+    {
+        [$l1] = $this->cenarioSubstituir();
+        // Falha no insert, que roda depois do delete na mesma transação.
+        DB::listen(function ($query) {
+            if (str_starts_with($query->sql, 'insert into "sortimentos_ponto_venda"')) {
+                throw new \RuntimeException('falha simulada');
+            }
+        });
+
+        $this->substituir(['codigo_externo_loja;codigo_externo_produto', 'L1;P1', 'L1;P2'])->assertStatus(500);
+
+        $this->assertSame(['P1', 'P3', 'P4'], $this->produtosDaLoja($l1), 'nada foi apagado');
     }
 
     public function test_vinculo_exige_as_duas_colunas_no_cabecalho(): void
