@@ -27,7 +27,7 @@ class NivelExibicaoController extends Controller
             )
             ->with('empresa')
             ->orderBy('descricao')
-            ->paginate();
+            ->paginate($request->filled('por_pagina') ? max(1, min($request->integer('por_pagina'), 1000)) : null);
 
         return response()->json([
             'niveis_exibicao' => NivelExibicaoResource::collection($niveis->items()),
