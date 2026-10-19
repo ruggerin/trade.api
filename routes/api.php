@@ -72,6 +72,10 @@ Route::post('/empresas/signup', [EmpresaController::class, 'signup']);
 Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:login');
 // Desafio de uso único pra atestação do app (docs/67 Fase 3) — antes do login e do refresh.
 Route::post('/auth/desafio', [AuthController::class, 'desafio'])->middleware('throttle:30,1');
+// Foto de produto enviada pelo admin — pública (lida como URL comum por app/admin), nome UUID
+// aleatório. Ver ProdutoAuditoriaController::imagem.
+Route::get('/produtos-auditoria/imagens/{arquivo}', [ProdutoAuditoriaController::class, 'imagem'])
+    ->where('arquivo', '[0-9a-f-]{36}\.[a-z0-9]+');
 // Termos de Uso / Política de Privacidade (docs/58 §5.2) — leitura pública, sem login.
 Route::get('/documentos-legais/{slug}', [DocumentoLegalController::class, 'show'])
     ->where('slug', 'termos-de-uso|politica-de-privacidade');
@@ -435,6 +439,8 @@ Route::middleware(['auth:sanctum', 'licenca', 'assinatura'])->group(function ():
         Route::post('/produtos-auditoria', [ProdutoAuditoriaController::class, 'store']);
         Route::put('/produtos-auditoria/{produtoAuditoria}', [ProdutoAuditoriaController::class, 'update']);
         Route::delete('/produtos-auditoria/{produtoAuditoria}', [ProdutoAuditoriaController::class, 'destroy']);
+        // Upload da foto (alternativa a colar URL) — ver ProdutoAuditoriaController::uploadImagem.
+        Route::post('/produtos-auditoria/{produtoAuditoria}/imagem', [ProdutoAuditoriaController::class, 'uploadImagem']);
         // Painel de aprovação de produto cadastrado por promotor (self-service) — ver
         // docs/14-SORTIMENTO-PONTO-VENDA.md §9.
         Route::post('/produtos-auditoria/{produtoAuditoria}/aprovar', [ProdutoAuditoriaController::class, 'aprovar']);
