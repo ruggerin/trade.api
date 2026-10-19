@@ -21,7 +21,7 @@ class ImagemRegistro extends Model
 
     public $timestamps = false;
 
-    protected $fillable = ['visita_id', 'caminho'];
+    protected $fillable = ['visita_id', 'caminho', 'idempotency_key'];
 
     protected function casts(): array
     {

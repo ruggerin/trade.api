@@ -195,6 +195,7 @@ Route::middleware(['auth:sanctum', 'licenca', 'assinatura'])->group(function ():
     // Saída de segurança: gestor/admin autoriza o cancelamento com e-mail e senha no aparelho do promotor.
     Route::post('/visitas/{visita}/cancelar-autorizado', [VisitaController::class, 'cancelarAutorizado'])->middleware('canal.mobile');
     Route::post('/visitas/{visita}/registros', [VisitaRegistroController::class, 'store'])->middleware('canal.mobile');
+    Route::post('/visitas/{visita}/registros/{registro}/imagens', [VisitaRegistroController::class, 'adicionarImagem'])->middleware('canal.mobile');
     // Serve o arquivo de uma foto de evidência — não depende mais de um registro específico
     // (uma foto pode evidenciar N registros), ver docs/21-EVIDENCIA-EM-FOTOS.md.
     Route::get('/visitas/{visita}/imagens/{imagem}', [ImagemRegistroController::class, 'show']);
