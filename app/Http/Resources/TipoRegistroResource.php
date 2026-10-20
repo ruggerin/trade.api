@@ -95,6 +95,11 @@ class TipoRegistroResource extends JsonResource
             // Dispara evento de alerta no Painel de Atividades — ver
             // docs/17-PAINEL-ATIVIDADES.md.
             'eh_alerta' => $this->eh_alerta,
+            'xp_iniciativa' => (int) $this->xp_iniciativa,
+            'xp_bonus_acao' => (int) $this->xp_bonus_acao,
+            'xp_teto_por_visita' => $this->xp_teto_por_visita,
+            'xp_intervalo_dias' => (int) $this->xp_intervalo_dias,
+            'exige_avaliacao' => (bool) $this->exige_avaliacao,
             // Fase 3 de docs/20-FORMULARIO-DINAMICO-CAMPANHA.md (decisões 5 e 8).
             'usa_pontuacao' => $this->usa_pontuacao,
             'disponivel_registro_livre' => $this->disponivel_registro_livre,

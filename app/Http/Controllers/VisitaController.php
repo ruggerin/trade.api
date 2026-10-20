@@ -33,6 +33,7 @@ use App\Support\OrdemDoCheckin;
 use App\Support\RaioCheckin;
 use App\Support\Rastreamento;
 use App\Support\RotaObrigatoria;
+use App\Support\Xp\ReguaXp;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -441,6 +442,9 @@ class VisitaController extends Controller
             'fim_longitude' => $dados['longitude'],
             'fim_distancia_metros' => $distancia,
             'status' => StatusVisita::FINALIZADA,
+            // Completude que o promotor viu no app (docs/88 §5.1); ausente em app antigo.
+            'obrigatorias_feitas' => $dados['obrigatorias_feitas'] ?? null,
+            'obrigatorias_total' => $dados['obrigatorias_total'] ?? null,
         ]);
 
         if ($visita->ordem_servico_id) {
@@ -448,6 +452,9 @@ class VisitaController extends Controller
                 ->where('id', $visita->ordem_servico_id)
                 ->update(['status' => StatusOrdemServico::CONCLUIDA]);
         }
+
+        // Régua de XP (docs/88): calcula a visita assim que o check-out chega.
+        ReguaXp::recalcularVisita($visita);
 
         return response()->json([
             'visita' => new VisitaResource($visita),
@@ -529,6 +536,8 @@ class VisitaController extends Controller
                 $antes,
             );
         });
+        // Régua de XP (docs/88 §7): intervenção recalcula a visita, com o motivo nos ajustes.
+        ReguaXp::recalcularVisita($visita, "Intervenção do gestor: {$motivo}", $request->user()->id);
 
         return response()->json([
             'visita' => new VisitaResource($this->recarregarComIntervencoes($visita)),
@@ -586,6 +595,8 @@ class VisitaController extends Controller
                 $antes,
             );
         });
+        // Régua de XP (docs/88 §7): intervenção recalcula a visita, com o motivo nos ajustes.
+        ReguaXp::recalcularVisita($visita, "Intervenção do gestor: {$motivo}", $request->user()->id);
 
         return response()->json([
             'visita' => new VisitaResource($this->recarregarComIntervencoes($visita)),
@@ -652,6 +663,8 @@ class VisitaController extends Controller
                 $antes,
             );
         });
+        // Régua de XP (docs/88 §7): intervenção recalcula a visita, com o motivo nos ajustes.
+        ReguaXp::recalcularVisita($visita, "Intervenção do gestor: {$motivo}", $request->user()->id);
 
         return response()->json([
             'visita' => new VisitaResource($this->recarregarComIntervencoes($visita)),

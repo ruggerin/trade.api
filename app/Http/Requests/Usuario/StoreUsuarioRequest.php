@@ -61,6 +61,11 @@ class StoreUsuarioRequest extends FormRequest
                 Rule::exists('centros_custo', 'uuid')->where('empresa_id', $empresaIdAlvo),
             ],
             'avatar_url' => ['nullable', 'string', 'max:2048'],
+            // Equipe do supervisor (régua de XP, docs/88 §11).
+            'supervisor_uuid' => [
+                'nullable', 'string',
+                Rule::exists('supervisores', 'uuid')->where('empresa_id', $empresaIdAlvo),
+            ],
         ];
     }
 

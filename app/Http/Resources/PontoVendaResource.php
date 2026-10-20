@@ -77,6 +77,14 @@ class PontoVendaResource extends JsonResource
             'sortimento_count' => $this->sortimento_count ?? null,
             // Vendedores que atendem a loja (carteira, docs/73 §11.1) — só no detalhe. E-mail não vai pro promotor.
             'vendedores' => $this->whenLoaded('vendedores', fn () => EquipeComercial::vendedoresDaLoja($this->vendedores, $request->user())),
+            // Classe da régua de XP (docs/88 §4): null = usa a padrão da empresa.
+            'classe' => $this->whenLoaded('classe', fn () => $this->classe ? [
+                'id' => $this->classe->uuid, 'nome' => $this->classe->nome, 'icone' => $this->classe->icone,
+                'cor' => $this->classe->cor, 'xp_base' => $this->classe->xp_base,
+            ] : null),
+            'classe_sugerida' => $this->whenLoaded('classeSugerida', fn () => $this->classeSugerida ? [
+                'id' => $this->classeSugerida->uuid, 'nome' => $this->classeSugerida->nome, 'icone' => $this->classeSugerida->icone,
+            ] : null),
             'ativo' => $this->ativo,
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,

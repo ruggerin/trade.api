@@ -14,11 +14,12 @@ class MotivoResolucaoAlerta extends Model
 
     protected $table = 'motivos_resolucao_alerta';
 
-    protected $fillable = ['empresa_id', 'descricao', 'ativo'];
+    // `procedente`: resolver com este motivo conta como informação que virou ação (docs/88 §9.2).
+    protected $fillable = ['empresa_id', 'descricao', 'ativo', 'procedente'];
 
     protected function casts(): array
     {
-        return ['ativo' => 'boolean'];
+        return ['ativo' => 'boolean', 'procedente' => 'boolean'];
     }
 
     public function empresa(): BelongsTo

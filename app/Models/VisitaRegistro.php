@@ -53,6 +53,11 @@ class VisitaRegistro extends Model
         // Embalagem do registro por marca concorrente (docs/85).
         'embalagem_quantidade',
         'embalagem_unidade',
+        // Avaliação do gestor (doc 33 / docs/88 §10): NULL = não passa por avaliação.
+        'avaliacao_status',
+        'avaliado_por_id',
+        'avaliado_em',
+        'avaliacao_motivo',
     ];
 
     protected function casts(): array
@@ -63,6 +68,7 @@ class VisitaRegistro extends Model
             'valores_campos' => 'array',
             'cancelado_em' => 'datetime',
             'alerta_resolvido_em' => 'datetime',
+            'avaliado_em' => 'datetime',
             'recebido_em' => 'datetime',
             'embalagem_quantidade' => 'float',
         ];
@@ -101,6 +107,11 @@ class VisitaRegistro extends Model
     public function resolvidoPor(): BelongsTo
     {
         return $this->belongsTo(Usuario::class, 'alerta_resolvido_por_id');
+    }
+
+    public function avaliadoPor(): BelongsTo
+    {
+        return $this->belongsTo(Usuario::class, 'avaliado_por_id');
     }
 
     public function motivoResolucao(): BelongsTo

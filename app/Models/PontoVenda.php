@@ -39,6 +39,9 @@ class PontoVenda extends Model
         'fuso',
         'fachada_path',
         'ativo',
+        // Régua de XP (docs/88 §4): NULL = classe padrão da empresa.
+        'classe_id',
+        'classe_sugerida_id',
     ];
 
     protected function casts(): array
@@ -54,6 +57,16 @@ class PontoVenda extends Model
     public function empresa(): BelongsTo
     {
         return $this->belongsTo(Empresa::class);
+    }
+
+    public function classe(): BelongsTo
+    {
+        return $this->belongsTo(ClassePontoVenda::class, 'classe_id');
+    }
+
+    public function classeSugerida(): BelongsTo
+    {
+        return $this->belongsTo(ClassePontoVenda::class, 'classe_sugerida_id');
     }
 
     public function redeLoja(): BelongsTo

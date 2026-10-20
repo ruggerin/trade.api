@@ -8,6 +8,7 @@ use App\Http\Requests\Usuario\StoreUsuarioRequest;
 use App\Http\Requests\Usuario\UpdateUsuarioRequest;
 use App\Http\Resources\UsuarioResource;
 use App\Models\CentroCusto;
+use App\Models\Supervisor;
 use App\Models\Empresa;
 use App\Models\Perfil;
 use App\Models\Usuario;
@@ -75,7 +76,7 @@ class UsuarioController extends Controller
             // Período por data de cadastro (quem entrou na base) ou de última alteração do cadastro.
             ->when($request->filled('data_inicio'), fn ($query) => $query->whereDate($campoData, '>=', $request->string('data_inicio')))
             ->when($request->filled('data_fim'), fn ($query) => $query->whereDate($campoData, '<=', $request->string('data_fim')))
-            ->with(['perfil', 'centroCusto', 'dispositivo', 'empresa'])
+            ->with(['perfil', 'centroCusto', 'supervisor', 'dispositivo', 'empresa'])
             ->when(
                 $request->input('ordenar') === 'recentes',
                 fn ($query) => $query->orderByDesc($campoData)->orderBy('nome'),
@@ -101,7 +102,7 @@ class UsuarioController extends Controller
 
     public function show(Usuario $usuario): JsonResponse
     {
-        $usuario->load(['perfil', 'centroCusto', 'dispositivo', 'empresa']);
+        $usuario->load(['perfil', 'centroCusto', 'supervisor', 'dispositivo', 'empresa']);
         Adesao::anexar([$usuario]);
 
         return response()->json([
@@ -151,8 +152,11 @@ class UsuarioController extends Controller
                 : null,
             'avatar_url' => $dados['avatar_url'] ?? null,
             'licenca_mobile' => $licencaMobile,
+            'supervisor_id' => isset($dados['supervisor_uuid'])
+                ? Supervisor::where('uuid', $dados['supervisor_uuid'])->value('id')
+                : null,
         ]);
-        $usuario->load(['perfil', 'centroCusto', 'dispositivo', 'empresa']);
+        $usuario->load(['perfil', 'centroCusto', 'supervisor', 'dispositivo', 'empresa']);
 
         return response()->json([
             'usuario' => new UsuarioResource($usuario),
@@ -182,6 +186,13 @@ class UsuarioController extends Controller
             unset($dados['centro_custo_uuid']);
         }
 
+        if (array_key_exists('supervisor_uuid', $dados)) {
+            $dados['supervisor_id'] = $dados['supervisor_uuid']
+                ? Supervisor::where('uuid', $dados['supervisor_uuid'])->value('id')
+                : null;
+            unset($dados['supervisor_uuid']);
+        }
+
         // Licença do app (docs/67 §3): atribuir, reativar quem tem ou transformar alguém em PROMOTOR
         // (que ganha a licença, só trabalha no app) passa a consumir — mesma trava do store (brecha
         // B2). Só checa quando o usuário NÃO consumia antes, senão editar o nome de quem já tem
@@ -206,7 +217,7 @@ class UsuarioController extends Controller
                 'por' => $request->user()->nome,
             ]);
         }
-        $usuario->load(['perfil', 'centroCusto', 'dispositivo']);
+        $usuario->load(['perfil', 'centroCusto', 'supervisor', 'dispositivo']);
 
         return response()->json([
             'usuario' => new UsuarioResource($usuario),
@@ -246,7 +257,7 @@ class UsuarioController extends Controller
         $usuario->update(['foto_path' => $caminho]);
 
         return response()->json([
-            'usuario' => new UsuarioResource($usuario->fresh()->loadMissing(['empresa', 'perfil', 'centroCusto', 'dispositivo'])),
+            'usuario' => new UsuarioResource($usuario->fresh()->loadMissing(['empresa', 'perfil', 'centroCusto', 'supervisor', 'dispositivo'])),
         ]);
     }
 
@@ -258,7 +269,7 @@ class UsuarioController extends Controller
         }
 
         return response()->json([
-            'usuario' => new UsuarioResource($usuario->fresh()->loadMissing(['empresa', 'perfil', 'centroCusto', 'dispositivo'])),
+            'usuario' => new UsuarioResource($usuario->fresh()->loadMissing(['empresa', 'perfil', 'centroCusto', 'supervisor', 'dispositivo'])),
         ]);
     }
 

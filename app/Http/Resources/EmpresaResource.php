@@ -3,6 +3,7 @@
 namespace App\Http\Resources;
 
 use Illuminate\Http\Request;
+use App\Support\Xp\ParametrosXp;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /**
@@ -28,6 +29,16 @@ class EmpresaResource extends JsonResource
             'pedidos_venda_habilitado' => (bool) $this->pedidos_venda_habilitado,
             // Faturamento contratado no plano (docs/61) — sem ele o parâmetro FATURAMENTO_HABILITADO fica travado.
             'faturamento_contratado' => (bool) $this->faturamento_contratado,
+            // Régua de XP (docs/88 §2.1) — recurso de plano. Com ele ligado, o que o promotor vê
+            // (modo prévia, pendente, liga) vai junto pro app esconder ou mostrar sem chamada extra.
+            'controle_xp_habilitado' => (bool) $this->controle_xp_habilitado,
+            'xp' => $this->when((bool) $this->controle_xp_habilitado, fn () => [
+                'visivel_promotor' => ParametrosXp::visivelPromotor($this->resource),
+                'pendente_visivel_promotor' => ParametrosXp::pendenteVisivelPromotor($this->resource),
+                'ranking_habilitado' => ParametrosXp::rankingHabilitado($this->resource),
+            ]),
+            // Avaliação de formulário pelo gestor (doc 33) — independe do XP.
+            'avaliacao_formulario_habilitada' => ParametrosXp::avaliacaoHabilitada($this->resource),
             'ativo' => $this->ativo,
             // Fuso (IANA) que define o corte de "dia" da empresa (docs/50 §4.3).
             'fuso' => $this->fuso,

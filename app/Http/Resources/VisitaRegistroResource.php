@@ -103,6 +103,12 @@ class VisitaRegistroResource extends JsonResource
                 fn () => $this->motivoResolucao ? ['id' => $this->motivoResolucao->uuid, 'descricao' => $this->motivoResolucao->descricao] : null,
             ),
             'alerta_motivo_texto' => $this->alerta_motivo_texto,
+            // Avaliação do gestor (doc 33 / docs/88 §10): null = não passa por avaliação.
+            'avaliacao' => $this->avaliacao_status ? [
+                'status' => $this->avaliacao_status,
+                'motivo' => $this->avaliacao_motivo,
+                'em' => $this->avaliado_em,
+            ] : null,
             // Plano de Ação em andamento nascido deste alerta (docs/37 §5) — o card do Painel de
             // Atividades troca "Abrir Plano de Ação" por "Ver plano" quando existe.
             'plano_acao_ativo' => $this->whenLoaded(

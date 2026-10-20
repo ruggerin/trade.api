@@ -30,6 +30,8 @@ class Empresa extends Model
         'limite_licencas',
         // Módulo pago, só SUPERADMIN edita (docs/38-PEDIDO-VENDEDOR.md §12).
         'pedidos_venda_habilitado',
+        // Régua de XP (docs/88 §2.1) — recurso de plano, só o SUPERADMIN liga.
+        'controle_xp_habilitado',
         // Integração de faturamento contratada (docs/61), só SUPERADMIN edita.
         'faturamento_contratado',
         'ativo',
@@ -45,6 +47,7 @@ class Empresa extends Model
             'limite_pontos_venda' => 'integer',
             'limite_licencas' => 'integer',
             'pedidos_venda_habilitado' => 'boolean',
+            'controle_xp_habilitado' => 'boolean',
             'faturamento_contratado' => 'boolean',
             'ativo' => 'boolean',
         ];

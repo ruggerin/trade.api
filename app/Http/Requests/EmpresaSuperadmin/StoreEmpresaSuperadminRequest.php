@@ -28,6 +28,8 @@ class StoreEmpresaSuperadminRequest extends FormRequest
             'limite_licencas' => ['nullable', 'integer', 'min:1'],
             'pedidos_venda_habilitado' => ['nullable', 'boolean'],
             'faturamento_contratado' => ['nullable', 'boolean'],
+            // Régua de XP (docs/88 §2.1) — recurso de plano.
+            'controle_xp_habilitado' => ['nullable', 'boolean'],
             // IANA — ausente = America/Sao_Paulo (default da coluna, docs/50 §4.3).
             'fuso' => ['sometimes', 'timezone:all'],
             // Cria junto o primeiro ADMIN da empresa — sem isso não existe forma de logar
