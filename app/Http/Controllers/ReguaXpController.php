@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\MotivoNaoExecucao;
 use App\Models\PlanoAcao;
 use App\Models\Supervisor;
+use App\Models\Usuario;
 use App\Models\XpLancamento;
 use App\Models\XpOcorrenciaClassificacao;
 use App\Support\Fuso;
@@ -80,6 +81,16 @@ class ReguaXpController extends Controller
     public function evolucao(Request $request): JsonResponse
     {
         [, , $supervisorId] = $this->filtros($request);
+        // Comparativo período a período (mês, semana ou dia), da equipe ou de um promotor.
+        if ($request->filled('granularidade')) {
+            $request->validate([
+                'granularidade' => [Rule::in(array_keys(PainelXp::COMPARATIVO_PERIODOS))],
+                'usuario_uuid' => ['nullable', 'uuid', Rule::exists('usuarios', 'uuid')->where('empresa_id', $request->user()->empresa_id)],
+            ]);
+            $usuarioId = $request->filled('usuario_uuid') ? Usuario::where('uuid', $request->query('usuario_uuid'))->value('id') : null;
+
+            return response()->json(['comparativo' => PainelXp::comparativo($request->user()->empresa, $supervisorId, $request->query('granularidade'), $usuarioId)]);
+        }
 
         return response()->json(['semanas' => PainelXp::evolucao($request->user()->empresa, $supervisorId)]);
     }
@@ -107,7 +118,7 @@ class ReguaXpController extends Controller
             'ranking' => PontuacaoPromotorXp::ranking(
                 $request->user()->empresa,
                 $request->user(),
-                $request->query('semana') === 'passada' ? 'passada' : 'atual',
+                in_array($request->query('semana'), ['passada', 'mes', 'mes_passado'], true) ? $request->query('semana') : 'atual',
                 completo: true,
                 supervisorId: $supervisorId,
             ),
@@ -120,7 +131,7 @@ class ReguaXpController extends Controller
         $empresa = $request->user()->empresa;
         $request->validate([
             'dia' => ['nullable', 'date_format:Y-m-d'],
-            'periodo' => ['nullable', Rule::in(['dia', 'semana'])],
+            'periodo' => ['nullable', Rule::in(['dia', 'semana', 'mes'])],
             'supervisor_uuid' => ['nullable', 'uuid', Rule::exists('supervisores', 'uuid')->where('empresa_id', $empresa->id)],
         ]);
         $dia = $request->query('dia') ?? now(Fuso::daEmpresa($empresa))->toDateString();

@@ -36,7 +36,7 @@ class XpController extends Controller
         abort_unless(ParametrosXp::rankingHabilitado($usuario->empresa), 403, 'A liga semanal está desligada nesta empresa.');
 
         return response()->json([
-            'ranking' => PontuacaoPromotorXp::ranking($usuario->empresa, $usuario, $request->query('semana') === 'passada' ? 'passada' : 'atual'),
+            'ranking' => PontuacaoPromotorXp::ranking($usuario->empresa, $usuario, in_array($request->query('semana'), ['passada', 'mes', 'mes_passado'], true) ? $request->query('semana') : 'atual'),
         ]);
     }
 

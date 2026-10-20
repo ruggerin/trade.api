@@ -38,15 +38,34 @@ final class LigaXp
             ])->all();
         }
 
-        return self::calcular($empresa, EquipeXp::membros($empresa, $supervisorId), $semanaInicio);
+        $fim = Carbon::parse($semanaInicio)->addDays(6)->toDateString();
+
+        return self::calcular($empresa, EquipeXp::membros($empresa, $supervisorId), $semanaInicio, $fim, ParametrosXp::ligaMinimoVisitas($empresa));
+    }
+
+    /**
+     * Liga do mês (o fechamento que a operação acompanha). Calculada na hora — o mês não tem
+     * tabela própria; o mínimo de visitas é 4× o da semana.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public static function classificacaoMensal(Empresa $empresa, ?int $supervisorId, string $diaDoMes): array
+    {
+        $inicio = Carbon::parse($diaDoMes)->startOfMonth()->toDateString();
+        $fim = Carbon::parse($diaDoMes)->endOfMonth()->toDateString();
+
+        return self::calcular($empresa, EquipeXp::membros($empresa, $supervisorId), $inicio, $fim, self::minimoMensal($empresa));
+    }
+
+    public static function minimoMensal(Empresa $empresa): int
+    {
+        return ParametrosXp::ligaMinimoVisitas($empresa) * 4;
     }
 
     /** @param Collection<int, Usuario> $membros */
-    private static function calcular(Empresa $empresa, Collection $membros, string $semanaInicio): array
+    private static function calcular(Empresa $empresa, Collection $membros, string $semanaInicio, string $fim, int $minimo): array
     {
-        $fim = Carbon::parse($semanaInicio)->addDays(6)->toDateString();
         $ids = $membros->pluck('id');
-        $minimo = ParametrosXp::ligaMinimoVisitas($empresa);
 
         $ganhos = XpLancamento::withoutGlobalScopes()
             ->whereIn('usuario_id', $ids)
@@ -113,7 +132,8 @@ final class LigaXp
                 ->where(fn ($q) => $supervisorId ? $q->where('supervisor_id', $supervisorId) : $q->whereNull('supervisor_id'))->exists()) {
                 continue;
             }
-            foreach (self::calcular($empresa, EquipeXp::membros($empresa, $supervisorId), $semanaInicio) as $linha) {
+            $fim = Carbon::parse($semanaInicio)->addDays(6)->toDateString();
+            foreach (self::calcular($empresa, EquipeXp::membros($empresa, $supervisorId), $semanaInicio, $fim, ParametrosXp::ligaMinimoVisitas($empresa)) as $linha) {
                 XpLigaSemanal::withoutGlobalScopes()->create([
                     'empresa_id' => $empresa->id, 'supervisor_id' => $supervisorId, 'semana_inicio' => $semanaInicio,
                     'usuario_id' => $linha['usuario_id'], 'posicao' => $linha['posicao'], 'xp' => $linha['xp'], 'plano' => $linha['plano'],

@@ -119,29 +119,43 @@ final class PontuacaoPromotorXp
     {
         $fuso = Fuso::daEmpresa($empresa);
         $hoje = now($fuso)->toDateString();
-        $atual = DiaXp::inicioDaSemana($hoje);
-        $semana = $qual === 'passada' ? Carbon::parse($atual)->subWeek()->toDateString() : $atual;
         $grupo = $completo ? $supervisorId : $usuario->supervisor_id;
-        $linhas = LigaXp::classificacao($empresa, $grupo, $semana);
+        // `atual`/`passada` = semana; `mes`/`mes_passado` = mês (o fechamento da operação).
+        $mensal = in_array($qual, ['mes', 'mes_passado'], true);
+        $fechada = in_array($qual, ['passada', 'mes_passado'], true);
+        if ($mensal) {
+            $semana = Carbon::parse($hoje)->startOfMonth()->when($qual === 'mes_passado', fn ($d) => $d->subMonthNoOverflow())->toDateString();
+            $linhas = LigaXp::classificacaoMensal($empresa, $grupo, $semana);
+            $fim = Carbon::parse($semana)->addMonthNoOverflow();
+            $minimo = LigaXp::minimoMensal($empresa);
+        } else {
+            $atual = DiaXp::inicioDaSemana($hoje);
+            $semana = $qual === 'passada' ? Carbon::parse($atual)->subWeek()->toDateString() : $atual;
+            $linhas = LigaXp::classificacao($empresa, $grupo, $semana);
+            $fim = Carbon::parse($semana)->addWeek();
+            $minimo = ParametrosXp::ligaMinimoVisitas($empresa);
+        }
 
         $eu = collect($linhas)->firstWhere('usuario_id', $usuario->id);
         $acima = $eu && $eu['posicao'] > 1 ? $linhas[$eu['posicao'] - 2] : null;
+        $fotos = Usuario::withoutGlobalScopes()->whereIn('id', array_column($linhas, 'usuario_id'))->get(['id', 'uuid', 'nome', 'foto_path', 'updated_at'])->keyBy('id');
         $publico = fn (array $l) => [
             'posicao' => $l['posicao'], 'nome' => $l['nome'], 'xp' => $l['xp'], 'eu' => $l['usuario_id'] === $usuario->id,
+            'foto_url' => ($u = $fotos->get($l['usuario_id'])) ? PainelXp::pessoa($u)['foto_url'] : null,
         ] + ($completo ? ['plano' => $l['plano'], 'iniciativa' => $l['iniciativa'], 'possivel' => $l['possivel'], 'visitas_completas' => $l['visitas_completas']] : []);
 
         $visiveis = $completo
             ? $linhas
             : array_values(array_filter($linhas, fn ($l) => $l['posicao'] <= 3 || $l['usuario_id'] === $usuario->id || ($acima && $l['usuario_id'] === $acima['usuario_id'])));
-        $fim = Carbon::parse($semana)->addWeek();
         $supervisor = $grupo ? Supervisor::withoutGlobalScopes()->find($grupo) : null;
 
         return [
+            'periodo' => $mensal ? 'mes' : 'semana',
             'semana_inicio' => $semana,
-            'fechada' => $qual === 'passada',
-            'fecha_em' => $qual === 'passada' ? null : Fuso::instanteLocal($fim->toDateString(), '00:00', $fuso),
+            'fechada' => $fechada,
+            'fecha_em' => $fechada ? null : Fuso::instanteLocal($fim->toDateString(), '00:00', $fuso),
             'grupo' => $supervisor ? "Equipe de {$supervisor->nome}" : $empresa->nome_fantasia,
-            'minimo_visitas' => ParametrosXp::ligaMinimoVisitas($empresa),
+            'minimo_visitas' => $minimo,
             'participantes' => count($linhas),
             'linhas' => array_map($publico, $visiveis),
             'escondidos' => $completo ? 0 : max(0, count($linhas) - count($visiveis)),

@@ -11,6 +11,8 @@ use App\Models\Usuario;
 use App\Models\Visita;
 use App\Models\XpLancamento;
 use App\Models\XpResumoDiario;
+use App\Support\Xp\ComposicaoXp;
+use App\Support\Xp\ParametrosXp;
 use App\Support\Xp\ReguaXp;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -104,6 +106,48 @@ class Doc88ReguaXpTest extends TestCase
         $this->assertSame(500, $os->fresh()->xp_previsto);
     }
 
+    public function test_pesos_da_empresa_congelam_na_os_e_mudar_depois_nao_reescreve(): void
+    {
+        // Presença 5, completude 50 (o resto igual): a OS nasce com essa composição.
+        Sanctum::actingAs(Usuario::factory()->admin()->create(['empresa_id' => $this->empresa->id]));
+        $this->putJson('/api/parametros/lote', ['alteracoes' => [
+            ['chave' => 'XP_PESO_PRESENCA', 'valor' => '5'],
+            ['chave' => 'XP_PESO_COMPLETUDE', 'valor' => '50'],
+        ]])->assertOk();
+        ParametrosXp::limparCache();
+        $os = $this->os();
+        $this->assertSame(5, $os->xp_composicao['presenca']);
+        $this->assertSame(50, $os->xp_composicao['completude']);
+
+        // Pesos mudam de novo depois: a OS já criada mantém os dela.
+        Sanctum::actingAs(Usuario::factory()->admin()->create(['empresa_id' => $this->empresa->id]));
+        $this->putJson('/api/parametros/lote', ['alteracoes' => [
+            ['chave' => 'XP_PESO_PRESENCA', 'valor' => '15'],
+            ['chave' => 'XP_PESO_COMPLETUDE', 'valor' => '40'],
+        ]])->assertOk();
+        ParametrosXp::limparCache();
+
+        // Metade das obrigatórias: perde metade de 50% de 500 = 125 (no padrão seriam 100).
+        $visita = $this->visitar($os, '12:00', ['obrigatorias_feitas' => 1, 'obrigatorias_total' => 2]);
+        $this->assertSame(125, (int) XpLancamento::where('visita_id', $visita->id)->where('categoria', 'obrigatorias_incompletas')->sum('pontos'));
+        $this->assertSame(500, $this->somaOficial($visita, 'PLANO') + $this->somaOficial($visita, 'PERDA'));
+    }
+
+    public function test_pesos_precisam_somar_100(): void
+    {
+        Sanctum::actingAs(Usuario::factory()->admin()->create(['empresa_id' => $this->empresa->id]));
+        $this->putJson('/api/parametros/lote', ['alteracoes' => [['chave' => 'XP_PESO_ENVIO', 'valor' => '10']]])
+            ->assertStatus(422)
+            ->assertJsonFragment(['Os pesos do XP da visita precisam somar 100% (hoje somam 105%).']);
+
+        // Soma torta gravada por fora (tabela avançada): a OS usa a composição padrão.
+        \App\Models\Parametro::withoutGlobalScopes()->create([
+            'empresa_id' => $this->empresa->id, 'chave' => 'XP_PESO_ENVIO', 'valor' => '30', 'descricao' => 'x', 'ativo' => true,
+        ]);
+        ParametrosXp::limparCache();
+        $this->assertSame(ComposicaoXp::PARTES, $this->os()->xp_composicao);
+    }
+
     public function test_visita_perfeita_ganha_todo_o_xp_da_classe(): void
     {
         $visita = $this->visitar($this->os());
@@ -171,6 +215,12 @@ class Doc88ReguaXpTest extends TestCase
         // Rodar de novo não duplica.
         ReguaXp::fecharDia($this->empresa, '2026-10-20');
         $this->assertSame(500, (int) XpLancamento::where('ordem_servico_id', $os->id)->whereNull('visita_id')->sum('pontos'));
+    }
+
+    public function test_fechar_dia_sem_nenhuma_os_nao_quebra(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-10-26 00:30', 'America/Sao_Paulo'));
+        $this->assertSame(0, ReguaXp::fecharDia($this->empresa, '2026-10-25'));
     }
 
     public function test_os_cancelada_antes_do_congelamento_sai_do_possivel(): void

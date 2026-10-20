@@ -30,6 +30,7 @@ use App\Support\HorarioDoCampo;
 use App\Support\Instante;
 use App\Support\AutorizacaoDoGestor;
 use App\Support\OrdemDoCheckin;
+use App\Support\MixDaVisita;
 use App\Support\RaioCheckin;
 use App\Support\Rastreamento;
 use App\Support\RotaObrigatoria;
@@ -140,6 +141,8 @@ class VisitaController extends Controller
         return response()->json([
             'visita' => new VisitaResource($visita),
             'raio_checkin_metros' => is_finite($raio) ? $raio : null,
+            // Régua do mix (docs/90 §3.2): cópia do mix do dia × registros, calculada na hora.
+            'regua_mix' => MixDaVisita::regua($visita),
             'afastamento' => $afastamento ? [
                 ...$afastamento,
                 'metros' => Rastreamento::afastamentoMetros($visita->empresa),
@@ -455,6 +458,8 @@ class VisitaController extends Controller
 
         // Régua de XP (docs/88): calcula a visita assim que o check-out chega.
         ReguaXp::recalcularVisita($visita);
+        // Régua do mix (docs/90): copia o mix da loja no momento em que o check-out chega.
+        MixDaVisita::gravar($visita);
 
         return response()->json([
             'visita' => new VisitaResource($visita),
@@ -597,6 +602,7 @@ class VisitaController extends Controller
         });
         // Régua de XP (docs/88 §7): intervenção recalcula a visita, com o motivo nos ajustes.
         ReguaXp::recalcularVisita($visita, "Intervenção do gestor: {$motivo}", $request->user()->id);
+        MixDaVisita::gravar($visita);
 
         return response()->json([
             'visita' => new VisitaResource($this->recarregarComIntervencoes($visita)),

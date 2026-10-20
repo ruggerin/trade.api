@@ -5,6 +5,8 @@ namespace App\Http\Requests\Parametro;
 use App\Support\ConfiguracoesEmpresa;
 use App\Support\ParametrosMetadados;
 use App\Support\ParametrosPadrao;
+use App\Support\Xp\ComposicaoXp;
+use App\Support\Xp\ParametrosXp;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Validator;
 
@@ -28,6 +30,25 @@ class LoteParametrosRequest extends FormRequest
             'alteracoes.*.valor' => ['nullable'],
             'alteracoes.*.ativo' => ['nullable', 'boolean'],
         ];
+    }
+
+    /** Os pesos da composição do XP (docs/88 §5.1) somam 100, contando os que não mudaram. */
+    private function validarSomaDosPesos(Validator $validator): void
+    {
+        $empresa = $this->user()->empresa;
+        $porChave = array_flip(ParametrosXp::CHAVES_PESO);
+        $pesos = $empresa ? ParametrosXp::pesosConfigurados($empresa) : ComposicaoXp::PARTES;
+        $mexeu = false;
+        foreach ((array) $this->input('alteracoes', []) as $alteracao) {
+            $chave = $alteracao['chave'] ?? null;
+            if (is_string($chave) && isset($porChave[$chave]) && isset($alteracao['valor']) && is_numeric($alteracao['valor'])) {
+                $pesos[$porChave[$chave]] = (int) $alteracao['valor'];
+                $mexeu = true;
+            }
+        }
+        if ($mexeu && array_sum($pesos) !== 100) {
+            $validator->errors()->add('alteracoes', 'Os pesos do XP da visita precisam somar 100% (hoje somam '.array_sum($pesos).'%).');
+        }
     }
 
     public function after(): array
@@ -68,6 +89,8 @@ class LoteParametrosRequest extends FormRequest
                     $validator->errors()->add("alteracoes.$i.ativo", "{$meta['rotulo']}: use o valor, não o interruptor de ativo.");
                 }
             }
+
+            $this->validarSomaDosPesos($validator);
         }];
     }
 }

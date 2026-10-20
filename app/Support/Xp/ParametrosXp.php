@@ -26,6 +26,12 @@ final class ParametrosXp
         'XP_TOLERANCIA_DURACAO_PERCENTUAL' => '20',
         'XP_TEMPO_MINIMO_PERCENTUAL' => '30',
         'XP_LIGA_MINIMO_VISITAS' => '5',
+        'XP_PESO_PRESENCA' => '15',
+        'XP_PESO_COMPLETUDE' => '40',
+        'XP_PESO_QUALIDADE' => '20',
+        'XP_PESO_PONTUALIDADE' => '10',
+        'XP_PESO_TEMPO' => '10',
+        'XP_PESO_ENVIO' => '5',
         'AVALIACAO_FORMULARIO_HABILITADA' => 'false',
     ];
 
@@ -89,6 +95,39 @@ final class ParametrosXp
     public static function ligaMinimoVisitas(Empresa $empresa): int
     {
         return self::inteiro($empresa, 'XP_LIGA_MINIMO_VISITAS', 0, 100);
+    }
+
+    /** Parte da composição => chave do peso (docs/88 §5.1). */
+    public const CHAVES_PESO = [
+        'presenca' => 'XP_PESO_PRESENCA',
+        'completude' => 'XP_PESO_COMPLETUDE',
+        'qualidade' => 'XP_PESO_QUALIDADE',
+        'pontualidade' => 'XP_PESO_PONTUALIDADE',
+        'tempo' => 'XP_PESO_TEMPO',
+        'envio' => 'XP_PESO_ENVIO',
+    ];
+
+    /**
+     * Pesos configurados (parte => %), sem conferir a soma — a validação do lote usa.
+     *
+     * @return array<string, int>
+     */
+    public static function pesosConfigurados(Empresa $empresa): array
+    {
+        return array_map(fn (string $chave) => self::inteiro($empresa, $chave, 0, 100), self::CHAVES_PESO);
+    }
+
+    /**
+     * Composição do XP da visita da empresa (parte => %). Se a soma não der 100 (linha editada
+     * na tabela avançada, por exemplo), vale a composição padrão — nunca uma régua torta.
+     *
+     * @return array<string, int>
+     */
+    public static function composicao(Empresa $empresa): array
+    {
+        $pesos = self::pesosConfigurados($empresa);
+
+        return ComposicaoXp::valida($pesos) ? $pesos : ComposicaoXp::PARTES;
     }
 
     /** Pra testes e pra quem salvou parâmetro no meio da requisição. */

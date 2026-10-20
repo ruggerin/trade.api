@@ -22,6 +22,10 @@ final class PainelXp
     /** @return array{0: string, 1: string} primeiro e último dia do período */
     public static function periodo(string $dia, string $periodo): array
     {
+        // Mês corrente do dia escolhido — a visão que fecha o resultado da operação.
+        if ($periodo === 'mes') {
+            return [Carbon::parse($dia)->startOfMonth()->toDateString(), Carbon::parse($dia)->endOfMonth()->toDateString()];
+        }
         if ($periodo === 'semana') {
             $inicio = DiaXp::inicioDaSemana($dia);
 
@@ -90,7 +94,7 @@ final class PainelXp
                 $real = (int) $r->sum('realizado');
 
                 return [
-                    'usuario' => ['id' => $u->uuid, 'nome' => $u->nome],
+                    'usuario' => self::pessoa($u),
                     'possivel' => $pos,
                     'realizado' => $real,
                     'aproveitamento' => $pos > 0 ? (int) round($real / $pos * 100) : null,
@@ -135,7 +139,7 @@ final class PainelXp
     {
         $promotores = EquipeXp::promotores($empresa, $supervisorId)->pluck('id');
         $lancamentos = XpLancamento::withoutGlobalScopes()
-            ->with(['classificacoes.motivo', 'classificacoes.planoAcao', 'classificacoes.criadoPor', 'usuario:id,uuid,nome',
+            ->with(['classificacoes.motivo', 'classificacoes.planoAcao', 'classificacoes.criadoPor', 'usuario:id,uuid,nome,foto_path,updated_at',
                 'ordemServico.pontoVenda:id,uuid,fantasia', 'ordemServico.classe:id,nome,icone,cor', 'ordemServico.motivoCancelamento', 'visita:id,uuid,inicio_data'])
             ->where('empresa_id', $empresa->id)
             ->whereIn('usuario_id', $promotores)
@@ -160,7 +164,7 @@ final class PainelXp
                     'rotulo' => ComposicaoXp::ROTULOS_PERDA[$primeiro->categoria] ?? $primeiro->categoria,
                     'xp' => (int) $grupo->sum('pontos'),
                     'dia' => $primeiro->competencia->toDateString(),
-                    'promotor' => $primeiro->usuario ? ['id' => $primeiro->usuario->uuid, 'nome' => $primeiro->usuario->nome] : null,
+                    'promotor' => $primeiro->usuario ? self::pessoa($primeiro->usuario) : null,
                     'loja' => $os?->pontoVenda ? ['id' => $os->pontoVenda->uuid, 'fantasia' => $os->pontoVenda->fantasia] : null,
                     'classe' => $os?->classe ? ['nome' => $os->classe->nome, 'icone' => $os->classe->icone, 'cor' => $os->classe->cor] : null,
                     'ordem_servico_id' => $os?->uuid,
@@ -198,6 +202,106 @@ final class PainelXp
         }
 
         return $linhas;
+    }
+
+    /** Quantos períodos o comparativo mostra em cada escala. */
+    public const COMPARATIVO_PERIODOS = ['mes' => 6, 'semana' => 8, 'dia' => 14];
+
+    /**
+     * Comparativo período a período (mês, semana ou dia): os totais de cada período, a variação
+     * contra o anterior e o aproveitamento de cada promotor (quem melhorou, quem caiu). Com
+     * `$usuarioId`, só aquele promotor. O período corrente aparece como "em andamento".
+     *
+     * @return array{granularidade: string, periodos: list<array<string, mixed>>, promotores: list<array<string, mixed>>}
+     */
+    public static function comparativo(Empresa $empresa, ?int $supervisorId, string $granularidade = 'mes', ?int $usuarioId = null): array
+    {
+        $granularidade = array_key_exists($granularidade, self::COMPARATIVO_PERIODOS) ? $granularidade : 'mes';
+        $promotores = EquipeXp::promotores($empresa, $supervisorId)
+            ->when($usuarioId, fn ($c) => $c->where('id', $usuarioId)->values());
+        $hoje = now(DiaXp::fusoDa($empresa))->startOfDay();
+
+        // Início de cada período, do mais antigo pro atual.
+        $quantidade = self::COMPARATIVO_PERIODOS[$granularidade];
+        $inicioDo = fn (Carbon $d) => match ($granularidade) {
+            'mes' => $d->copy()->startOfMonth(),
+            'semana' => $d->copy()->startOfWeek(Carbon::MONDAY),
+            default => $d->copy()->startOfDay(),
+        };
+        $passo = fn (Carbon $d, int $n) => match ($granularidade) {
+            'mes' => $d->copy()->subMonthsNoOverflow($n),
+            'semana' => $d->copy()->subWeeks($n),
+            default => $d->copy()->subDays($n),
+        };
+        $atual = $inicioDo($hoje);
+        $inicios = [];
+        for ($n = $quantidade - 1; $n >= 0; $n--) {
+            $inicios[] = $passo($atual, $n);
+        }
+        $fimJanela = match ($granularidade) {
+            'mes' => $atual->copy()->endOfMonth(),
+            'semana' => $atual->copy()->addDays(6),
+            default => $atual->copy(),
+        };
+        $chaveDe = fn (Carbon $dia) => $inicioDo($dia)->toDateString();
+
+        $resumos = XpResumoDiario::withoutGlobalScopes()
+            ->whereIn('usuario_id', $promotores->pluck('id'))
+            ->whereBetween('dia', [$inicios[0]->toDateString(), $fimJanela->toDateString()])
+            ->get();
+        $porPeriodo = $resumos->groupBy(fn (XpResumoDiario $r) => $chaveDe($r->dia));
+
+        $pct = fn (int $real, int $pos) => $pos > 0 ? (int) round($real / $pos * 100) : null;
+        $periodos = [];
+        $anterior = null;
+        foreach ($inicios as $idx => $inicio) {
+            $chave = $inicio->toDateString();
+            $doPeriodo = $porPeriodo->get($chave, collect());
+            $pos = (int) $doPeriodo->sum('possivel');
+            $real = (int) $doPeriodo->sum('realizado');
+            $linha = [
+                'inicio' => $chave,
+                'possivel' => $pos,
+                'realizado' => $real,
+                'aproveitamento' => $pct($real, $pos),
+                'iniciativa' => (int) $doPeriodo->sum('iniciativa'),
+                'perdas' => (int) $doPeriodo->sum(fn (XpResumoDiario $r) => array_sum(array_filter($r->perdas ?? [], fn ($v) => $v > 0))),
+                'visitas_previstas' => (int) $doPeriodo->sum('visitas_previstas'),
+                'visitas_feitas' => (int) $doPeriodo->sum('visitas_feitas'),
+                'em_andamento' => $idx === count($inicios) - 1,
+            ];
+            // Variação em pontos percentuais do aproveitamento e em % da iniciativa.
+            $linha['variacao_aproveitamento'] = $anterior && $anterior['aproveitamento'] !== null && $linha['aproveitamento'] !== null
+                ? $linha['aproveitamento'] - $anterior['aproveitamento'] : null;
+            $linha['variacao_iniciativa'] = $anterior && $anterior['iniciativa'] > 0
+                ? (int) round(($linha['iniciativa'] - $anterior['iniciativa']) / $anterior['iniciativa'] * 100) : null;
+            $periodos[] = $linha;
+            $anterior = $linha;
+        }
+
+        $porPromotor = [];
+        $todos = $resumos->groupBy('usuario_id');
+        foreach ($promotores as $u) {
+            $deles = $todos->get($u->id);
+            if (! $deles) {
+                continue;
+            }
+            $agrupado = $deles->groupBy(fn (XpResumoDiario $r) => $chaveDe($r->dia));
+            $porPromotor[] = [
+                'usuario' => self::pessoa($u),
+                'periodos' => array_map(function (array $per) use ($agrupado, $pct) {
+                    $r = $agrupado->get($per['inicio'], collect());
+
+                    return [
+                        'inicio' => $per['inicio'],
+                        'aproveitamento' => $pct((int) $r->sum('realizado'), (int) $r->sum('possivel')),
+                        'xp' => (int) $r->sum('realizado') + (int) $r->sum('iniciativa'),
+                    ];
+                }, $periodos),
+            ];
+        }
+
+        return ['granularidade' => $granularidade, 'periodos' => $periodos, 'promotores' => $porPromotor];
     }
 
     /**
@@ -290,6 +394,16 @@ final class PainelXp
             'total_registros' => array_sum(array_column($porFormulario, 'registros')),
             'total_viraram_acao' => array_sum(array_column($porFormulario, 'viraram_acao')),
             'planos_de_ocorrencias' => $planosDeOcorrencia,
+        ];
+    }
+
+    /** Promotor com a foto do cadastro (mesma rota autenticada do UsuarioResource). */
+    public static function pessoa(Usuario $u): array
+    {
+        return [
+            'id' => $u->uuid,
+            'nome' => $u->nome,
+            'foto_url' => $u->foto_path ? url("/api/usuarios/{$u->uuid}/foto").'?v='.$u->updated_at?->timestamp : null,
         ];
     }
 

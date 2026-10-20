@@ -141,6 +141,12 @@ class Doc88ReguaXpFasesTest extends Doc88ReguaXpTest
         $this->assertSame(45, $regua['kpis']['aproveitamento']);
         $this->assertSame('visita_nao_realizada', $regua['perdas'][0]['categoria']);
         $this->assertTrue($regua['modo_previa']);
+        $this->assertArrayHasKey('foto_url', $regua['promotores'][0]['usuario']);
+
+        // Visão mensal (o fechamento da operação): o mês inteiro do dia escolhido.
+        $mes = $this->getJson('/api/xp/regua?dia=2026-10-20&periodo=mes')->assertOk()->json('regua');
+        $this->assertSame(['tipo' => 'mes', 'inicio' => '2026-10-01', 'fim' => '2026-10-31'], $mes['periodo']);
+        $this->assertSame(1000, $mes['kpis']['possivel']);
 
         $ocorrencia = collect($this->getJson('/api/xp/ocorrencias?dia=2026-10-20')->assertOk()->json('ocorrencias'))
             ->firstWhere('categoria', 'visita_nao_realizada');
@@ -260,6 +266,47 @@ class Doc88ReguaXpFasesTest extends Doc88ReguaXpTest
         $this->assertSame(2, XpLigaSemanal::where('supervisor_id', $supervisor->id)->count());
         Carbon::setTestNow(Carbon::parse('2026-10-27 10:00', 'America/Sao_Paulo'));
         $this->getJson('/api/xp/ranking?semana=passada')->assertOk()->assertJsonPath('ranking.fechada', true)->assertJsonPath('ranking.eu.xp', 500);
+    }
+
+    public function test_liga_mensal_e_comparativo_mes_a_mes(): void
+    {
+        $this->parametro('XP_VISIVEL_PROMOTOR', 'true');
+        $this->parametro('XP_LIGA_MINIMO_VISITAS', '1'); // mínimo mensal = 4
+        $colega = Usuario::factory()->promotor()->create(['empresa_id' => $this->empresa->id, 'nome' => 'Ana']);
+        foreach (range(1, 4) as $_) {
+            $this->os(['usuario_id' => $colega->id]);
+        }
+        $this->visitar($this->os());
+        $this->os();
+        $this->os();
+        $this->os();
+
+        Sanctum::actingAs($this->promotor);
+        $mes = $this->getJson('/api/xp/ranking?semana=mes')->assertOk()->json('ranking');
+        $this->assertSame('mes', $mes['periodo']);
+        $this->assertSame('2026-10-01', $mes['semana_inicio']);
+        $this->assertSame(4, $mes['minimo_visitas']);
+        $this->assertSame(2, $mes['participantes']);
+        $this->assertSame(1, $mes['eu']['posicao']);
+        $this->getJson('/api/xp/ranking?semana=mes_passado')->assertOk()->assertJsonPath('ranking.fechada', true);
+
+        $this->admin();
+        $comparativo = $this->getJson('/api/xp/evolucao?granularidade=mes')->assertOk()->json('comparativo');
+        $this->assertCount(6, $comparativo['periodos']);
+        $outubro = end($comparativo['periodos']);
+        $this->assertSame('2026-10-01', $outubro['inicio']);
+        $this->assertTrue($outubro['em_andamento']);
+        $this->assertSame(500, $outubro['realizado']);
+        // A colega ainda não tem resumo (nasce no fechamento do dia ou no check-out dela).
+        $this->assertCount(1, $comparativo['promotores']);
+
+        // Semana e dia, e o filtro por promotor.
+        $this->assertCount(8, $this->getJson('/api/xp/evolucao?granularidade=semana')->assertOk()->json('comparativo.periodos'));
+        $dias = $this->getJson("/api/xp/evolucao?granularidade=dia&usuario_uuid={$this->promotor->uuid}")->assertOk()->json('comparativo');
+        $this->assertCount(14, $dias['periodos']);
+        $this->assertSame('2026-10-20', end($dias['periodos'])['inicio']);
+        $this->assertCount(1, $dias['promotores']);
+        $this->assertSame(500, end($dias['periodos'])['realizado']);
     }
 
     // ---- Fase 6: planejamento e valor gerado ----

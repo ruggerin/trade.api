@@ -37,7 +37,8 @@ final class ResumoXp
     /** @return list<int> promotores com OS ou lançamento no dia */
     public static function usuariosDoDia(Empresa $empresa, string $dia): array
     {
-        $daOs = self::osDoDia($empresa, $dia)->map(fn (OrdemServico $os) => self::donoDaOs($os))->filter();
+        // toBase(): ids, não models — a coleção Eloquent vazia (dia sem OS) não aceita o merge com ids.
+        $daOs = self::osDoDia($empresa, $dia)->toBase()->map(fn (OrdemServico $os) => self::donoDaOs($os))->filter();
         $dosLancamentos = XpLancamento::withoutGlobalScopes()
             ->where('empresa_id', $empresa->id)->whereDate('competencia', $dia)->distinct()->pluck('usuario_id');
 

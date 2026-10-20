@@ -70,7 +70,7 @@ final class CalculoVisitaXp
         $fusoEmpresa = Fuso::daEmpresa($this->empresa);
         $this->xpBase = (int) $os->xp_previsto;
         $this->dia = DiaXp::daOs($os, $fusoEmpresa);
-        $maximos = ComposicaoXp::maximos($this->xpBase);
+        $maximos = ComposicaoXp::maximos($this->xpBase, $os->xp_composicao);
 
         $inicio = $this->visita->inicio_data;
         $fim = $this->visita->fim_data;

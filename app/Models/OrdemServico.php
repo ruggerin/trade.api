@@ -7,6 +7,7 @@ use App\Enums\PrioridadeVisita;
 use App\Enums\StatusOrdemServico;
 use App\Models\Concerns\BelongsToEmpresa;
 use App\Models\Concerns\HasUuid;
+use App\Support\Xp\ParametrosXp;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -53,6 +54,7 @@ class OrdemServico extends Model
         // Régua de XP (docs/88 §6): congelados quando a OS nasce.
         'classe_id',
         'xp_previsto',
+        'xp_composicao',
         'duracao_prevista_minutos',
     ];
 
@@ -69,13 +71,14 @@ class OrdemServico extends Model
             'prazo_fim_proposto' => 'datetime',
             'cancelada_em' => 'datetime',
             'xp_previsto' => 'integer',
+            'xp_composicao' => 'array',
             'duracao_prevista_minutos' => 'integer',
         ];
     }
 
     /**
-     * Congela a classe da loja, o XP possível e a duração prevista no momento em que a OS nasce
-     * (docs/88 §6) — vale pra toda origem (agenda, campanha, direcionamento, contrato, manual,
+     * Congela a classe da loja, o XP possível, a composição (peso de cada parte) e a duração
+     * prevista no momento em que a OS nasce (docs/88 §6) — vale pra toda origem (agenda, campanha, direcionamento, contrato, manual,
      * promotor). Mudar a classe da loja depois não reescreve o passado. Sem classe cadastrada,
      * fica nulo e a régua ignora a OS.
      */
@@ -92,6 +95,8 @@ class OrdemServico extends Model
             }
             $os->classe_id = $classe->id;
             $os->xp_previsto = $classe->xp_base;
+            $empresa = Empresa::find($os->empresa_id ?? $pontoVenda->empresa_id);
+            $os->xp_composicao = $empresa ? ParametrosXp::composicao($empresa) : null;
             $os->duracao_prevista_minutos ??= $classe->duracao_padrao_minutos;
         });
     }

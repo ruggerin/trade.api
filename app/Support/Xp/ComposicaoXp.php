@@ -3,13 +3,13 @@
 namespace App\Support\Xp;
 
 /**
- * Como o XP de uma visita se divide (docs/88 §5.1) e o nome de cada parte e de cada perda. A
- * composição é fixa na v1, igual pra todas as empresas (dá pra comparar uma com a outra); quem
- * dá flexibilidade é a classe da loja.
+ * Como o XP de uma visita se divide (docs/88 §5.1) e o nome de cada parte e de cada perda.
+ * `PARTES` é o padrão; cada empresa pode mudar os pesos nos parâmetros (`XP_PESO_*`), e a OS
+ * congela a composição em vigor quando nasce (`ordens_servico.xp_composicao`).
  */
 final class ComposicaoXp
 {
-    /** Parte => % do xp_base. "Pontualidade e tempo" (20%) vem em duas metades. */
+    /** Composição padrão: parte => % do xp_base. "Pontualidade e tempo" (20%) vem em duas metades. */
     public const PARTES = [
         'presenca' => 15,
         'completude' => 40,
@@ -62,18 +62,32 @@ final class ComposicaoXp
 
     /**
      * Pontos máximos de cada parte. Arredonda cada uma e joga a sobra na completude, pra soma
-     * bater exatamente com o xp_base.
+     * bater exatamente com o xp_base. Sem composição válida (OS anterior aos pesos
+     * configuráveis), a padrão.
      *
+     * @param  array<string, int>|null  $composicao  parte => %
      * @return array<string, int>
      */
-    public static function maximos(int $xpBase): array
+    public static function maximos(int $xpBase, ?array $composicao = null): array
     {
+        $composicao = self::valida($composicao) ? $composicao : self::PARTES;
         $maximos = [];
-        foreach (self::PARTES as $parte => $percentual) {
-            $maximos[$parte] = (int) round($xpBase * $percentual / 100);
+        foreach (array_keys(self::PARTES) as $parte) {
+            $maximos[$parte] = (int) round($xpBase * (int) $composicao[$parte] / 100);
         }
         $maximos['completude'] += $xpBase - array_sum($maximos);
 
         return $maximos;
+    }
+
+    /** As 6 partes, cada uma de 0 a 100, somando 100. */
+    public static function valida(?array $composicao): bool
+    {
+        if ($composicao === null || array_diff_key(self::PARTES, $composicao) !== []) {
+            return false;
+        }
+        $pesos = array_map('intval', array_intersect_key($composicao, self::PARTES));
+
+        return min($pesos) >= 0 && max($pesos) <= 100 && array_sum($pesos) === 100;
     }
 }
