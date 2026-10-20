@@ -12,7 +12,8 @@ use Illuminate\Support\Facades\DB;
 /**
  * Importação de imagens de produtos pelo nome do arquivo (docs/89-IMPORTACAO-DE-IMAGENS-DE-PRODUTOS.md).
  * O nome (sem extensão) é o código de barras OU o código externo do produto — uma chave por lote,
- * escolhida na tela (decisão 1). Duas etapas: `resolver` só com os nomes (prévia, sem arquivo) e
+ * escolhida na tela (decisão 1). O código pode vir seguido da descrição depois de um traço
+ * (`19 - ONION CEBOLA 6X200G.webp` → `19`), ver `codigosDoNome`. Duas etapas: `resolver` só com os nomes (prévia, sem arquivo) e
  * `importar` com os arquivos, em lotes pequenos, revalidando cada um (a prévia pode estar velha).
  * Diferente das importações de CSV, não é tudo ou nada: cada arquivo é independente (decisão 3).
  */
@@ -32,12 +33,23 @@ class ImportacaoImagensProdutos
      */
     public static function resolver(Empresa $empresa, string $chave, array $nomes, bool $substituir): array
     {
-        $codigos = array_map(fn (string $nome) => self::codigoDoNome($nome, $chave), $nomes);
-        $candidatos = self::candidatos($empresa, $chave, array_values(array_filter($codigos)));
+        $tentativas = array_map(fn (string $nome) => self::codigosDoNome($nome, $chave), $nomes);
+        $candidatos = self::candidatos($empresa, $chave, array_values(array_unique(array_merge(...$tentativas ?: [[]]))));
 
         $resultados = [];
         foreach ($nomes as $i => $nome) {
-            $resultados[] = ['nome' => $nome, ...self::situacao($codigos[$i], $nome, $chave, $candidatos, $substituir)];
+            // Primeira tentativa que acha produto; sem nenhuma, vale o resultado da primeira.
+            $resultado = null;
+            foreach ($tentativas[$i] ?: [null] as $codigo) {
+                $situacao = self::situacao($codigo, $nome, $chave, $candidatos, $substituir);
+                $resultado ??= $situacao;
+                if ($situacao['situacao'] !== 'nao_encontrado') {
+                    $resultado = $situacao;
+
+                    break;
+                }
+            }
+            $resultados[] = ['nome' => $nome, ...$resultado];
         }
 
         // Dois arquivos pro mesmo produto (1001.jpg e 1001.png): os dois ficam de fora — não dá
@@ -84,17 +96,35 @@ class ImportacaoImagensProdutos
     /** `7891000100103.JPG` → `7891000100103`; null se a extensão não é aceita ou o código fica vazio. */
     public static function codigoDoNome(string $nome, string $chave): ?string
     {
+        return self::codigosDoNome($nome, $chave)[0] ?? null;
+    }
+
+    /**
+     * Os códigos a tentar, em ordem. O cliente às vezes manda o código seguido da descrição depois
+     * de um traço (`19 - ONION CEBOLA 6X200G.webp`):
+     * - código de barras: com traço, só o que vem antes dele (os dígitos da descrição, "6X200G",
+     *   nunca entram no código); sem traço, os dígitos do nome inteiro, como antes;
+     * - código externo: primeiro o nome inteiro (há código com traço, "AB-12"), depois o que vem
+     *   antes do primeiro traço.
+     *
+     * @return list<string> vazia se a extensão não é aceita ou não sobra código
+     */
+    public static function codigosDoNome(string $nome, string $chave): array
+    {
         $base = basename(str_replace('\\', '/', trim($nome)));
         $ponto = strrpos($base, '.');
         if ($ponto === false || ! in_array(strtolower(substr($base, $ponto + 1)), ImagemProduto::EXTENSOES, true)) {
-            return null;
+            return [];
         }
-        $codigo = trim(substr($base, 0, $ponto));
-        if ($chave === 'codigo_barras') {
-            $codigo = preg_replace('/\D/', '', $codigo);
-        }
+        $inteiro = trim(substr($base, 0, $ponto));
+        $traco = strpos($inteiro, '-');
+        $antesDoTraco = $traco === false ? null : trim(substr($inteiro, 0, $traco));
 
-        return $codigo === '' ? null : $codigo;
+        $codigos = $chave === 'codigo_barras'
+            ? [preg_replace('/\D/', '', $antesDoTraco ?? $inteiro)]
+            : [$inteiro, $antesDoTraco];
+
+        return array_values(array_unique(array_filter($codigos, fn ($c) => $c !== null && $c !== '')));
     }
 
     private static function extensaoAceita(string $nome): bool
