@@ -97,6 +97,26 @@ class Doc89ImportacaoImagensProdutosTest extends TestCase
         $this->simular('codigo_externo', ['999.jpg'])->assertJsonPath('resultados.0.situacao', 'nao_encontrado');
     }
 
+    public function test_codigo_seguido_da_descricao_depois_do_traco(): void
+    {
+        $cebola = $this->produto(['codigo_externo' => '19', 'codigo_barras' => '7891000000019']);
+        $traco = $this->produto(['codigo_externo' => 'AB-12']);
+        $this->produto(['codigo_externo' => 'AB']);
+        // Dígitos da descrição ("6X200G" → 6200) não podem virar código de barras.
+        $this->produto(['codigo_barras' => '196200']);
+
+        $this->simular('codigo_externo', ['19 - ONION CEBOLA 6X200G.webp', 'AB-12.jpg'])
+            ->assertJsonPath('resultados.0.situacao', 'ok')
+            ->assertJsonPath('resultados.0.produto.id', $cebola->uuid)
+            // Código externo com traço: o nome inteiro vem primeiro.
+            ->assertJsonPath('resultados.1.produto.id', $traco->uuid);
+
+        $this->simular('codigo_barras', ['7891000000019 - ONION CEBOLA 6X200G.webp', '19 - ONION CEBOLA 6X200G.webp'])
+            ->assertJsonPath('resultados.0.situacao', 'ok')
+            ->assertJsonPath('resultados.0.produto.id', $cebola->uuid)
+            ->assertJsonPath('resultados.1.situacao', 'nao_encontrado');
+    }
+
     public function test_situacoes_da_previa(): void
     {
         $this->produto(['codigo_externo' => 'DUP']);
