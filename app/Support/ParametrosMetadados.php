@@ -121,6 +121,25 @@ final class ParametrosMetadados
             'ajuda' => 'Tempo longe da loja para contar como afastamento; um salto de GPS de um instante não conta.',
             'depende_de' => ['chave' => 'RASTREAMENTO_INTERVALO_SEGUNDOS', 'motivo' => 'Ligue o rastreamento para ajustar.'],
         ],
+        'RASTREAMENTO_ROTA_RECORTE' => [
+            'area' => 'rastreamento', 'rotulo' => 'A Rota do dia mostra', 'tipo' => 'lista', 'opcoes' => [
+                'DIA_INTEIRO' => 'O dia inteiro, de 00:00 a 23:59',
+                'EXPEDIENTE' => 'Só o expediente; o resto fica recolhido e o gestor abre se quiser',
+                'SO_EXPEDIENTE' => 'Só o expediente; fora dele nunca aparece',
+            ],
+            'ajuda' => 'O expediente é o horário da jornada (início e fim) configurado acima.',
+            'depende_de' => ['chave' => 'RASTREAMENTO_INTERVALO_SEGUNDOS', 'motivo' => 'Ligue o rastreamento para ajustar.'],
+        ],
+        'RASTREAMENTO_DESVIO_RAIO_METROS' => [
+            'area' => 'rastreamento', 'rotulo' => 'Fora da área do roteiro: distância', 'tipo' => 'numero_ou_zero', 'unidade' => 'm', 'min' => 500, 'max' => 50000,
+            'ajuda' => '0 desliga. Longe disso de todas as lojas do dia (as da agenda e as visitadas), no expediente, o trajeto aparece como fora da área do roteiro.',
+            'depende_de' => ['chave' => 'RASTREAMENTO_INTERVALO_SEGUNDOS', 'motivo' => 'Ligue o rastreamento para ajustar.'],
+        ],
+        'RASTREAMENTO_DESVIO_MINUTOS' => [
+            'area' => 'rastreamento', 'rotulo' => 'Fora da área do roteiro: por pelo menos', 'tipo' => 'numero', 'unidade' => 'min', 'min' => 1, 'max' => 240,
+            'ajuda' => 'Tempo seguido fora da área para contar como desvio.',
+            'depende_de' => ['chave' => 'RASTREAMENTO_DESVIO_RAIO_METROS', 'motivo' => 'Defina a distância para ajustar.'],
+        ],
 
         'FATURAMENTO_HABILITADO' => [
             'area' => 'pedidos', 'rotulo' => 'Mostrar faturamento e Esforço × Retorno', 'tipo' => 'bool',
