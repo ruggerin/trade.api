@@ -129,6 +129,32 @@ class Rastreamento
         return is_numeric($valor) && (int) $valor >= 1 ? (int) $valor : 10;
     }
 
+    public const RECORTES_ROTA = ['DIA_INTEIRO', 'EXPEDIENTE', 'SO_EXPEDIENTE'];
+
+    /** Rota do dia (docs/93): o que a tela mostra — default DIA_INTEIRO (comportamento de antes). */
+    public static function rotaRecorte(Empresa $empresa): string
+    {
+        $valor = strtoupper(trim((string) self::valor($empresa, 'RASTREAMENTO_ROTA_RECORTE')));
+
+        return in_array($valor, self::RECORTES_ROTA, true) ? $valor : 'DIA_INTEIRO';
+    }
+
+    /** Rota do dia (docs/93): raio da área do roteiro em metros — 0 (default) = não marca desvio. */
+    public static function desvioRaioMetros(Empresa $empresa): int
+    {
+        $valor = self::valor($empresa, 'RASTREAMENTO_DESVIO_RAIO_METROS');
+
+        return is_numeric($valor) ? max(0, (int) $valor) : 0;
+    }
+
+    /** Rota do dia (docs/93): minutos seguidos fora da área pra contar — default 10. */
+    public static function desvioMinutos(Empresa $empresa): int
+    {
+        $valor = self::valor($empresa, 'RASTREAMENTO_DESVIO_MINUTOS');
+
+        return is_numeric($valor) && (int) $valor >= 1 ? (int) $valor : 10;
+    }
+
     /** Valor de um parâmetro ATIVO da empresa, ou null se ausente/inativo. */
     private static function valor(Empresa $empresa, string $chave): ?string
     {
