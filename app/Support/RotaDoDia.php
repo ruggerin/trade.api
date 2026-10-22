@@ -2,7 +2,10 @@
 
 namespace App\Support;
 
+use App\Enums\StatusOrdemServico;
 use App\Enums\StatusVisita;
+use App\Models\Empresa;
+use App\Models\OrdemServico;
 use App\Models\PontoVenda;
 use App\Models\Usuario;
 use App\Models\Visita;
@@ -14,6 +17,9 @@ use Illuminate\Support\Facades\DB;
  * Monta a Rota do dia de um promotor — docs/48-ROTA-DO-DIA.md §4.3: pontos do histórico, visitas
  * (os pontos numerados), paradas fora de loja, buracos sem sinal, a linha seguindo as ruas (§4.4,
  * com cache em `rotas_dia`) e o resumo do dia.
+ *
+ * docs/93: recorte no expediente (RASTREAMENTO_ROTA_RECORTE), deslocamentos com horário e bairros,
+ * e trechos fora da área do roteiro (longe de todas as lojas do dia).
  */
 final class RotaDoDia
 {
@@ -26,6 +32,12 @@ final class RotaDoDia
     /** Folga nas bordas da visita (check-in um pouco depois de chegar, checkout antes de sair). */
     private const FOLGA_VISITA_MINUTOS = 5;
 
+    /** Deslocamento mais curto que isso é ruído do GPS (ou a volta no estacionamento) — não entra. */
+    private const DESLOCAMENTO_MINIMO_METROS = 500;
+
+    /** Pontos amostrados por trecho pra descobrir os bairros (o primeiro e o último sempre entram). */
+    private const AMOSTRAS_BAIRRO = 6;
+
     /**
      * `$dia` no fuso da empresa (docs/50 §4.3): o dia vai da meia-noite à meia-noite desse fuso.
      * O recorte vira UTC — é como o instante está no banco, independente do fuso do servidor.
@@ -34,11 +46,17 @@ final class RotaDoDia
     {
         $empresa = $promotor->empresa;
         [$inicioDia, $fimDia] = Fuso::intervaloDoDia($dia->toDateString(), $dia->tzName);
+        $recorte = Rastreamento::rotaRecorte($empresa);
+        $expediente = self::expediente($empresa, $dia);
+        $recortado = $recorte !== 'DIA_INTEIRO';
+
+        // SO_EXPEDIENTE: fora do horário nem sai do banco (docs/93 §3).
+        [$deHistorico, $ateHistorico] = $recorte === 'SO_EXPEDIENTE' ? [$expediente['inicio'], $expediente['fim']] : [$inicioDia, $fimDia];
 
         /** @var list<array{lat: float, lng: float, em: Carbon}> $pontos */
         $pontos = DB::table('localizacoes_historico')
             ->where('usuario_id', $promotor->id)
-            ->whereBetween('capturado_em', [$inicioDia, $fimDia])
+            ->whereBetween('capturado_em', [$deHistorico, $ateHistorico])
             ->orderBy('capturado_em')
             ->get(['latitude', 'longitude', 'capturado_em'])
             ->map(fn ($p) => ['lat' => (float) $p->latitude, 'lng' => (float) $p->longitude, 'em' => Carbon::parse($p->capturado_em)])
@@ -53,9 +71,12 @@ final class RotaDoDia
             ->get();
 
         $tolerancia = Rastreamento::toleranciaSemSinalMinutos($empresa);
+        $foraDoExpediente = fn (Carbon $em) => $em->lt($expediente['inicio']) || $em->gt($expediente['fim']);
 
-        // Trechos contínuos, separados onde ficou tempo demais sem posição chegar.
+        // Trechos contínuos, separados onde ficou tempo demais sem posição chegar — e, com recorte,
+        // também na entrada/saída do expediente, pra tela poder esconder o lado de fora.
         $segmentos = [];
+        $segmentosFora = [];
         $semSinal = [];
         $atual = [];
         foreach ($pontos as $i => $p) {
@@ -69,22 +90,29 @@ final class RotaDoDia
                     'ate' => ['latitude' => $p['lat'], 'longitude' => $p['lng']],
                 ];
                 $segmentos[] = $atual;
+                $segmentosFora[] = $recortado && $foraDoExpediente($atual[0]['em']);
                 $atual = [];
+            } elseif ($anterior && $recortado && $foraDoExpediente($anterior['em']) !== $foraDoExpediente($p['em'])) {
+                $segmentos[] = $atual;
+                $segmentosFora[] = $foraDoExpediente($atual[0]['em']);
+                $atual = [$anterior]; // repete o ponto da virada: a linha não fica com buraco
             }
             $atual[] = $p;
         }
         if ($atual) {
             $segmentos[] = $atual;
+            $segmentosFora[] = $recortado && $foraDoExpediente($atual[count($atual) - 1]['em']);
         }
 
         $paradas = self::paradas($pontos, $visitas, $tolerancia, Rastreamento::paradaMinutos($empresa), $promotor->empresa_id);
         ['linhas' => $linhas, 'aproximada' => $aproximada] = self::linhas($promotor, $dia, $segmentos);
 
         $distancia = 0.0;
-        foreach ($segmentos as $segmento) {
-            for ($i = 1; $i < count($segmento); $i++) {
-                $distancia += Haversine::metros($segmento[$i - 1]['lat'], $segmento[$i - 1]['lng'], $segmento[$i]['lat'], $segmento[$i]['lng']);
+        foreach ($segmentos as $s => $segmento) {
+            if ($recortado && $segmentosFora[$s]) {
+                continue;
             }
+            $distancia += self::metros($segmento);
         }
 
         $visitasFormatadas = $visitas->values()->map(function (Visita $v, int $i) use ($pontos) {
@@ -112,6 +140,15 @@ final class RotaDoDia
             ];
         });
 
+        $raioDesvio = Rastreamento::desvioRaioMetros($empresa);
+        $lojasRoteiro = $raioDesvio > 0 ? self::lojasDoRoteiro($promotor, $dia, $visitas) : [];
+        $deslocamentos = self::deslocamentos($pontos, $visitas, $paradas, $tolerancia, $recortado ? $foraDoExpediente : null);
+        $desvios = self::desvios($pontos, $visitas, $lojasRoteiro, $raioDesvio, Rastreamento::desvioMinutos($empresa), $tolerancia, $foraDoExpediente);
+        self::preencherBairros($deslocamentos, $desvios, $paradas);
+
+        // Com recorte, o resumo é só do expediente; o que sobrou fora vira um resumo à parte.
+        $janela = $recortado ? [$expediente['inicio'], $expediente['fim']] : [$inicioDia, $fimDia];
+
         return [
             'data' => $dia->toDateString(),
             'parametros' => [
@@ -119,25 +156,385 @@ final class RotaDoDia
                 'afastamento_metros' => Rastreamento::afastamentoMetros($empresa),
                 'afastamento_minutos' => Rastreamento::afastamentoMinutos($empresa),
                 'tolerancia_sem_sinal_minutos' => $tolerancia,
+                'desvio_raio_metros' => $raioDesvio,
+                'desvio_minutos' => Rastreamento::desvioMinutos($empresa),
+            ],
+            'expediente' => [
+                'recorte' => $recorte,
+                'inicio' => $expediente['inicio']->toIso8601String(),
+                'fim' => $expediente['fim']->toIso8601String(),
             ],
             'pontos' => array_map(fn ($p) => ['latitude' => $p['lat'], 'longitude' => $p['lng'], 'em' => $p['em']->toIso8601String()], $pontos),
             'linhas' => $linhas,
+            // Paralelo a `linhas`: true = trecho fora do expediente (só existe com recorte EXPEDIENTE).
+            'linhas_fora_expediente' => $segmentos ? array_map(fn ($s) => $recortado && $s, $segmentosFora) : [],
             'aproximada' => $aproximada,
             'sem_sinal' => $semSinal,
             'visitas' => $visitasFormatadas,
             'paradas' => $paradas,
+            'deslocamentos' => $deslocamentos,
+            'desvios' => $desvios,
+            'area_roteiro' => [
+                'raio_metros' => $raioDesvio,
+                'lojas' => $lojasRoteiro,
+            ],
             'resumo' => [
                 'visitas' => $visitasFormatadas->count(),
                 // Tempo em loja honesto (docs/49 §4): desconta o tempo fora durante as visitas.
                 'tempo_em_loja_minutos' => max(0, (int) $visitasFormatadas->sum('minutos') - (int) $visitasFormatadas->sum('minutos_fora')),
                 'fora_da_loja_minutos' => (int) $visitasFormatadas->sum('minutos_fora'),
                 'distancia_km' => round($distancia / 1000, 1),
-                'parado_fora_minutos' => (int) collect($paradas)->sum('minutos'),
-                'sem_sinal_minutos' => (int) collect($semSinal)->sum('minutos'),
+                'parado_fora_minutos' => self::minutosNaJanela($paradas, ...$janela),
+                'sem_sinal_minutos' => self::minutosNaJanela($semSinal, ...$janela),
+                'fora_da_area_minutos' => (int) collect($desvios)->sum('minutos'),
                 'primeira_posicao_em' => $pontos ? $pontos[0]['em']->toIso8601String() : null,
                 'ultima_posicao_em' => $pontos ? $pontos[count($pontos) - 1]['em']->toIso8601String() : null,
             ],
+            'fora_do_expediente' => $recorte === 'EXPEDIENTE' ? [
+                'antes' => self::resumoFora($segmentos, $segmentosFora, $paradas, $semSinal, $inicioDia, $expediente['inicio']),
+                'depois' => self::resumoFora($segmentos, $segmentosFora, $paradas, $semSinal, $expediente['fim'], $fimDia),
+            ] : null,
         ];
+    }
+
+    /**
+     * Expediente do dia em UTC. Hoje é o horário fixo da empresa (JORNADA_INICIO/FIM); quando o
+     * controle de jornada (doc 81) existir, entra aqui a marcação real do promotor.
+     *
+     * @return array{inicio: Carbon, fim: Carbon}
+     */
+    private static function expediente(Empresa $empresa, Carbon $dia): array
+    {
+        $jornada = OperacaoDoDia::jornada($empresa);
+        $data = $dia->toDateString();
+
+        return [
+            'inicio' => Carbon::parse("{$data} {$jornada['inicio']}", $dia->tzName)->utc(),
+            'fim' => Carbon::parse("{$data} {$jornada['fim']}", $dia->tzName)->utc(),
+        ];
+    }
+
+    /** @param  list<array{inicio: Carbon, fim: Carbon}>  $intervalos */
+    private static function minutosNaJanela(array $intervalos, Carbon $de, Carbon $ate): int
+    {
+        $total = 0.0;
+        foreach ($intervalos as $i) {
+            $inicio = $i['inicio']->max($de);
+            $fim = $i['fim']->min($ate);
+            if ($fim->gt($inicio)) {
+                $total += $inicio->diffInMinutes($fim, true);
+            }
+        }
+
+        return (int) round($total);
+    }
+
+    /** Resumo de um lado de fora do expediente (as linhas recolhidas da tela). */
+    private static function resumoFora(array $segmentos, array $segmentosFora, array $paradas, array $semSinal, Carbon $de, Carbon $ate): array
+    {
+        $metros = 0.0;
+        $posicoes = 0;
+        foreach ($segmentos as $s => $segmento) {
+            if (! $segmentosFora[$s] || $segmento[0]['em']->gt($ate) || $segmento[count($segmento) - 1]['em']->lt($de)) {
+                continue;
+            }
+            $metros += self::metros($segmento);
+            $posicoes += count($segmento);
+        }
+
+        return [
+            'posicoes' => $posicoes,
+            'distancia_km' => round($metros / 1000, 1),
+            'parado_fora_minutos' => self::minutosNaJanela($paradas, $de, $ate),
+            'sem_sinal_minutos' => self::minutosNaJanela($semSinal, $de, $ate),
+        ];
+    }
+
+    /** @param  list<array{lat: float, lng: float}>  $pontos */
+    private static function metros(array $pontos): float
+    {
+        $total = 0.0;
+        for ($i = 1; $i < count($pontos); $i++) {
+            $total += Haversine::metros($pontos[$i - 1]['lat'], $pontos[$i - 1]['lng'], $pontos[$i]['lat'], $pontos[$i]['lng']);
+        }
+
+        return $total;
+    }
+
+    /**
+     * Deslocamento: os pontos entre uma "âncora" e outra (visita, parada fora de loja), sem buraco
+     * de sinal no meio. Começa no último ponto da âncora anterior e termina no primeiro da próxima,
+     * pra o horário bater com o checkout/chegada. Com recorte, também corta na borda do expediente.
+     *
+     * @param  list<array{lat: float, lng: float, em: Carbon}>  $pontos
+     * @param  Collection<int, Visita>  $visitas
+     * @param  (callable(Carbon): bool)|null  $foraDoExpediente
+     * @return list<array<string, mixed>>
+     */
+    private static function deslocamentos(array $pontos, Collection $visitas, array $paradas, int $tolerancia, ?callable $foraDoExpediente): array
+    {
+        $ancorado = function (Carbon $em) use ($visitas, $paradas): bool {
+            foreach ($visitas as $v) {
+                if ($em->gte($v->inicio_data) && $em->lte($v->fim_data ?? now())) {
+                    return true;
+                }
+            }
+            foreach ($paradas as $p) {
+                if ($em->gte($p['inicio']) && $em->lte($p['fim'])) {
+                    return true;
+                }
+            }
+
+            return false;
+        };
+
+        // `$andou`: o trecho tem pelo menos um ponto fora de âncora. Sem isso, dois pontos seguidos
+        // da mesma visita (ex.: saiu da loja com a visita aberta — isso é afastamento) virariam trecho.
+        $trechos = [];
+        $atual = [];
+        $andou = false;
+        $fecha = function () use (&$atual, &$trechos, &$andou) {
+            if ($andou && count($atual) >= 2) {
+                $trechos[] = $atual;
+            }
+            $atual = [];
+            $andou = false;
+        };
+
+        foreach ($pontos as $i => $p) {
+            $anterior = $pontos[$i - 1] ?? null;
+            $quebra = $anterior && (
+                $anterior['em']->diffInMinutes($p['em'], true) > $tolerancia
+                || ($foraDoExpediente && $foraDoExpediente($anterior['em']) !== $foraDoExpediente($p['em']))
+            );
+            if ($quebra) {
+                $fecha();
+            }
+
+            if ($ancorado($p['em'])) {
+                // Chegou numa âncora: o trecho termina aqui...
+                $atual[] = $p;
+                $fecha();
+                // ...e o próximo começa daqui, quando sair dela.
+                $atual = [$p];
+
+                continue;
+            }
+
+            $atual[] = $p;
+            $andou = true;
+        }
+        $fecha();
+
+        $resultado = [];
+        foreach ($trechos as $trecho) {
+            // Âncora pura (só pontos de visita/parada, sem movimento no meio) não é deslocamento.
+            $metros = self::metros($trecho);
+            if ($metros < self::DESLOCAMENTO_MINIMO_METROS) {
+                continue;
+            }
+            $inicio = $trecho[0]['em'];
+            $fim = $trecho[count($trecho) - 1]['em'];
+            $resultado[] = [
+                'inicio' => $inicio,
+                'fim' => $fim,
+                'minutos' => (int) round($inicio->diffInMinutes($fim, true)),
+                'distancia_metros' => (int) round($metros),
+                'fora_expediente' => $foraDoExpediente ? $foraDoExpediente($inicio) && $foraDoExpediente($fim) : false,
+                'bairros' => [],
+                '_amostras' => self::amostras($trecho),
+            ];
+        }
+
+        return $resultado;
+    }
+
+    /**
+     * Fora da área do roteiro: no expediente, fora de qualquer visita, mais longe que o raio de
+     * TODAS as lojas do dia, por desvioMinutos ou mais seguidos (buraco de sinal quebra o trecho).
+     *
+     * @param  list<array{lat: float, lng: float, em: Carbon}>  $pontos
+     * @param  Collection<int, Visita>  $visitas
+     * @param  list<array{latitude: float, longitude: float}>  $lojas
+     * @param  callable(Carbon): bool  $foraDoExpediente
+     * @return list<array<string, mixed>>
+     */
+    private static function desvios(array $pontos, Collection $visitas, array $lojas, int $raio, int $minimoMinutos, int $tolerancia, callable $foraDoExpediente): array
+    {
+        if ($raio <= 0 || ! $lojas) {
+            return [];
+        }
+
+        $distanciaDaLoja = function (array $p) use ($lojas): float {
+            $menor = INF;
+            foreach ($lojas as $l) {
+                $menor = min($menor, Haversine::metros($p['lat'], $p['lng'], $l['latitude'], $l['longitude']));
+            }
+
+            return $menor;
+        };
+        $emVisita = function (Carbon $em) use ($visitas): bool {
+            foreach ($visitas as $v) {
+                if ($em->gte($v->inicio_data) && $em->lte($v->fim_data ?? now())) {
+                    return true;
+                }
+            }
+
+            return false;
+        };
+
+        $trechos = [];
+        $atual = null;
+        foreach ($pontos as $i => $p) {
+            $distancia = $foraDoExpediente($p['em']) || $emVisita($p['em']) ? 0.0 : $distanciaDaLoja($p);
+            $continua = $atual && $pontos[$i - 1]['em']->diffInMinutes($p['em'], true) <= $tolerancia;
+            if ($distancia > $raio) {
+                if (! $continua) {
+                    if ($atual) {
+                        $trechos[] = $atual;
+                    }
+                    $atual = ['pontos' => [], 'max' => 0.0];
+                }
+                $atual['pontos'][] = $p;
+                $atual['max'] = max($atual['max'], $distancia);
+            } elseif ($atual) {
+                $trechos[] = $atual;
+                $atual = null;
+            }
+        }
+        if ($atual) {
+            $trechos[] = $atual;
+        }
+
+        $resultado = [];
+        foreach ($trechos as $t) {
+            $inicio = $t['pontos'][0]['em'];
+            $fim = $t['pontos'][count($t['pontos']) - 1]['em'];
+            $minutos = $inicio->diffInMinutes($fim, true);
+            if ($minutos < $minimoMinutos) {
+                continue;
+            }
+            $resultado[] = [
+                'inicio' => $inicio,
+                'fim' => $fim,
+                'minutos' => (int) round($minutos),
+                'distancia_max_metros' => (int) round($t['max']),
+                'distancia_metros' => (int) round(self::metros($t['pontos'])),
+                'bairros' => [],
+                // Pontos brutos (não casados nas ruas), como no afastamento — [lat, lng].
+                'pontos' => array_map(fn ($p) => [$p['lat'], $p['lng']], $t['pontos']),
+                '_amostras' => self::amostras($t['pontos']),
+            ];
+        }
+
+        return $resultado;
+    }
+
+    /**
+     * Lojas do dia: as das Ordens de Serviço do promotor com prazo no dia (a agenda vira OS —
+     * docs/10) e as visitadas. Loja da agenda não visitada também conta: ir pra perto dela não é desvio.
+     *
+     * @param  Collection<int, Visita>  $visitas
+     * @return list<array{id: string|null, fantasia: string|null, latitude: float, longitude: float, visitada: bool}>
+     */
+    private static function lojasDoRoteiro(Usuario $promotor, Carbon $dia, Collection $visitas): array
+    {
+        $lojas = [];
+        foreach ($visitas as $v) {
+            $lat = $v->pontoVenda?->latitude ?? $v->inicio_latitude;
+            $lng = $v->pontoVenda?->longitude ?? $v->inicio_longitude;
+            if ($lat === null || $lng === null) {
+                continue;
+            }
+            $lojas[$v->pontoVenda?->uuid ?? "visita-{$v->uuid}"] = [
+                'id' => $v->pontoVenda?->uuid,
+                'fantasia' => $v->pontoVenda?->fantasia,
+                'latitude' => (float) $lat,
+                'longitude' => (float) $lng,
+                'visitada' => true,
+            ];
+        }
+
+        OrdemServico::query()
+            ->withoutGlobalScopes()
+            ->where('empresa_id', $promotor->empresa_id)
+            ->where('usuario_id', $promotor->id)
+            ->whereDate('prazo_fim', $dia->toDateString())
+            ->where('status', '!=', StatusOrdemServico::CANCELADA)
+            ->with(['pontoVenda' => fn ($q) => $q->withoutGlobalScopes()])
+            ->get()
+            ->each(function (OrdemServico $os) use (&$lojas) {
+                $loja = $os->pontoVenda;
+                if (! $loja || $loja->latitude === null || $loja->longitude === null || isset($lojas[$loja->uuid])) {
+                    return;
+                }
+                $lojas[$loja->uuid] = [
+                    'id' => $loja->uuid,
+                    'fantasia' => $loja->fantasia,
+                    'latitude' => (float) $loja->latitude,
+                    'longitude' => (float) $loja->longitude,
+                    'visitada' => false,
+                ];
+            });
+
+        return array_values($lojas);
+    }
+
+    /**
+     * @param  list<array{lat: float, lng: float}>  $pontos
+     * @return list<array{0: float, 1: float}>
+     */
+    private static function amostras(array $pontos): array
+    {
+        $n = count($pontos);
+        $quantas = min($n, self::AMOSTRAS_BAIRRO);
+        $amostras = [];
+        for ($k = 0; $k < $quantas; $k++) {
+            $p = $pontos[$quantas === 1 ? 0 : (int) round($k * ($n - 1) / ($quantas - 1))];
+            $amostras[] = [$p['lat'], $p['lng']];
+        }
+
+        return $amostras;
+    }
+
+    /** Uma consulta só (em paralelo, com cache) pros bairros de tudo que a tela mostra. */
+    private static function preencherBairros(array &$deslocamentos, array &$desvios, array &$paradas): void
+    {
+        $coordenadas = [];
+        foreach ([...$deslocamentos, ...$desvios] as $t) {
+            array_push($coordenadas, ...$t['_amostras']);
+        }
+        foreach ($paradas as $p) {
+            $coordenadas[] = [$p['latitude'], $p['longitude']];
+        }
+
+        $nomes = $coordenadas ? Bairros::nomes($coordenadas) : [];
+        $nomesDe = function (array $amostras) use ($nomes): array {
+            $lista = [];
+            foreach ($amostras as [$lat, $lng]) {
+                $nome = $nomes[Bairros::chave($lat, $lng)] ?? null;
+                if ($nome !== null && ! in_array($nome, $lista, true)) {
+                    $lista[] = $nome;
+                }
+            }
+
+            return $lista;
+        };
+
+        foreach ($deslocamentos as &$d) {
+            $d['bairros'] = $nomesDe($d['_amostras']);
+            unset($d['_amostras']);
+        }
+        unset($d);
+        foreach ($desvios as &$d) {
+            $d['bairros'] = $nomesDe($d['_amostras']);
+            unset($d['_amostras']);
+        }
+        unset($d);
+        foreach ($paradas as &$p) {
+            $p['bairro'] = $nomes[Bairros::chave($p['latitude'], $p['longitude'])] ?? null;
+        }
+        unset($p);
     }
 
     /**
