@@ -9,6 +9,7 @@ use App\Models\ProdutoAuditoria;
 use App\Models\RedeLoja;
 use App\Models\TipoRegistro;
 use App\Models\Usuario;
+use App\Models\Vendedor;
 use App\Models\Visita;
 use App\Models\VisitaRegistro;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -165,6 +166,36 @@ class RegistroTest extends TestCase
 
         $porLoja = $this->getJson("/api/registros?ponto_venda_uuid={$pdvAlvo->uuid}")->assertOk()->json('registros');
         $this->assertCount(1, $porLoja);
+    }
+
+    public function test_codigo_do_cliente_e_vendedor_na_lista_e_nos_filtros(): void
+    {
+        $pdvAlvo = PontoVenda::factory()->create(['empresa_id' => $this->empresa->id, 'codigo_externo' => '004512']);
+        $pdvOutro = PontoVenda::factory()->create(['empresa_id' => $this->empresa->id, 'codigo_externo' => '009900']);
+        $vendedor = Vendedor::create(['empresa_id' => $this->empresa->id, 'codigo_externo' => 'V7', 'nome' => 'Carlos Vendas', 'ativo' => true]);
+        $pdvAlvo->vendedores()->attach($vendedor->id);
+
+        $this->criarRegistro(['ponto_venda' => $pdvAlvo, 'observacao' => 'do carlos']);
+        $this->criarRegistro(['ponto_venda' => $pdvOutro, 'observacao' => 'sem vendedor']);
+
+        Sanctum::actingAs(Usuario::factory()->admin()->create(['empresa_id' => $this->empresa->id]));
+
+        $todos = collect($this->getJson('/api/registros')->assertOk()->json('registros'))->keyBy('observacao');
+        $this->assertSame('004512', $todos['do carlos']['ponto_venda']['codigo_externo']);
+        $this->assertSame('Carlos Vendas', $todos['do carlos']['ponto_venda']['vendedores'][0]['nome']);
+        $this->assertSame([], $todos['sem vendedor']['ponto_venda']['vendedores']);
+
+        // Código: começo do código do ERP.
+        $porCodigo = $this->getJson('/api/registros?codigo_externo=0045')->assertOk()->json('registros');
+        $this->assertCount(1, $porCodigo);
+        $this->assertSame('do carlos', $porCodigo[0]['observacao']);
+
+        $porVendedor = $this->getJson("/api/registros?vendedor_uuid={$vendedor->uuid}")->assertOk()->json('registros');
+        $this->assertCount(1, $porVendedor);
+        $this->assertSame('do carlos', $porVendedor[0]['observacao']);
+
+        // Opções do filtro, sem precisar de vendedores.gerenciar.
+        $this->getJson('/api/registros/vendedores')->assertOk()->assertJsonPath('vendedores.0.nome', 'Carlos Vendas');
     }
 
     public function test_filtro_por_periodo(): void
