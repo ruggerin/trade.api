@@ -156,6 +156,9 @@ class LocalizacaoController extends Controller
         $painel = Rastreamento::habilitado($empresa) && Rastreamento::painelConformidade($empresa);
         $dentroDaJornada = Rastreamento::dentroDaJornada($empresa);
         $tolerancia = Rastreamento::toleranciaSemSinalMinutos($empresa);
+        // Voltou do intervalo há menos que a tolerância (docs/95): a última posição ainda é de
+        // antes do almoço — não é "sem sinal" ainda.
+        $voltandoDoIntervalo = OperacaoDoDia::emIntervalo($empresa, now(), $tolerancia);
 
         $irregulares = collect();
         if ($painel && $dentroDaJornada) {
@@ -166,11 +169,11 @@ class LocalizacaoController extends Controller
                 ->where('ativo', true)
                 ->orderBy('nome')
                 ->get()
-                ->map(function (Usuario $u) use ($limite) {
+                ->map(function (Usuario $u) use ($limite, $voltandoDoIntervalo) {
                     [$motivo, $desde] = match (true) {
                         $u->rastreamento_situacao === null => ['NUNCA_INFORMOU', null],
                         $u->rastreamento_situacao !== 'ATIVO' => [$u->rastreamento_situacao, $u->rastreamento_situacao_em],
-                        $u->ultima_localizacao_em === null || $u->ultima_localizacao_em->lt($limite) => ['SEM_SINAL', $u->ultima_localizacao_em],
+                        ! $voltandoDoIntervalo && ($u->ultima_localizacao_em === null || $u->ultima_localizacao_em->lt($limite)) => ['SEM_SINAL', $u->ultima_localizacao_em],
                         default => [null, null],
                     };
 
@@ -192,6 +195,8 @@ class LocalizacaoController extends Controller
             'habilitado' => $painel,
             'exigencia' => Rastreamento::exigencia($empresa),
             'dentro_da_jornada' => $dentroDaJornada,
+            // Fora da jornada por estar no intervalo (docs/95) — o painel diz "intervalo".
+            'no_intervalo' => OperacaoDoDia::emIntervalo($empresa, now()),
             'jornada' => Rastreamento::soNaJornada($empresa) ? OperacaoDoDia::jornada($empresa) : null,
             'tolerancia_sem_sinal_minutos' => $tolerancia,
             'irregulares' => $irregulares,

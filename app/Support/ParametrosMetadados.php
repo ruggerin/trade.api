@@ -48,6 +48,20 @@ final class ParametrosMetadados
             'area' => 'visitas', 'rotulo' => 'Jornada — fim', 'tipo' => 'hora', 'grupo' => 'jornada',
             'ajuda' => 'Fim do expediente; precisa ser depois do início.',
         ],
+        'JORNADA_INTERVALO_HABILITADO' => [
+            'area' => 'visitas', 'rotulo' => 'Desconsiderar o intervalo (almoço)', 'tipo' => 'bool', 'grupo' => 'intervalo',
+            'ajuda' => 'No intervalo ninguém é cobrado pelo rastreamento nem aparece sem sinal, e a Rota do dia esconde esse horário.',
+        ],
+        'JORNADA_INTERVALO_INICIO' => [
+            'area' => 'visitas', 'rotulo' => 'Intervalo — início', 'tipo' => 'hora', 'grupo' => 'intervalo',
+            'ajuda' => 'Início do intervalo de todos os promotores.',
+            'depende_de' => ['chave' => 'JORNADA_INTERVALO_HABILITADO', 'motivo' => 'Ligue o intervalo para ajustar.'],
+        ],
+        'JORNADA_INTERVALO_FIM' => [
+            'area' => 'visitas', 'rotulo' => 'Intervalo — fim', 'tipo' => 'hora', 'grupo' => 'intervalo',
+            'ajuda' => 'Fim do intervalo; precisa ser depois do início.',
+            'depende_de' => ['chave' => 'JORNADA_INTERVALO_HABILITADO', 'motivo' => 'Ligue o intervalo para ajustar.'],
+        ],
         'VISITA_CANCELAMENTO_PERMITIDO' => [
             'area' => 'visitas', 'rotulo' => 'Promotor pode cancelar a própria visita', 'tipo' => 'bool',
             'ajuda' => 'Permite cancelar uma visita em andamento pelo aplicativo.',

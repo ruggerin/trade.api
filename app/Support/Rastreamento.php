@@ -76,17 +76,22 @@ class Rastreamento
 
     /**
      * Agora está dentro da jornada da empresa (JORNADA_INICIO/FIM, doc 32)? Com
-     * RASTREAMENTO_SO_NA_JORNADA=false, o dia inteiro conta como jornada.
+     * RASTREAMENTO_SO_NA_JORNADA=false, o dia inteiro conta como jornada. O intervalo, quando a
+     * empresa desconsidera (docs/95), nunca conta — nem com o dia inteiro.
      */
     public static function dentroDaJornada(Empresa $empresa, ?Carbon $agora = null): bool
     {
+        $agora ??= now();
+        if (OperacaoDoDia::emIntervalo($empresa, $agora)) {
+            return false;
+        }
         if (! self::soNaJornada($empresa)) {
             return true;
         }
 
-        $agora ??= now();
         $jornada = OperacaoDoDia::jornada($empresa);
-        $hora = $agora->format('H:i');
+        // Hora no fuso da empresa: JORNADA_INICIO/FIM são hora local, o relógio do servidor é UTC.
+        $hora = $agora->copy()->setTimezone(Fuso::daEmpresa($empresa))->format('H:i');
 
         return $hora >= $jornada['inicio'] && $hora <= $jornada['fim'];
     }

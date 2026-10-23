@@ -49,14 +49,23 @@ final class RotaDoDia
         $recorte = Rastreamento::rotaRecorte($empresa);
         $expediente = self::expediente($empresa, $dia);
         $recortado = $recorte !== 'DIA_INTEIRO';
+        $intervalo = $expediente['intervalo'];
 
-        // SO_EXPEDIENTE: fora do horário nem sai do banco (docs/93 §3).
+        $foraDoExpediente = fn (Carbon $em) => $em->lt($expediente['inicio']) || $em->gt($expediente['fim']);
+        $noIntervalo = fn (Carbon $em) => $intervalo !== null && $em->gte($intervalo['inicio']) && $em->lte($intervalo['fim']);
+        // O que a tela esconde (recolhido, ou nem vem no SO_EXPEDIENTE): fora do expediente quando há
+        // recorte, e o intervalo quando a empresa o desconsidera (docs/95) — em qualquer recorte.
+        $escondeAlgo = $recortado || $intervalo !== null;
+        $oculto = fn (Carbon $em) => ($recortado && $foraDoExpediente($em)) || $noIntervalo($em);
+
+        // SO_EXPEDIENTE: fora do horário (e o intervalo) nem sai do banco (docs/93 §3, docs/95).
         [$deHistorico, $ateHistorico] = $recorte === 'SO_EXPEDIENTE' ? [$expediente['inicio'], $expediente['fim']] : [$inicioDia, $fimDia];
 
         /** @var list<array{lat: float, lng: float, em: Carbon}> $pontos */
         $pontos = DB::table('localizacoes_historico')
             ->where('usuario_id', $promotor->id)
             ->whereBetween('capturado_em', [$deHistorico, $ateHistorico])
+            ->when($recorte === 'SO_EXPEDIENTE' && $intervalo !== null, fn ($q) => $q->whereNotBetween('capturado_em', [$intervalo['inicio'], $intervalo['fim']]))
             ->orderBy('capturado_em')
             ->get(['latitude', 'longitude', 'capturado_em'])
             ->map(fn ($p) => ['lat' => (float) $p->latitude, 'lng' => (float) $p->longitude, 'em' => Carbon::parse($p->capturado_em)])
@@ -71,10 +80,10 @@ final class RotaDoDia
             ->get();
 
         $tolerancia = Rastreamento::toleranciaSemSinalMinutos($empresa);
-        $foraDoExpediente = fn (Carbon $em) => $em->lt($expediente['inicio']) || $em->gt($expediente['fim']);
 
-        // Trechos contínuos, separados onde ficou tempo demais sem posição chegar — e, com recorte,
-        // também na entrada/saída do expediente, pra tela poder esconder o lado de fora.
+        // Trechos contínuos, separados onde ficou tempo demais sem posição chegar — e também na
+        // entrada/saída do que a tela esconde (expediente, intervalo), pra ela poder esconder.
+        // O lado do trecho é o do ÚLTIMO ponto: o primeiro pode ser o ponto da virada repetido.
         $segmentos = [];
         $segmentosFora = [];
         $semSinal = [];
@@ -90,18 +99,18 @@ final class RotaDoDia
                     'ate' => ['latitude' => $p['lat'], 'longitude' => $p['lng']],
                 ];
                 $segmentos[] = $atual;
-                $segmentosFora[] = $recortado && $foraDoExpediente($atual[0]['em']);
+                $segmentosFora[] = $oculto($atual[count($atual) - 1]['em']);
                 $atual = [];
-            } elseif ($anterior && $recortado && $foraDoExpediente($anterior['em']) !== $foraDoExpediente($p['em'])) {
+            } elseif ($anterior && $escondeAlgo && $oculto($anterior['em']) !== $oculto($p['em'])) {
                 $segmentos[] = $atual;
-                $segmentosFora[] = $foraDoExpediente($atual[0]['em']);
+                $segmentosFora[] = $oculto($atual[count($atual) - 1]['em']);
                 $atual = [$anterior]; // repete o ponto da virada: a linha não fica com buraco
             }
             $atual[] = $p;
         }
         if ($atual) {
             $segmentos[] = $atual;
-            $segmentosFora[] = $recortado && $foraDoExpediente($atual[count($atual) - 1]['em']);
+            $segmentosFora[] = $oculto($atual[count($atual) - 1]['em']);
         }
 
         $paradas = self::paradas($pontos, $visitas, $tolerancia, Rastreamento::paradaMinutos($empresa), $promotor->empresa_id);
@@ -109,7 +118,7 @@ final class RotaDoDia
 
         $distancia = 0.0;
         foreach ($segmentos as $s => $segmento) {
-            if ($recortado && $segmentosFora[$s]) {
+            if ($segmentosFora[$s]) {
                 continue;
             }
             $distancia += self::metros($segmento);
@@ -142,12 +151,19 @@ final class RotaDoDia
 
         $raioDesvio = Rastreamento::desvioRaioMetros($empresa);
         $lojasRoteiro = $raioDesvio > 0 ? self::lojasDoRoteiro($promotor, $dia, $visitas) : [];
-        $deslocamentos = self::deslocamentos($pontos, $visitas, $paradas, $tolerancia, $recortado ? $foraDoExpediente : null);
-        $desvios = self::desvios($pontos, $visitas, $lojasRoteiro, $raioDesvio, Rastreamento::desvioMinutos($empresa), $tolerancia, $foraDoExpediente);
+        $deslocamentos = self::deslocamentos($pontos, $visitas, $paradas, $tolerancia, $escondeAlgo ? $oculto : null);
+        // Desvio só no expediente e nunca no intervalo, em qualquer recorte.
+        $desvios = self::desvios($pontos, $visitas, $lojasRoteiro, $raioDesvio, Rastreamento::desvioMinutos($empresa), $tolerancia, fn (Carbon $em) => $foraDoExpediente($em) || $noIntervalo($em));
         self::preencherBairros($deslocamentos, $desvios, $paradas);
 
-        // Com recorte, o resumo é só do expediente; o que sobrou fora vira um resumo à parte.
-        $janela = $recortado ? [$expediente['inicio'], $expediente['fim']] : [$inicioDia, $fimDia];
+        // O resumo conta só o que fica à mostra (expediente com recorte, sem o intervalo); o que ficou
+        // escondido vira um resumo à parte, por bloco.
+        $visiveis = self::janelasVisiveis($recortado ? [$expediente['inicio'], $expediente['fim']] : [$inicioDia, $fimDia], $intervalo);
+        $resumoEscondido = array_filter([
+            'antes' => $recorte === 'EXPEDIENTE' ? self::resumoFora($segmentos, $segmentosFora, $paradas, $semSinal, $inicioDia, $expediente['inicio']) : null,
+            'intervalo' => $intervalo !== null && $recorte !== 'SO_EXPEDIENTE' ? self::resumoFora($segmentos, $segmentosFora, $paradas, $semSinal, $intervalo['inicio'], $intervalo['fim']) : null,
+            'depois' => $recorte === 'EXPEDIENTE' ? self::resumoFora($segmentos, $segmentosFora, $paradas, $semSinal, $expediente['fim'], $fimDia) : null,
+        ]);
 
         return [
             'data' => $dia->toDateString(),
@@ -163,11 +179,16 @@ final class RotaDoDia
                 'recorte' => $recorte,
                 'inicio' => $expediente['inicio']->toIso8601String(),
                 'fim' => $expediente['fim']->toIso8601String(),
+                // Intervalo desconsiderado (docs/95); null = a empresa não desconsidera.
+                'intervalo' => $intervalo ? [
+                    'inicio' => $intervalo['inicio']->toIso8601String(),
+                    'fim' => $intervalo['fim']->toIso8601String(),
+                ] : null,
             ],
             'pontos' => array_map(fn ($p) => ['latitude' => $p['lat'], 'longitude' => $p['lng'], 'em' => $p['em']->toIso8601String()], $pontos),
             'linhas' => $linhas,
-            // Paralelo a `linhas`: true = trecho fora do expediente (só existe com recorte EXPEDIENTE).
-            'linhas_fora_expediente' => $segmentos ? array_map(fn ($s) => $recortado && $s, $segmentosFora) : [],
+            // Paralelo a `linhas`: true = trecho escondido (fora do expediente com recorte, ou intervalo).
+            'linhas_fora_expediente' => $segmentos ? $segmentosFora : [],
             'aproximada' => $aproximada,
             'sem_sinal' => $semSinal,
             'visitas' => $visitasFormatadas,
@@ -184,16 +205,15 @@ final class RotaDoDia
                 'tempo_em_loja_minutos' => max(0, (int) $visitasFormatadas->sum('minutos') - (int) $visitasFormatadas->sum('minutos_fora')),
                 'fora_da_loja_minutos' => (int) $visitasFormatadas->sum('minutos_fora'),
                 'distancia_km' => round($distancia / 1000, 1),
-                'parado_fora_minutos' => self::minutosNaJanela($paradas, ...$janela),
-                'sem_sinal_minutos' => self::minutosNaJanela($semSinal, ...$janela),
+                'parado_fora_minutos' => self::minutosNasJanelas($paradas, $visiveis),
+                'sem_sinal_minutos' => self::minutosNasJanelas($semSinal, $visiveis),
                 'fora_da_area_minutos' => (int) collect($desvios)->sum('minutos'),
                 'primeira_posicao_em' => $pontos ? $pontos[0]['em']->toIso8601String() : null,
                 'ultima_posicao_em' => $pontos ? $pontos[count($pontos) - 1]['em']->toIso8601String() : null,
             ],
-            'fora_do_expediente' => $recorte === 'EXPEDIENTE' ? [
-                'antes' => self::resumoFora($segmentos, $segmentosFora, $paradas, $semSinal, $inicioDia, $expediente['inicio']),
-                'depois' => self::resumoFora($segmentos, $segmentosFora, $paradas, $semSinal, $expediente['fim'], $fimDia),
-            ] : null,
+            // Blocos escondidos: `antes`/`depois` (recorte EXPEDIENTE) e `intervalo` (docs/95, fora do
+            // SO_EXPEDIENTE). null = nada escondido que o gestor possa abrir.
+            'fora_do_expediente' => $resumoEscondido ?: null,
         ];
     }
 
@@ -201,17 +221,46 @@ final class RotaDoDia
      * Expediente do dia em UTC. Hoje é o horário fixo da empresa (JORNADA_INICIO/FIM); quando o
      * controle de jornada (doc 81) existir, entra aqui a marcação real do promotor.
      *
-     * @return array{inicio: Carbon, fim: Carbon}
+     * `intervalo`: o almoço que a empresa desconsidera (docs/95), ou null.
+     *
+     * @return array{inicio: Carbon, fim: Carbon, intervalo: array{inicio: Carbon, fim: Carbon}|null}
      */
     private static function expediente(Empresa $empresa, Carbon $dia): array
     {
         $jornada = OperacaoDoDia::jornada($empresa);
         $data = $dia->toDateString();
+        $hora = fn (string $hhmm) => Carbon::parse("{$data} {$hhmm}", $dia->tzName)->utc();
 
         return [
-            'inicio' => Carbon::parse("{$data} {$jornada['inicio']}", $dia->tzName)->utc(),
-            'fim' => Carbon::parse("{$data} {$jornada['fim']}", $dia->tzName)->utc(),
+            'inicio' => $hora($jornada['inicio']),
+            'fim' => $hora($jornada['fim']),
+            'intervalo' => $jornada['intervalo'] ? ['inicio' => $hora($jornada['intervalo']['inicio']), 'fim' => $hora($jornada['intervalo']['fim'])] : null,
         ];
+    }
+
+    /**
+     * A janela à mostra, sem o intervalo no meio.
+     *
+     * @param  array{0: Carbon, 1: Carbon}  $janela
+     * @param  array{inicio: Carbon, fim: Carbon}|null  $intervalo
+     * @return list<array{0: Carbon, 1: Carbon}>
+     */
+    private static function janelasVisiveis(array $janela, ?array $intervalo): array
+    {
+        if ($intervalo === null) {
+            return [$janela];
+        }
+
+        return array_values(array_filter(
+            [[$janela[0], $intervalo['inicio']->min($janela[1])], [$intervalo['fim']->max($janela[0]), $janela[1]]],
+            fn ($j) => $j[1]->gt($j[0]),
+        ));
+    }
+
+    /** @param  list<array{0: Carbon, 1: Carbon}>  $janelas */
+    private static function minutosNasJanelas(array $intervalos, array $janelas): int
+    {
+        return array_sum(array_map(fn ($j) => self::minutosNaJanela($intervalos, $j[0], $j[1]), $janelas));
     }
 
     /** @param  list<array{inicio: Carbon, fim: Carbon}>  $intervalos */

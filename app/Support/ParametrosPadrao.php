@@ -52,6 +52,9 @@ final class ParametrosPadrao
         'ATRASO_TOLERANCIA_MINUTOS' => ['valor' => '30', 'descricao' => 'Tolerância, em minutos, antes de considerar o promotor atrasado na Operação do Dia (App\Support\OperacaoDoDia)'],
         'JORNADA_INICIO' => ['valor' => '07:00', 'descricao' => 'Início da jornada de trabalho (HH:mm) — régua da Operação do Dia (App\Support\OperacaoDoDia)'],
         'JORNADA_FIM' => ['valor' => '17:00', 'descricao' => 'Fim da jornada de trabalho (HH:mm) — régua da Operação do Dia (App\Support\OperacaoDoDia)'],
+        'JORNADA_INTERVALO_HABILITADO' => ['valor' => 'false', 'descricao' => 'Desconsidera o intervalo (almoço) da cobrança de rastreamento, do "sem sinal" da Operação do Dia e da Rota do dia (docs/95) — false = intervalo conta como jornada'],
+        'JORNADA_INTERVALO_INICIO' => ['valor' => '12:00', 'descricao' => 'Início do intervalo (HH:mm), usado com JORNADA_INTERVALO_HABILITADO (docs/95)'],
+        'JORNADA_INTERVALO_FIM' => ['valor' => '13:30', 'descricao' => 'Fim do intervalo (HH:mm), usado com JORNADA_INTERVALO_HABILITADO (docs/95)'],
         // Régua de XP (docs/88) — mesmos defaults de App\Support\Xp\ParametrosXp.
         'XP_VISIVEL_PROMOTOR' => ['valor' => 'false', 'descricao' => 'Régua de XP: o promotor vê a pontuação (false = modo prévia, só o gestor vê) — docs/88 §13'],
         'XP_PENDENTE_VISIVEL_PROMOTOR' => ['valor' => 'true', 'descricao' => 'Régua de XP: mostra ao promotor o XP aguardando avaliação — docs/88 §10.3'],
