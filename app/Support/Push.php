@@ -40,8 +40,9 @@ final class Push
     /**
      * @param  iterable<int>  $usuarioIds
      * @param  array<string, mixed>  $data  só ids e o `tipo` que o app usa pra navegar
+     * @param  string|null  $categoria  botões da notificação, criados pelo app (ex.: `saida_detectada`, docs/92)
      */
-    public static function paraUsuarios(iterable $usuarioIds, string $titulo, string $corpo, array $data, string $canal): void
+    public static function paraUsuarios(iterable $usuarioIds, string $titulo, string $corpo, array $data, string $canal, ?string $categoria = null): void
     {
         if (! self::configurado()) {
             return;
@@ -70,6 +71,7 @@ final class Push
             'channelId' => $canal,
             'sound' => 'default',
             'priority' => 'high',
+            ...($categoria ? ['categoryId' => $categoria] : []),
         ])->all();
 
         defer(fn () => self::enviar($mensagens));

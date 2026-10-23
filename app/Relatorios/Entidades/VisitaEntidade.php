@@ -35,6 +35,8 @@ final class VisitaEntidade extends Entidade
     private const CHECKOUT = [
         'PROMOTOR' => 'Pelo promotor',
         'ADMIN' => 'Pelo gestor',
+        'SAIDA_DETECTADA' => 'Pela saída detectada',
+        'AUTOMATICO' => 'Automático',
     ];
 
     public function chave(): string

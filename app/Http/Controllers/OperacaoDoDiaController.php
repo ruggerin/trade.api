@@ -7,6 +7,7 @@ use App\Enums\StatusOrdemServico;
 use App\Enums\UserType;
 use App\Models\Empresa;
 use App\Models\OrdemServico;
+use App\Models\Usuario;
 use App\Models\VisitaRegistro;
 use App\Support\Fuso;
 use App\Support\OperacaoDoDia as SuporteOperacaoDoDia;
@@ -62,6 +63,8 @@ class OperacaoDoDiaController extends Controller
         // barra do Gantt até a hora atual de hoje, sem nenhum sentido visual).
         $agora = $historico ? $dia->copy()->endOfDay() : now();
         $janelaSinal = now()->subMinutes(Rastreamento::JANELA_ATIVO_MINUTOS);
+        // Intervalo desconsiderado (docs/95): no almoço, e logo depois dele, ninguém está "sem sinal".
+        $noIntervalo = SuporteOperacaoDoDia::emIntervalo($empresa, now(), Rastreamento::JANELA_ATIVO_MINUTOS);
 
         $porPromotor = SuporteOperacaoDoDia::statusPorPromotor($empresa, $dia);
         $rupturasAbertas = $this->rupturasAbertasPorPromotor($empresa);
@@ -71,11 +74,12 @@ class OperacaoDoDiaController extends Controller
         // pra quem já vê o Mapa ao vivo.
         $veLocalizacao = $usuario->temPermissao(Permissao::RASTREAMENTO_VISUALIZAR);
 
-        $equipe = $porPromotor->map(function (array $linha) use ($janelaSinal, $rupturasAbertas, $dia, $agora, $tolerancia, $historico, $veLocalizacao) {
+        $equipe = $porPromotor->map(function (array $linha) use ($janelaSinal, $noIntervalo, $rupturasAbertas, $dia, $agora, $tolerancia, $historico, $veLocalizacao) {
             $promotor = $linha['usuario'];
             $visita = $linha['visita_aberta'];
             $ordens = $linha['ordens'];
             $semSinal = ! $historico
+                && ! $noIntervalo
                 && (! $promotor->ultima_localizacao_em || $promotor->ultima_localizacao_em->lt($janelaSinal));
 
             return [
@@ -130,7 +134,7 @@ class OperacaoDoDiaController extends Controller
     }
 
     /**
-     * @param  Collection<int, array{usuario: \App\Models\Usuario, status: string, visita_aberta: mixed, ordens: Collection}>  $porPromotor
+     * @param  Collection<int, array{usuario: Usuario, status: string, visita_aberta: mixed, ordens: Collection}>  $porPromotor
      */
     private function kpis(Empresa $empresa, Collection $porPromotor, Collection $equipe, Carbon $dia): array
     {
@@ -251,12 +255,13 @@ class OperacaoDoDiaController extends Controller
      * nenhum dos dois tem endpoint de resolução próprio aqui (ver doc 32 Fase 2: a ação do
      * gestor pros sintéticos é fora do sistema, "Ligar"/"Justificar").
      *
-     * @param  Collection<int, array{usuario: \App\Models\Usuario, status: string, visita_aberta: mixed, ordens: Collection}>  $porPromotor
+     * @param  Collection<int, array{usuario: Usuario, status: string, visita_aberta: mixed, ordens: Collection}>  $porPromotor
      */
     private function filaAcoes(Empresa $empresa, Collection $porPromotor, Carbon $dia, Carbon $agora): Collection
     {
         $tolerancia = SuporteOperacaoDoDia::toleranciaAtrasoMinutos($empresa);
         $janelaSinal = now()->subMinutes(Rastreamento::JANELA_ATIVO_MINUTOS);
+        $noIntervalo = SuporteOperacaoDoDia::emIntervalo($empresa, now(), Rastreamento::JANELA_ATIVO_MINUTOS);
 
         $deRuptura = VisitaRegistro::query()
             ->whereNull('cancelado_em')
@@ -315,7 +320,7 @@ class OperacaoDoDiaController extends Controller
             });
 
         $deSinal = $porPromotor
-            ->filter(fn ($linha) => $linha['status'] !== SuporteOperacaoDoDia::STATUS_ENCERRADO)
+            ->filter(fn ($linha) => ! $noIntervalo && $linha['status'] !== SuporteOperacaoDoDia::STATUS_ENCERRADO)
             ->filter(fn ($linha) => ! $linha['usuario']->ultima_localizacao_em || $linha['usuario']->ultima_localizacao_em->lt($janelaSinal))
             ->map(fn ($linha) => [
                 'tipo' => 'SINAL',

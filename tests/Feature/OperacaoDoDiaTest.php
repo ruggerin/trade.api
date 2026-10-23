@@ -232,13 +232,13 @@ class OperacaoDoDiaTest extends TestCase
         Sanctum::actingAs($admin);
 
         $semParametro = $this->getJson('/api/operacao-do-dia')->assertOk();
-        $this->assertSame(['inicio' => '07:00', 'fim' => '17:00'], $semParametro->json('jornada'));
+        $this->assertSame(['inicio' => '07:00', 'fim' => '17:00', 'intervalo' => null], $semParametro->json('jornada'));
 
         Parametro::create(['empresa_id' => $empresa->id, 'chave' => 'JORNADA_INICIO', 'valor' => '08:00', 'ativo' => true]);
         Parametro::create(['empresa_id' => $empresa->id, 'chave' => 'JORNADA_FIM', 'valor' => '18:00', 'ativo' => true]);
 
         $comParametro = $this->getJson('/api/operacao-do-dia')->assertOk();
-        $this->assertSame(['inicio' => '08:00', 'fim' => '18:00'], $comParametro->json('jornada'));
+        $this->assertSame(['inicio' => '08:00', 'fim' => '18:00', 'intervalo' => null], $comParametro->json('jornada'));
     }
 
     public function test_ruptura_aberta_aparece_nos_kpis_por_sku_e_na_fila(): void

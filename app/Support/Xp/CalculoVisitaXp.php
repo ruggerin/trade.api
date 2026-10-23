@@ -261,6 +261,10 @@ final class CalculoVisitaXp
         if ($this->visita->checkout_tipo === CheckoutTipo::ADMIN) {
             return [0, 'Check-out feito pelo gestor.'];
         }
+        // Fechada sozinha (docs/92 decisão 3): ele não finalizou. Pela saída detectada, finalizou.
+        if ($this->visita->checkout_tipo === CheckoutTipo::AUTOMATICO) {
+            return [0, 'Visita finalizada automaticamente, sem o promotor.'];
+        }
         $recebido = $this->visita->checkout_recebido_em ?? $this->visita->fim_data;
         $mesmoDia = DiaXp::local($recebido, $fuso) === DiaXp::local($this->visita->fim_data, $fuso);
 

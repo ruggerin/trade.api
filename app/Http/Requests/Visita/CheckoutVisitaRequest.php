@@ -23,6 +23,9 @@ class CheckoutVisitaRequest extends FormRequest
             // docs/88 §5.1). Opcionais: app antigo não manda.
             'obrigatorias_total' => ['nullable', 'integer', 'min:0', 'max:500'],
             'obrigatorias_feitas' => ['nullable', 'integer', 'min:0', 'lte:obrigatorias_total'],
+            // Promotor aceitou finalizar no horário em que saiu da loja (docs/92 peça B). Só o
+            // pedido: a hora e a posição o servidor recalcula — o app nunca manda a hora da saída.
+            'usar_saida_detectada' => ['nullable', 'boolean'],
         ];
     }
 }

@@ -7,6 +7,8 @@ use App\Enums\StatusVisita;
 use App\Models\Empresa;
 use App\Models\OrdemServico;
 use App\Models\Parametro;
+use App\Models\ProdutoAuditoria;
+use App\Models\Visita;
 use App\Models\VisitaRegistro;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
@@ -21,8 +23,11 @@ class OperacaoDoDia
 {
     // Status calculado de um promotor com compromisso hoje — nunca gravado (ver classe).
     public const STATUS_NO_PDV = 'NO_PDV';
+
     public const STATUS_ENCERRADO = 'ENCERRADO';
+
     public const STATUS_ATRASADO = 'ATRASADO';
+
     public const STATUS_DESLOCAMENTO = 'DESLOCAMENTO';
 
     /**
@@ -75,20 +80,47 @@ class OperacaoDoDia
      * Fase 0 decisão 5: jornada de trabalho por empresa, dois Parametro (`JORNADA_INICIO`/
      * `JORNADA_FIM`, formato "HH:mm"). Ausente/inativo cai no default 07:00-17:00.
      *
-     * @return array{inicio: string, fim: string}
+     * `intervalo` (docs/95): o almoço que a empresa desconsidera, ou null quando ela não liga
+     * JORNADA_INTERVALO_HABILITADO (padrão — o intervalo conta como jornada, como antes).
+     *
+     * @return array{inicio: string, fim: string, intervalo: array{inicio: string, fim: string}|null}
      */
     public static function jornada(Empresa $empresa): array
     {
         $valores = Parametro::query()
             ->where('empresa_id', $empresa->id)
-            ->whereIn('chave', ['JORNADA_INICIO', 'JORNADA_FIM'])
+            ->whereIn('chave', ['JORNADA_INICIO', 'JORNADA_FIM', 'JORNADA_INTERVALO_HABILITADO', 'JORNADA_INTERVALO_INICIO', 'JORNADA_INTERVALO_FIM'])
             ->where('ativo', true)
             ->pluck('valor', 'chave');
+
+        $intervaloLigado = in_array(strtolower(trim((string) ($valores['JORNADA_INTERVALO_HABILITADO'] ?? ''))), ['1', 'true', 'sim', 'yes'], true);
+        $intervalo = ['inicio' => $valores['JORNADA_INTERVALO_INICIO'] ?? '12:00', 'fim' => $valores['JORNADA_INTERVALO_FIM'] ?? '13:30'];
 
         return [
             'inicio' => $valores['JORNADA_INICIO'] ?? '07:00',
             'fim' => $valores['JORNADA_FIM'] ?? '17:00',
+            // Fim antes do início (cadastro errado) = sem intervalo, em vez de esconder o dia ao contrário.
+            'intervalo' => $intervaloLigado && $intervalo['inicio'] < $intervalo['fim'] ? $intervalo : null,
         ];
+    }
+
+    /**
+     * O instante cai no intervalo da empresa (no fuso dela)? `$folgaDepoisMinutos` estende o fim:
+     * quem volta do almoço às 13:30 não vira "sem sinal" às 13:31 só porque a última posição é
+     * de antes do intervalo.
+     */
+    public static function emIntervalo(Empresa $empresa, Carbon $instante, int $folgaDepoisMinutos = 0): bool
+    {
+        $intervalo = self::jornada($empresa)['intervalo'];
+        if ($intervalo === null) {
+            return false;
+        }
+
+        $local = $instante->copy()->setTimezone(Fuso::daEmpresa($empresa));
+        $inicio = $local->copy()->setTimeFromTimeString($intervalo['inicio']);
+        $fim = $local->copy()->setTimeFromTimeString($intervalo['fim'])->addMinutes($folgaDepoisMinutos);
+
+        return $local->gte($inicio) && $local->lte($fim);
     }
 
     /**
@@ -98,7 +130,7 @@ class OperacaoDoDia
      * ENCERRADO se não sobrou nenhuma OS pendente/em andamento; senão ATRASADO se alguma
      * pendente já passou do `horario_previsto` + tolerância, ou DESLOCAMENTO (sobra).
      *
-     * @return Collection<int, array{usuario_id: int, status: string, visita_aberta: ?\App\Models\Visita, ordens: Collection}>
+     * @return Collection<int, array{usuario_id: int, status: string, visita_aberta: ?Visita, ordens: Collection}>
      */
     public static function statusPorPromotor(Empresa $empresa, ?Carbon $dia = null): Collection
     {
@@ -154,7 +186,7 @@ class OperacaoDoDia
      * marcado como `eh_alerta` pela empresa (doc 19 §1); se não estiver, volta vazio — nada
      * quebra, só fica sem dado.
      *
-     * @return Collection<int, array{produto: \App\Models\ProdutoAuditoria, pdvs: int, desde: Carbon}>
+     * @return Collection<int, array{produto: ProdutoAuditoria, pdvs: int, desde: Carbon}>
      */
     public static function rupturasAbertasPorSku(Empresa $empresa): Collection
     {

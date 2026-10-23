@@ -51,6 +51,10 @@ Schedule::command('visitas:calcular-afastamento')->everyTenMinutes();
 Schedule::command('dev:simular-atividade')->everyFiveMinutes()->withoutOverlapping()
     ->when(fn (): bool => config('simulador.empresas') !== []);
 
+// Saída detectada (docs/92 §6/§7): avisa por push e/ou finaliza sozinho quem saiu da loja sem
+// finalizar — só nas empresas com CHECKOUT_AVISO_SAIDA_MINUTOS / CHECKOUT_AUTOMATICO_MINUTOS.
+Schedule::command('visitas:monitorar-saida')->everyFiveMinutes()->withoutOverlapping(10);
+
 // Push (docs/77 §3.2): confere os recibos da Expo e apaga token de aparelho que desinstalou o app.
 Schedule::command('push:conferir-recibos')->everyFifteenMinutes()->withoutOverlapping(10);
 
