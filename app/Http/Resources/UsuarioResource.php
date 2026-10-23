@@ -50,6 +50,11 @@ class UsuarioResource extends JsonResource
                 'centroCusto',
                 fn () => $this->centroCusto ? ['id' => $this->centroCusto->uuid, 'descricao' => $this->centroCusto->descricao] : null,
             ),
+            // Equipe do supervisor (régua de XP, docs/88 §11).
+            'supervisor' => $this->whenLoaded(
+                'supervisor',
+                fn () => $this->supervisor ? ['id' => $this->supervisor->uuid, 'nome' => $this->supervisor->nome] : null,
+            ),
             // Licença do app mobile atribuída pelo ADMIN (docs/67 §3).
             'licenca_mobile' => (bool) $this->licenca_mobile,
             // Aparelho vinculado agora ao app (docs/67 §4) — null quando não há. O identificador

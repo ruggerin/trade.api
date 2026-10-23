@@ -45,6 +45,11 @@ class UpdateUsuarioRequest extends FormRequest
             // Licença do app mobile (docs/67 §3) — qualquer user_type; checada contra o limite.
             'licenca_mobile' => ['sometimes', 'boolean'],
             'avatar_url' => ['sometimes', 'nullable', 'string', 'max:2048'],
+            // Equipe do supervisor (régua de XP, docs/88 §11).
+            'supervisor_uuid' => [
+                'sometimes', 'nullable', 'string',
+                Rule::exists('supervisores', 'uuid')->where('empresa_id', $this->route('usuario')?->empresa_id),
+            ],
         ];
     }
 

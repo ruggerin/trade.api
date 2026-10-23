@@ -27,6 +27,7 @@ class UpdateEmpresaSuperadminRequest extends FormRequest
             // self-service do ADMIN.
             'pedidos_venda_habilitado' => ['sometimes', 'boolean'],
             'faturamento_contratado' => ['sometimes', 'boolean'],
+            'controle_xp_habilitado' => ['sometimes', 'boolean'],
             'fuso' => ['sometimes', 'timezone:all'],
             // Reativar uma empresa bloqueada passa por aqui (ativo: true) — o bloqueio em si é
             // via DELETE (mesmo padrão soft-delete do resto da API), ver

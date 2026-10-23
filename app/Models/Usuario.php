@@ -44,6 +44,8 @@ class Usuario extends Authenticatable
         'user_type',
         'perfil_id',
         'centro_custo_id',
+        // Equipe do supervisor (docs/88 §11): grupo da liga e nível "equipe" da régua.
+        'supervisor_id',
         'ativo',
         // Licença do app mobile atribuída pelo ADMIN (docs/67 §3).
         'licenca_mobile',
@@ -130,6 +132,11 @@ class Usuario extends Authenticatable
      * Só tem efeito prático pra user_type = PROMOTOR — ADMIN/GESTOR/SUPERADMIN não são
      * custeados por este mecanismo. Ver docs/08-CENTRO-DE-CUSTO.md.
      */
+    public function supervisor(): BelongsTo
+    {
+        return $this->belongsTo(Supervisor::class);
+    }
+
     public function centroCusto(): BelongsTo
     {
         return $this->belongsTo(CentroCusto::class);

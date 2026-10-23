@@ -161,6 +161,12 @@ class UpdateTipoRegistroRequest extends FormRequest
             ],
             'eh_ruptura' => ['sometimes', 'boolean'],
             'eh_alerta' => ['sometimes', 'boolean'],
+            // Régua de XP (docs/88 §9.1) e avaliação do gestor (doc 33).
+            'xp_iniciativa' => ['sometimes', 'integer', 'min:0', 'max:10000'],
+            'xp_bonus_acao' => ['sometimes', 'integer', 'min:0', 'max:10000'],
+            'xp_teto_por_visita' => ['sometimes', 'nullable', 'integer', 'min:1', 'max:1000'],
+            'xp_intervalo_dias' => ['sometimes', 'integer', 'min:0', 'max:365'],
+            'exige_avaliacao' => ['sometimes', 'boolean'],
             'usa_pontuacao' => ['sometimes', 'boolean'],
             'disponivel_registro_livre' => ['sometimes', 'boolean'],
         ];

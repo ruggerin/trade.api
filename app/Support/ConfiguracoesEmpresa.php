@@ -24,7 +24,10 @@ final class ConfiguracoesEmpresa
     {
         $linhas = Parametro::withoutGlobalScopes()->where('empresa_id', $empresa->id)->get()->keyBy('chave');
 
-        $itens = collect(ParametrosPadrao::CATALOGO)->map(function (array $padrao, string $chave) use ($linhas, $empresa) {
+        $itens = collect(ParametrosPadrao::CATALOGO)
+            // Recurso de plano desligado: os parâmetros dele nem aparecem (ex.: régua de XP, docs/88 §2.1).
+            ->reject(fn (array $padrao, string $chave) => ($campo = ParametrosMetadados::de($chave)['so_com'] ?? null) !== null && ! $empresa->{$campo})
+            ->map(function (array $padrao, string $chave) use ($linhas, $empresa) {
             $meta = ParametrosMetadados::de($chave);
             /** @var Parametro|null $linha */
             $linha = $linhas->get($chave);
@@ -122,6 +125,10 @@ final class ConfiguracoesEmpresa
     /** Motivo de a configuração estar travada por recurso não contratado no plano; null = liberada. */
     public static function bloqueioDeContrato(?Empresa $empresa, string $chave): ?string
     {
+        $soCom = ParametrosMetadados::de($chave)['so_com'] ?? null;
+        if ($soCom !== null && ! $empresa?->{$soCom}) {
+            return 'Recurso do plano não habilitado para esta empresa.';
+        }
         $contrato = ParametrosMetadados::de($chave)['exige_contrato'] ?? null;
         if ($contrato === null || ($empresa && $empresa->{$contrato['campo']})) {
             return null;

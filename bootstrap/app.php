@@ -30,6 +30,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'licenca' => \App\Http\Middleware\EnsureLicencaValida::class,
             'canal.mobile' => \App\Http\Middleware\EnsureCanalMobile::class,
             'assinatura' => \App\Http\Middleware\EnsureAssinaturaAparelho::class,
+            'xp' => \App\Http\Middleware\EnsureControleXp::class,
         ]);
 
         // App é só API, sem tela de login web — sem isso, uma request sem header Accept

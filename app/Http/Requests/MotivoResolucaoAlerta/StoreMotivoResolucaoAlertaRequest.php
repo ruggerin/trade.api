@@ -16,6 +16,8 @@ class StoreMotivoResolucaoAlertaRequest extends FormRequest
     {
         return [
             'descricao' => ['required', 'string', 'max:255'],
+            // Resolver com este motivo conta como informação que virou ação (régua de XP, docs/88 §9.2).
+            'procedente' => ['nullable', 'boolean'],
         ];
     }
 }

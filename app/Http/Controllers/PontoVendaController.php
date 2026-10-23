@@ -11,6 +11,7 @@ use App\Http\Requests\PontoVenda\UpdatePontoVendaRequest;
 use App\Http\Resources\PontoVendaResource;
 use App\Models\AgendaVisita;
 use App\Models\Empresa;
+use App\Models\ClassePontoVenda;
 use App\Models\PontoVenda;
 use App\Models\RamoAtividade;
 use App\Models\RedeLoja;
@@ -109,7 +110,7 @@ class PontoVendaController extends Controller
                 $usuario?->user_type === UserType::PROMOTOR,
                 fn ($query) => VisibilidadePontosVenda::aplicarEscopoPromotor($query, $usuario),
             )
-            ->with(['promotores', 'empresa', 'redeLoja', 'ramoAtividade', 'contratosAtivos'])
+            ->with(['promotores', 'empresa', 'redeLoja', 'ramoAtividade', 'contratosAtivos', 'classe'])
             // Ver App\Enums\EscopoAcaoTipoRegistro::CONTRATO — a Ação "exige contrato ativo"
             // precisa saber, pro app mobile, se este PDV tem algum comodato/ponto extra vigente.
             ->withExists(['contratos as tem_contrato_ativo' => fn ($query) => $query->where('ativo', true)])
@@ -140,7 +141,7 @@ class PontoVendaController extends Controller
     {
         // Sortimento carregado só no detalhe, não na listagem (evita inflar a resposta da lista
         // de PDVs) — ver docs/14-SORTIMENTO-PONTO-VENDA.md §4.
-        $pontoVenda->load(['promotores', 'vendedores.supervisor', 'redeLoja', 'ramoAtividade', 'contratosAtivos', 'sortimento.produto.secao', 'sortimento.produto.departamento', 'sortimento.produto.marca:id,uuid', 'sortimento.departamento', 'sortimento.secao.departamento:id,uuid', 'sortimento.marca', 'sortimento.usuario']);
+        $pontoVenda->load(['promotores', 'vendedores.supervisor', 'redeLoja', 'ramoAtividade', 'contratosAtivos', 'classe', 'classeSugerida', 'sortimento.produto.secao', 'sortimento.produto.departamento', 'sortimento.produto.marca:id,uuid', 'sortimento.departamento', 'sortimento.secao.departamento:id,uuid', 'sortimento.marca', 'sortimento.usuario']);
         $pontoVenda->loadExists(['contratos as tem_contrato_ativo' => fn ($query) => $query->where('ativo', true)]);
 
         return response()->json([
@@ -213,7 +214,7 @@ class PontoVendaController extends Controller
         }
 
         $pontoVenda = PontoVenda::create($this->resolverUuidsParaIds($request->validated()));
-        $pontoVenda->load(['promotores', 'redeLoja', 'ramoAtividade']); // recém-criado, mas mantém a resposta consistente com os outros endpoints
+        $pontoVenda->load(['promotores', 'redeLoja', 'ramoAtividade', 'classe']); // recém-criado, mas mantém a resposta consistente com os outros endpoints
 
         return response()->json([
             'ponto_venda' => new PontoVendaResource($pontoVenda),
@@ -245,7 +246,7 @@ class PontoVendaController extends Controller
     public function update(UpdatePontoVendaRequest $request, PontoVenda $pontoVenda): JsonResponse
     {
         $pontoVenda->update($this->resolverUuidsParaIds($request->validated()));
-        $pontoVenda->load(['promotores', 'redeLoja', 'ramoAtividade']);
+        $pontoVenda->load(['promotores', 'redeLoja', 'ramoAtividade', 'classe']);
 
         return response()->json([
             'ponto_venda' => new PontoVendaResource($pontoVenda),
@@ -272,6 +273,13 @@ class PontoVendaController extends Controller
                 ? RamoAtividade::where('uuid', $dados['ramo_atividade_uuid'])->value('id')
                 : null;
             unset($dados['ramo_atividade_uuid']);
+        }
+
+        if (array_key_exists('classe_uuid', $dados)) {
+            $dados['classe_id'] = $dados['classe_uuid']
+                ? ClassePontoVenda::where('uuid', $dados['classe_uuid'])->value('id')
+                : null;
+            unset($dados['classe_uuid']);
         }
 
         return $dados;

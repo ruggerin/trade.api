@@ -50,6 +50,11 @@ class StorePontoVendaRequest extends FormRequest
                 Rule::exists('ramos_atividade', 'uuid')->where('empresa_id', $this->user()->empresa_id),
             ],
             'numero_checkouts' => ['nullable', 'integer', 'min:0'],
+            // Classe da régua de XP (docs/88 §4); null = a padrão da empresa.
+            'classe_uuid' => [
+                'nullable', 'string',
+                Rule::exists('classes_ponto_venda', 'uuid')->where('empresa_id', $this->user()->empresa_id),
+            ],
             // IANA (America/Manaus...) — null = herda o fuso da empresa (docs/50 §4.2).
             'fuso' => ['nullable', 'timezone:all'],
         ];

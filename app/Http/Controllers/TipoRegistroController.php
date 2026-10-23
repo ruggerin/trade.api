@@ -146,6 +146,12 @@ class TipoRegistroController extends Controller
                 'eh_ruptura' => $dados['eh_ruptura'] ?? false,
                 'eh_alerta' => $dados['eh_alerta'] ?? false,
                 'usa_pontuacao' => $dados['usa_pontuacao'] ?? false,
+                // Régua de XP (docs/88 §9.1) e avaliação do gestor (doc 33).
+                'xp_iniciativa' => $dados['xp_iniciativa'] ?? 0,
+                'xp_bonus_acao' => $dados['xp_bonus_acao'] ?? 0,
+                'xp_teto_por_visita' => $dados['xp_teto_por_visita'] ?? null,
+                'xp_intervalo_dias' => $dados['xp_intervalo_dias'] ?? 0,
+                'exige_avaliacao' => $dados['exige_avaliacao'] ?? false,
                 'disponivel_registro_livre' => $dados['disponivel_registro_livre'] ?? true,
             ]);
             $this->sincronizarCampos($tipo, $dados['campos'] ?? []);
@@ -644,6 +650,11 @@ class TipoRegistroController extends Controller
                 'eh_ruptura' => $tipoRegistro->eh_ruptura,
                 'eh_alerta' => $tipoRegistro->eh_alerta,
                 'usa_pontuacao' => $tipoRegistro->usa_pontuacao,
+                'xp_iniciativa' => $tipoRegistro->xp_iniciativa,
+                'xp_bonus_acao' => $tipoRegistro->xp_bonus_acao,
+                'xp_teto_por_visita' => $tipoRegistro->xp_teto_por_visita,
+                'xp_intervalo_dias' => $tipoRegistro->xp_intervalo_dias,
+                'exige_avaliacao' => $tipoRegistro->exige_avaliacao,
                 'disponivel_registro_livre' => $tipoRegistro->disponivel_registro_livre,
             ]);
 

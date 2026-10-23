@@ -15,6 +15,7 @@ class UpdateMotivoResolucaoAlertaRequest extends FormRequest
     {
         return [
             'descricao' => ['sometimes', 'required', 'string', 'max:255'],
+            'procedente' => ['sometimes', 'boolean'],
             'ativo' => ['sometimes', 'boolean'],
         ];
     }

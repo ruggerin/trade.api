@@ -217,6 +217,11 @@ class PlanoAcaoController extends Controller
             return $this->respostaPlanoJaExiste($this->planoAtivoDoAlerta($registro));
         }
 
+        // Alerta que virou plano de ação: a informação virou ação (régua de XP, docs/88 §9.2).
+        if ($registro) {
+            \App\Support\Xp\ReguaXp::recalcularVisita($registro->visita);
+        }
+
         return $this->respostaDetalhe($request, $plano, 201);
     }
 

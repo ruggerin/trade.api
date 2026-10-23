@@ -56,3 +56,10 @@ Schedule::command('sessoes:limpar')->dailyAt('03:45');
 
 // "Ainda está lá?" (docs/83): prazo máximo vencido vira EXPIRADO.
 Schedule::command('acompanhamentos:expirar')->dailyAt('03:50');
+
+// Régua de XP (docs/88): de hora em hora, cada empresa no próprio fuso — na primeira hora do dia
+// fecha ontem (OS não feitas viram perda) e, na segunda, a liga da semana passada.
+Schedule::command('xp:fechar-dia')->hourlyAt(30)->withoutOverlapping(30);
+
+// Sugestão de classe de loja pela mediana do tempo de visita (docs/88 §4) — o gestor aceita.
+Schedule::command('xp:sugerir-classes')->weeklyOn(1, '04:30');

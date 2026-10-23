@@ -15,6 +15,7 @@ class MotivoResolucaoAlertaResource extends JsonResource
         return [
             'id' => $this->uuid,
             'descricao' => $this->descricao,
+            'procedente' => (bool) $this->procedente,
             'ativo' => $this->ativo,
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,

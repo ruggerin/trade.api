@@ -31,9 +31,11 @@ use App\Support\HorarioDoCampo;
 use App\Support\Instante;
 use App\Support\AutorizacaoDoGestor;
 use App\Support\OrdemDoCheckin;
+use App\Support\MixDaVisita;
 use App\Support\RaioCheckin;
 use App\Support\Rastreamento;
 use App\Support\RotaObrigatoria;
+use App\Support\Xp\ReguaXp;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -140,6 +142,8 @@ class VisitaController extends Controller
         return response()->json([
             'visita' => new VisitaResource($visita),
             'raio_checkin_metros' => is_finite($raio) ? $raio : null,
+            // Régua do mix (docs/90 §3.2): cópia do mix do dia × registros, calculada na hora.
+            'regua_mix' => MixDaVisita::regua($visita),
             'afastamento' => $afastamento ? [
                 ...$afastamento,
                 'metros' => Rastreamento::afastamentoMetros($visita->empresa),
@@ -442,6 +446,9 @@ class VisitaController extends Controller
             'fim_longitude' => $dados['longitude'],
             'fim_distancia_metros' => $distancia,
             'status' => StatusVisita::FINALIZADA,
+            // Completude que o promotor viu no app (docs/88 §5.1); ausente em app antigo.
+            'obrigatorias_feitas' => $dados['obrigatorias_feitas'] ?? null,
+            'obrigatorias_total' => $dados['obrigatorias_total'] ?? null,
         ]);
 
         if ($visita->ordem_servico_id) {
@@ -449,6 +456,11 @@ class VisitaController extends Controller
                 ->where('id', $visita->ordem_servico_id)
                 ->update(['status' => StatusOrdemServico::CONCLUIDA]);
         }
+
+        // Régua de XP (docs/88): calcula a visita assim que o check-out chega.
+        ReguaXp::recalcularVisita($visita);
+        // Régua do mix (docs/90): copia o mix da loja no momento em que o check-out chega.
+        MixDaVisita::gravar($visita);
 
         return response()->json([
             'visita' => new VisitaResource($visita),
@@ -530,6 +542,8 @@ class VisitaController extends Controller
                 $antes,
             );
         });
+        // Régua de XP (docs/88 §7): intervenção recalcula a visita, com o motivo nos ajustes.
+        ReguaXp::recalcularVisita($visita, "Intervenção do gestor: {$motivo}", $request->user()->id);
 
         return response()->json([
             'visita' => new VisitaResource($this->recarregarComIntervencoes($visita)),
@@ -587,6 +601,9 @@ class VisitaController extends Controller
                 $antes,
             );
         });
+        // Régua de XP (docs/88 §7): intervenção recalcula a visita, com o motivo nos ajustes.
+        ReguaXp::recalcularVisita($visita, "Intervenção do gestor: {$motivo}", $request->user()->id);
+        MixDaVisita::gravar($visita);
 
         return response()->json([
             'visita' => new VisitaResource($this->recarregarComIntervencoes($visita)),
@@ -653,6 +670,8 @@ class VisitaController extends Controller
                 $antes,
             );
         });
+        // Régua de XP (docs/88 §7): intervenção recalcula a visita, com o motivo nos ajustes.
+        ReguaXp::recalcularVisita($visita, "Intervenção do gestor: {$motivo}", $request->user()->id);
 
         return response()->json([
             'visita' => new VisitaResource($this->recarregarComIntervencoes($visita)),

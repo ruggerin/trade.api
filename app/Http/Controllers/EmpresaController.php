@@ -11,6 +11,7 @@ use App\Http\Requests\EmpresaSuperadmin\UpdateEmpresaSuperadminRequest;
 use App\Http\Resources\EmpresaResource;
 use App\Http\Resources\UsuarioResource;
 use App\Models\Dispositivo;
+use App\Models\ClassePontoVenda;
 use App\Models\Empresa;
 use App\Models\SolicitacaoAparelho;
 use App\Models\TipoRegistro;
@@ -292,8 +293,12 @@ class EmpresaController extends Controller
                 'limite_licencas' => $dados['limite_licencas'] ?? null,
                 'pedidos_venda_habilitado' => $dados['pedidos_venda_habilitado'] ?? false,
                 'faturamento_contratado' => $dados['faturamento_contratado'] ?? false,
+                'controle_xp_habilitado' => $dados['controle_xp_habilitado'] ?? false,
                 'fuso' => $dados['fuso'] ?? Fuso::PADRAO,
             ]);
+            if ($empresa->controle_xp_habilitado) {
+                ClassePontoVenda::semearExemplo($empresa);
+            }
 
             $usuario = Usuario::create([
                 'empresa_id' => $empresa->id,
@@ -324,6 +329,10 @@ class EmpresaController extends Controller
     public function updateSuperadmin(UpdateEmpresaSuperadminRequest $request, Empresa $empresa): JsonResponse
     {
         $empresa->update($request->validated());
+        // Régua de XP ligada numa empresa sem classes: ganha as de exemplo pra calibrar (docs/88 §4.1).
+        if ($empresa->controle_xp_habilitado) {
+            ClassePontoVenda::semearExemplo($empresa);
+        }
 
         return response()->json([
             'empresa' => new EmpresaResource($empresa),

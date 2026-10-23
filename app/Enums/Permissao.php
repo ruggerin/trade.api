@@ -83,6 +83,14 @@ enum Permissao: string
     case VISITAS_EXIGIR_AGENDA = 'visitas.exigir_agenda';
     case VISITAS_EXIGIR_SEQUENCIA = 'visitas.exigir_sequencia';
 
+    // Régua de XP (docs/88): ver a régua da operação (faz o papel de tela, como
+    // planos_acao.visualizar) e gerenciar — classificar perdas e cadastrar as classes de loja.
+    case XP_VISUALIZAR = 'xp.visualizar';
+    case XP_GERENCIAR = 'xp.gerenciar';
+
+    // Avaliação de formulário pelo gestor (doc 33 / docs/88 §10): aprovar ou reprovar.
+    case FORMULARIOS_AVALIAR = 'formularios.avaliar';
+
     // Acesso a tela (docs/64-CONTROLE-DE-ACESSO-POR-TELA.md): "vê a tela no menu e lê os dados
     // dela". Só existem pras telas que não tinham permissão de leitura — onde já existe uma
     // (planos_acao.visualizar, rastreamento.*, usuarios.gerenciar, contratos.gerenciar...), é ela

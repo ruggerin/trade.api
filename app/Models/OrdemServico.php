@@ -7,6 +7,7 @@ use App\Enums\PrioridadeVisita;
 use App\Enums\StatusOrdemServico;
 use App\Models\Concerns\BelongsToEmpresa;
 use App\Models\Concerns\HasUuid;
+use App\Support\Xp\ParametrosXp;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -50,6 +51,11 @@ class OrdemServico extends Model
         'motivo_cancelamento_id',
         'motivo_cancelamento_texto',
         'responsavel_nao_execucao',
+        // Régua de XP (docs/88 §6): congelados quando a OS nasce.
+        'classe_id',
+        'xp_previsto',
+        'xp_composicao',
+        'duracao_prevista_minutos',
     ];
 
     protected function casts(): array
@@ -64,7 +70,40 @@ class OrdemServico extends Model
             'prazo_inicio_proposto' => 'datetime',
             'prazo_fim_proposto' => 'datetime',
             'cancelada_em' => 'datetime',
+            'xp_previsto' => 'integer',
+            'xp_composicao' => 'array',
+            'duracao_prevista_minutos' => 'integer',
         ];
+    }
+
+    /**
+     * Congela a classe da loja, o XP possível, a composição (peso de cada parte) e a duração
+     * prevista no momento em que a OS nasce (docs/88 §6) — vale pra toda origem (agenda, campanha, direcionamento, contrato, manual,
+     * promotor). Mudar a classe da loja depois não reescreve o passado. Sem classe cadastrada,
+     * fica nulo e a régua ignora a OS.
+     */
+    protected static function booted(): void
+    {
+        static::creating(function (self $os): void {
+            if ($os->xp_previsto !== null || ! $os->ponto_venda_id) {
+                return;
+            }
+            $pontoVenda = PontoVenda::withoutGlobalScopes()->find($os->ponto_venda_id);
+            $classe = $pontoVenda ? ClassePontoVenda::daLoja($pontoVenda) : null;
+            if (! $classe) {
+                return;
+            }
+            $os->classe_id = $classe->id;
+            $os->xp_previsto = $classe->xp_base;
+            $empresa = Empresa::find($os->empresa_id ?? $pontoVenda->empresa_id);
+            $os->xp_composicao = $empresa ? ParametrosXp::composicao($empresa) : null;
+            $os->duracao_prevista_minutos ??= $classe->duracao_padrao_minutos;
+        });
+    }
+
+    public function classe(): BelongsTo
+    {
+        return $this->belongsTo(ClassePontoVenda::class, 'classe_id');
     }
 
     public function empresa(): BelongsTo

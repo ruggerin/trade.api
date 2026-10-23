@@ -8,6 +8,10 @@ use App\Http\Controllers\CampanhaAuditoriaController;
 use App\Http\Controllers\CampanhaItemController;
 use App\Http\Controllers\CampoSortimentoController;
 use App\Http\Controllers\CentroCustoController;
+use App\Http\Controllers\AvaliacaoFormularioController;
+use App\Http\Controllers\ClassePontoVendaController;
+use App\Http\Controllers\ReguaXpController;
+use App\Http\Controllers\XpController;
 use App\Http\Controllers\ContratoController;
 use App\Http\Controllers\ContratoMetaController;
 use App\Http\Controllers\DepartamentoAuditoriaController;
@@ -642,6 +646,42 @@ Route::middleware(['auth:sanctum', 'licenca', 'assinatura'])->group(function ():
     Route::post('/pedidos-venda/{pedidoVenda}/rejeitar', [PedidoVendaController::class, 'rejeitar']);
     Route::post('/pedidos-venda/{pedidoVenda}/concluir', [PedidoVendaController::class, 'concluir']);
     Route::post('/pedidos-venda/{pedidoVenda}/cancelar', [PedidoVendaController::class, 'cancelar']);
+
+    // Régua de performance com XP (docs/88) — tudo atrás do recurso de plano (`xp`).
+    Route::middleware('xp')->group(function (): void {
+        // Lado do promotor (o controller esconde em modo prévia; ADMIN/GESTOR veem sempre).
+        Route::get('/xp/eu', [XpController::class, 'eu']);
+        Route::get('/xp/ranking', [XpController::class, 'ranking']);
+        Route::get('/xp/visitas/{visita}', [XpController::class, 'visita']);
+
+        // Classes de loja: leitura pra quem cadastra loja ou vê a régua; cadastro é da régua.
+        Route::get('/classes-ponto-venda', [ClassePontoVendaController::class, 'index'])
+            ->middleware('permissao:xp.gerenciar,xp.visualizar,pontos_venda.gerenciar,tela.lojas');
+        Route::middleware('permissao:xp.gerenciar')->group(function (): void {
+            Route::post('/classes-ponto-venda', [ClassePontoVendaController::class, 'store']);
+            Route::get('/classes-ponto-venda/sugestoes', [ClassePontoVendaController::class, 'sugestoes']);
+            Route::post('/classes-ponto-venda/sugestoes/aceitar', [ClassePontoVendaController::class, 'aceitarSugestoes']);
+            Route::put('/classes-ponto-venda/{classe}', [ClassePontoVendaController::class, 'update']);
+            Route::delete('/classes-ponto-venda/{classe}', [ClassePontoVendaController::class, 'destroy']);
+            Route::post('/xp/ocorrencias/{xpLancamento}/classificar', [ReguaXpController::class, 'classificar']);
+        });
+
+        // Régua da operação no admin.
+        Route::middleware('permissao:xp.visualizar')->group(function (): void {
+            Route::get('/xp/regua', [ReguaXpController::class, 'regua']);
+            Route::get('/xp/ocorrencias', [ReguaXpController::class, 'ocorrencias']);
+            Route::get('/xp/evolucao', [ReguaXpController::class, 'evolucao']);
+            Route::get('/xp/planejamento', [ReguaXpController::class, 'planejamento']);
+            Route::get('/xp/valor-gerado', [ReguaXpController::class, 'valorGerado']);
+            Route::get('/xp/ranking-equipe', [ReguaXpController::class, 'ranking']);
+        });
+    });
+
+    // Avaliação de formulário pelo gestor (doc 33) — independe da régua de XP.
+    Route::middleware('permissao:formularios.avaliar')->group(function (): void {
+        Route::get('/avaliacoes-formulario', [AvaliacaoFormularioController::class, 'index']);
+        Route::post('/visitas/{visita}/registros/{registro}/avaliar', [AvaliacaoFormularioController::class, 'avaliar']);
+    });
 
     // Centros de custo: dado financeiro, diferente do resto do catálogo a LEITURA também exige
     // a permissão (nunca aberta a qualquer autenticado) — ver docs/08-CENTRO-DE-CUSTO.md.

@@ -24,6 +24,13 @@ class Parametro extends Model
         return ['ativo' => 'boolean'];
     }
 
+    protected static function booted(): void
+    {
+        // A régua de XP guarda os parâmetros lidos durante a requisição (App\Support\Xp\ParametrosXp).
+        static::saved(fn () => \App\Support\Xp\ParametrosXp::limparCache());
+        static::deleted(fn () => \App\Support\Xp\ParametrosXp::limparCache());
+    }
+
     public function empresa(): BelongsTo
     {
         return $this->belongsTo(Empresa::class);

@@ -22,6 +22,9 @@ use App\Support\Acompanhamentos;
 use App\Support\ConcorrentesPorMarca;
 use App\Support\CancelamentoRegistro;
 use App\Support\HorarioDoCampo;
+use App\Support\Xp\CalculoVisitaXp;
+use App\Support\Xp\ParametrosXp;
+use App\Support\Xp\ReguaXp;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -124,6 +127,12 @@ class VisitaRegistroController extends Controller
                 : null,
             ...$embalagem,
         ]);
+        // Avaliação do gestor (doc 33 / docs/88 §10.1): com o recurso ligado, formulário marcado
+        // nasce aguardando avaliação.
+        if (ParametrosXp::avaliacaoHabilitada($visita->empresa()->withoutGlobalScopes()->first())
+            && TipoRegistro::withoutGlobalScopes()->whereKey($tipoRegistroId)->value('exige_avaliacao')) {
+            $registro->avaliacao_status = CalculoVisitaXp::STATUS_PENDENTE;
+        }
         $registro->created_at = $criadoEm;
         $registro->recebido_em = now();
         $registro->save();
@@ -280,6 +289,9 @@ class VisitaRegistroController extends Controller
             }
         }
 
+        // Registro cancelado sai da régua de XP (docs/88).
+        ReguaXp::recalcularVisita($visita, 'Registro cancelado.', $request->user()->id);
+
         $registro->setRelation('visita', $visita);
         $registro->load(['produtoAuditoria', 'tipoRegistro.campos', 'secao', 'departamento', 'marca', 'imagens']);
 
@@ -314,6 +326,8 @@ class VisitaRegistroController extends Controller
                     : null,
                 'alerta_motivo_texto' => $dados['motivo_texto'] ?? null,
             ]);
+            // Alerta resolvido como procedente: a informação virou ação (docs/88 §9.2).
+            ReguaXp::recalcularVisita($visita);
         }
 
         $registro->setRelation('visita', $visita);

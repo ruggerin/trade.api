@@ -51,6 +51,11 @@ class UpdatePontoVendaRequest extends FormRequest
                 Rule::exists('ramos_atividade', 'uuid')->where('empresa_id', $this->route('pontoVenda')?->empresa_id),
             ],
             'numero_checkouts' => ['sometimes', 'nullable', 'integer', 'min:0'],
+            // Classe da régua de XP (docs/88 §4); null = a padrão da empresa.
+            'classe_uuid' => [
+                'sometimes', 'nullable', 'string',
+                Rule::exists('classes_ponto_venda', 'uuid')->where('empresa_id', $this->route('pontoVenda')?->empresa_id),
+            ],
             'fuso' => ['sometimes', 'nullable', 'timezone:all'],
             'ativo' => ['sometimes', 'boolean'],
         ];

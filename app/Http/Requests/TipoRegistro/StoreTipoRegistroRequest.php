@@ -177,6 +177,12 @@ class StoreTipoRegistroRequest extends FormRequest
             // Dispara evento de alerta no Painel de Atividades — ver
             // docs/17-PAINEL-ATIVIDADES.md.
             'eh_alerta' => ['nullable', 'boolean'],
+            // Régua de XP (docs/88 §9.1) e avaliação do gestor (doc 33).
+            'xp_iniciativa' => ['nullable', 'integer', 'min:0', 'max:10000'],
+            'xp_bonus_acao' => ['nullable', 'integer', 'min:0', 'max:10000'],
+            'xp_teto_por_visita' => ['nullable', 'integer', 'min:1', 'max:1000'],
+            'xp_intervalo_dias' => ['nullable', 'integer', 'min:0', 'max:365'],
+            'exige_avaliacao' => ['nullable', 'boolean'],
             // % de campos BOOLEANO/SORTIMENTO que "passaram" — ver
             // VisitaRegistroResource::pontuacao e decisão 5 de docs/20-FORMULARIO-DINAMICO-CAMPANHA.md.
             'usa_pontuacao' => ['nullable', 'boolean'],

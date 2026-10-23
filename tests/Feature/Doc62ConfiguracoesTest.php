@@ -51,7 +51,10 @@ class Doc62ConfiguracoesTest extends TestCase
         $areas = $this->getJson('/api/parametros/catalogo')->assertOk()->json('areas');
 
         $total = collect($areas)->sum(fn ($a) => count($a['itens']));
-        $this->assertSame(count(ParametrosPadrao::CATALOGO), $total);
+        // Parâmetro de recurso de plano desligado (ex.: régua de XP, docs/88) não aparece.
+        $semRecurso = collect(ParametrosPadrao::CATALOGO)->keys()
+            ->filter(fn ($c) => isset(\App\Support\ParametrosMetadados::de($c)['so_com']))->count();
+        $this->assertSame(count(ParametrosPadrao::CATALOGO) - $semRecurso, $total);
 
         $raio = $this->item($areas, 'CHECKIN_RAIO_METROS');
         $this->assertSame('200', $raio['valor']);

@@ -77,6 +77,12 @@ class OrdemServicoResource extends JsonResource
             // Postgres devolve TIME com segundos ("14:30:00") — corta pra "HH:mm", mesmo formato
             // aceito na validação de entrada (date_format:H:i).
             'horario_previsto' => $this->horario_previsto ? substr($this->horario_previsto, 0, 5) : null,
+            // Régua de XP (docs/88 §6): congelados quando a OS nasceu.
+            'xp_previsto' => $this->xp_previsto,
+            'duracao_prevista_minutos' => $this->duracao_prevista_minutos,
+            'classe' => $this->classe_id ? $this->whenLoaded('classe', fn () => $this->classe ? [
+                'nome' => $this->classe->nome, 'icone' => $this->classe->icone, 'cor' => $this->classe->cor,
+            ] : null) : null,
             'obrigatoria' => $this->obrigatoria,
             'prazo_inicio' => $this->prazo_inicio,
             'prazo_fim' => $this->prazo_fim,

@@ -60,6 +60,12 @@ class TipoRegistro extends Model
         'acompanha_prazo_dias',
         'eh_ruptura',
         'eh_alerta',
+        // Régua de XP (docs/88 §9.1) e avaliação do gestor (doc 33).
+        'xp_iniciativa',
+        'xp_bonus_acao',
+        'xp_teto_por_visita',
+        'xp_intervalo_dias',
+        'exige_avaliacao',
         'usa_pontuacao',
         'disponivel_registro_livre',
     ];
@@ -86,6 +92,11 @@ class TipoRegistro extends Model
             'acompanha_prazo_dias' => 'integer',
             'eh_ruptura' => 'boolean',
             'eh_alerta' => 'boolean',
+            'xp_iniciativa' => 'integer',
+            'xp_bonus_acao' => 'integer',
+            'xp_teto_por_visita' => 'integer',
+            'xp_intervalo_dias' => 'integer',
+            'exige_avaliacao' => 'boolean',
             'usa_pontuacao' => 'boolean',
             'disponivel_registro_livre' => 'boolean',
         ];

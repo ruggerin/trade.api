@@ -35,6 +35,9 @@ class Visita extends Model
         // docs/51 Fase 2 — quando o servidor recebeu cada passo (a hora do campo vem do app).
         'checkin_recebido_em',
         'checkout_recebido_em',
+        // Completude declarada pelo app no check-out (docs/88 §5.1).
+        'obrigatorias_feitas',
+        'obrigatorias_total',
     ];
 
     protected function casts(): array

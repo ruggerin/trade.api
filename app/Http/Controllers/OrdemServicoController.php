@@ -28,7 +28,7 @@ use App\Support\RotaObrigatoria;
 
 class OrdemServicoController extends Controller
 {
-    private const RELACOES = ['pontoVenda', 'usuario', 'campanha', 'direcionamento', 'tipoVisita', 'objetivoVisita', 'agendaVisita', 'contrato', 'visita', 'formularios', 'canceladaPor', 'motivoCancelamento'];
+    private const RELACOES = ['pontoVenda', 'classe', 'usuario', 'campanha', 'direcionamento', 'tipoVisita', 'objetivoVisita', 'agendaVisita', 'contrato', 'visita', 'formularios', 'canceladaPor', 'motivoCancelamento'];
 
     public function index(Request $request): JsonResponse
     {

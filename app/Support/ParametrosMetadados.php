@@ -25,6 +25,7 @@ final class ParametrosMetadados
         'paineis' => ['rotulo' => 'Painéis e relatórios', 'ajuda' => 'Atualização e avisos dos painéis do admin.'],
         'aplicativo' => ['rotulo' => 'Aplicativo do promotor', 'ajuda' => 'Comportamento do app instalado no celular.'],
         'seguranca' => ['rotulo' => 'Segurança e aparelhos', 'ajuda' => 'Troca de celular e integridade do aparelho.'],
+        'xp' => ['rotulo' => 'Régua de produtividade', 'ajuda' => 'Pontuação dos promotores, liga e avaliação do gestor (recurso do plano).'],
         'avancado' => ['rotulo' => 'Avançado (suporte)', 'ajuda' => 'Parâmetros sem tela própria.'],
     ];
 
@@ -148,6 +149,65 @@ final class ParametrosMetadados
                 'motivo' => 'Recurso do plano: a integração de faturamento precisa ser contratada. Fale com o suporte para liberar.',
             ],
             'ajuda' => 'Liga valor, lucro e faturamento dos pedidos do ERP e o relatório Esforço × Retorno. Só aparece para quem tem a permissão "Ver faturamento" no perfil; o promotor nunca vê.',
+        ],
+        // Régua de XP (docs/88): só aparece pra empresa com o recurso de plano ligado (`so_com`).
+        'XP_VISIVEL_PROMOTOR' => [
+            'area' => 'xp', 'rotulo' => 'Promotor vê a pontuação', 'tipo' => 'bool', 'so_com' => 'controle_xp_habilitado',
+            'ajuda' => 'Desligado é o modo prévia: a régua calcula e só o gestor vê. Ligue depois de calibrar classes e tolerâncias com o piloto.',
+        ],
+        'XP_PENDENTE_VISIVEL_PROMOTOR' => [
+            'area' => 'xp', 'rotulo' => 'Mostrar XP aguardando avaliação', 'tipo' => 'bool', 'so_com' => 'controle_xp_habilitado',
+            'ajuda' => 'Ligado: o promotor vê "+50 XP aguardando avaliação". Desligado: só vê depois que o gestor aprovar.',
+        ],
+        'XP_RANKING_HABILITADO' => [
+            'area' => 'xp', 'rotulo' => 'Liga semanal da equipe', 'tipo' => 'bool', 'so_com' => 'controle_xp_habilitado',
+            'ajuda' => 'Ranking da semana entre os promotores da mesma equipe. XP pessoal, meta e ofensiva aparecem mesmo com a liga desligada.',
+        ],
+        'XP_COMPETENCIA' => [
+            'area' => 'xp', 'rotulo' => 'XP aprovado conta no dia', 'tipo' => 'lista', 'so_com' => 'controle_xp_habilitado',
+            'opcoes' => ['APROVACAO' => 'Da aprovação — o dia nunca muda depois de passado', 'REGISTRO' => 'Do registro — o histórico mostra quando o trabalho foi feito'],
+            'ajuda' => 'Semana da liga já fechada não muda, mesmo que um XP seja aprovado depois.',
+        ],
+        'XP_TOLERANCIA_DURACAO_PERCENTUAL' => [
+            'area' => 'xp', 'rotulo' => 'Tolerância de duração', 'tipo' => 'numero', 'unidade' => '%', 'min' => 0, 'max' => 300, 'so_com' => 'controle_xp_habilitado',
+            'ajuda' => 'Quanto a visita pode passar da duração prevista sem perder o XP de tempo. A tolerância de início é a mesma "Tolerância de atraso" das visitas.',
+        ],
+        'XP_TEMPO_MINIMO_PERCENTUAL' => [
+            'area' => 'xp', 'rotulo' => 'Tempo mínimo para pontuar', 'tipo' => 'numero', 'unidade' => '%', 'min' => 0, 'max' => 100, 'so_com' => 'controle_xp_habilitado',
+            'ajuda' => 'Visita abaixo deste percentual da duração prevista não pontua nada.',
+        ],
+        'XP_LIGA_MINIMO_VISITAS' => [
+            'area' => 'xp', 'rotulo' => 'Mínimo de visitas para entrar na liga', 'tipo' => 'numero', 'unidade' => 'visitas', 'min' => 0, 'max' => 100, 'so_com' => 'controle_xp_habilitado',
+            'ajuda' => 'Visitas agendadas na semana. Quem tiver menos (férias, afastamento) fica fora da semana.',
+        ],
+        // Composição do XP da visita (docs/88 §5.1): os 6 pesos somam 100 (LoteParametrosRequest).
+        'XP_PESO_PRESENCA' => [
+            'area' => 'xp', 'rotulo' => 'Peso: Presença no raio', 'tipo' => 'numero', 'unidade' => '%', 'min' => 0, 'max' => 100, 'grupo' => 'composicao_xp', 'so_com' => 'controle_xp_habilitado',
+            'ajuda' => 'Parte do XP da visita ganha com check-in dentro do raio da loja. Os 6 pesos somam 100%; a mudança vale pras OS criadas daqui pra frente.',
+        ],
+        'XP_PESO_COMPLETUDE' => [
+            'area' => 'xp', 'rotulo' => 'Peso: Obrigatórias', 'tipo' => 'numero', 'unidade' => '%', 'min' => 0, 'max' => 100, 'grupo' => 'composicao_xp', 'so_com' => 'controle_xp_habilitado',
+            'ajuda' => 'Parte do XP da visita ganha com as obrigatórias feitas (proporcional). Os 6 pesos somam 100%; a mudança vale pras OS criadas daqui pra frente.',
+        ],
+        'XP_PESO_QUALIDADE' => [
+            'area' => 'xp', 'rotulo' => 'Peso: Qualidade', 'tipo' => 'numero', 'unidade' => '%', 'min' => 0, 'max' => 100, 'grupo' => 'composicao_xp', 'so_com' => 'controle_xp_habilitado',
+            'ajuda' => 'Parte do XP da visita ganha com a nota dos formulários com pontuação (ruptura fica fora). Os 6 pesos somam 100%; a mudança vale pras OS criadas daqui pra frente.',
+        ],
+        'XP_PESO_PONTUALIDADE' => [
+            'area' => 'xp', 'rotulo' => 'Peso: Início no horário', 'tipo' => 'numero', 'unidade' => '%', 'min' => 0, 'max' => 100, 'grupo' => 'composicao_xp', 'so_com' => 'controle_xp_habilitado',
+            'ajuda' => 'Parte do XP da visita ganha com início dentro da tolerância de atraso. Os 6 pesos somam 100%; a mudança vale pras OS criadas daqui pra frente.',
+        ],
+        'XP_PESO_TEMPO' => [
+            'area' => 'xp', 'rotulo' => 'Peso: Tempo na loja', 'tipo' => 'numero', 'unidade' => '%', 'min' => 0, 'max' => 100, 'grupo' => 'composicao_xp', 'so_com' => 'controle_xp_habilitado',
+            'ajuda' => 'Parte do XP da visita ganha com duração dentro da tolerância. Os 6 pesos somam 100%; a mudança vale pras OS criadas daqui pra frente.',
+        ],
+        'XP_PESO_ENVIO' => [
+            'area' => 'xp', 'rotulo' => 'Peso: Envio no mesmo dia', 'tipo' => 'numero', 'unidade' => '%', 'min' => 0, 'max' => 100, 'grupo' => 'composicao_xp', 'so_com' => 'controle_xp_habilitado',
+            'ajuda' => 'Parte do XP da visita ganha com check-out recebido no mesmo dia. Os 6 pesos somam 100%; a mudança vale pras OS criadas daqui pra frente.',
+        ],
+        'AVALIACAO_FORMULARIO_HABILITADA' => [
+            'area' => 'visitas', 'rotulo' => 'Avaliação de formulário pelo gestor', 'tipo' => 'bool',
+            'ajuda' => 'Liga a fila de avaliação. Em cada formulário, marque "Exige avaliação" para os que o gestor precisa aprovar.',
         ],
         'PEDIDO_VENDA_SEM_VISITA_PERMITIDO' => [
             'area' => 'pedidos', 'rotulo' => 'Pedido de venda fora de uma visita', 'tipo' => 'bool',
