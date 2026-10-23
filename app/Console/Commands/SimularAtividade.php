@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Enums\CheckoutTipo;
 use App\Enums\StatusOrdemServico;
 use App\Enums\TipoCampoRegistro;
 use App\Models\Empresa;
@@ -12,6 +13,8 @@ use App\Models\TipoRegistro;
 use App\Models\Usuario;
 use App\Models\Visita;
 use App\Models\VisitaRegistro;
+use App\Support\CheckoutParametros;
+use App\Support\FinalizacaoVisita;
 use App\Support\Fuso;
 use App\Support\OperacaoDoDia;
 use App\Support\ResolverSortimentoCampo;
@@ -44,6 +47,17 @@ class SimularAtividade extends Command
 
     /** Chance (%) de o promotor pular uma loja da rota — fica pendente/atrasada no painel. */
     private const CHANCE_PULAR = 8;
+
+    /**
+     * Chance (%) de o promotor esquecer de finalizar a ÚLTIMA visita do dia e ir embora — só nas
+     * empresas com aviso/fechamento por saída detectada (docs/92). O GPS segue se afastando e quem
+     * fecha é o `visitas:monitorar-saida` de verdade; se nada fechar, o simulador finaliza 50 min
+     * depois do fim da jornada (o promotor que lembra no fim do dia).
+     */
+    private const CHANCE_ESQUECER = 25;
+
+    /** Até onde o promotor que esqueceu se afasta da loja, em graus (~0,015° ≈ 1,6 km). */
+    private const AFASTAMENTO_GRAUS = 0.015;
 
     private const OBSERVACOES_RUPTURA = [
         'Gôndola vazia, sem previsão do repositor.',
@@ -113,6 +127,8 @@ class SimularAtividade extends Command
 
         $abertas = 0;
         $finalizadas = 0;
+        // Só faz sentido esquecer de finalizar onde a saída detectada está ligada (docs/92).
+        $permiteEsquecer = CheckoutParametros::avisoSaidaMinutos($empresa) > 0 || CheckoutParametros::automaticoMinutos($empresa) > 0;
 
         foreach ($promotores as $promotor) {
             $ordens = OrdemServico::withoutGlobalScopes()
@@ -129,19 +145,19 @@ class SimularAtividade extends Command
                 continue;
             }
 
-            $plano = $this->planoDoDia($promotor, $ordens, $hoje, $inicioJornada, $fimJornada);
+            $plano = $this->planoDoDia($promotor, $ordens, $hoje, $inicioJornada, $fimJornada, $permiteEsquecer);
 
             foreach ($plano as $etapa) {
                 if ($etapa['inicio']->gt($agora)) {
                     break;
                 }
 
-                [$abriu, $fechou] = $this->executarEtapa($etapa, $agora, $contexto);
+                [$abriu, $fechou] = $this->executarEtapa($etapa, $agora, $contexto, $fimJornada);
                 $abertas += $abriu;
                 $finalizadas += $fechou;
             }
 
-            $this->registrarPosicoes($empresa, $promotor, $plano, $inicioJornada, $agora);
+            $this->registrarPosicoes($empresa, $promotor, $plano, $inicioJornada, $fimJornada, $agora);
         }
 
         $this->info("Empresa {$empresa->id}: {$abertas} check-in(s), {$finalizadas} check-out(s).");
@@ -153,7 +169,7 @@ class SimularAtividade extends Command
      *
      * @return list<array{os: OrdemServico, inicio: Carbon, fim: Carbon}>
      */
-    private function planoDoDia(Usuario $promotor, Collection $ordens, Carbon $hoje, Carbon $inicioJornada, Carbon $fimJornada): array
+    private function planoDoDia(Usuario $promotor, Collection $ordens, Carbon $hoje, Carbon $inicioJornada, Carbon $fimJornada, bool $permiteEsquecer = false): array
     {
         $rng = new Randomizer(new Mt19937(crc32("simulador|{$promotor->id}|{$hoje->toDateString()}")));
         $cursor = $inicioJornada->copy()->addMinutes($rng->getInt(5, 25));
@@ -174,15 +190,20 @@ class SimularAtividade extends Command
             }
 
             $fim = $inicio->copy()->addMinutes($rng->getInt(20, 50));
-            $plano[] = ['os' => $os, 'inicio' => $inicio->utc(), 'fim' => $fim->utc()];
+            $plano[] = ['os' => $os, 'inicio' => $inicio->utc(), 'fim' => $fim->utc(), 'esquece' => false];
             $cursor = $fim;
+        }
+
+        // Sorteado por último pra não mexer no roteiro de quem não esquece.
+        if ($plano !== [] && $permiteEsquecer && $rng->getInt(1, 100) <= self::CHANCE_ESQUECER) {
+            $plano[array_key_last($plano)]['esquece'] = true;
         }
 
         return $plano;
     }
 
     /** @return array{0: int, 1: int} [check-ins feitos, check-outs feitos] */
-    private function executarEtapa(array $etapa, Carbon $agora, array $contexto): array
+    private function executarEtapa(array $etapa, Carbon $agora, array $contexto, Carbon $fimJornada): array
     {
         /** @var OrdemServico $os */
         $os = $etapa['os'];
@@ -219,20 +240,27 @@ class SimularAtividade extends Command
             return [$abriu, 0];
         }
 
-        DB::transaction(function () use ($visita, $os, $etapa, $contexto): void {
+        // Esqueceu de finalizar: fica aberta pro monitor de saída avisar/fechar. Rede de segurança:
+        // 50 min depois do fim da jornada ainda aberta, o promotor "lembra" e finaliza (atrasado).
+        $atrasado = false;
+        if ($etapa['esquece']) {
+            if ($agora->lt($fimJornada->copy()->addMinutes(50))) {
+                return [$abriu, 0];
+            }
+            $atrasado = true;
+        }
+
+        DB::transaction(function () use ($visita, $os, $etapa, $contexto, $agora, $atrasado): void {
             $this->criarRegistros($visita, $os, $etapa, $contexto);
 
+            // Mesmo caminho do check-out do app (raio, tempo confirmado por GPS, OS concluída,
+            // régua de XP e mix da visita). Quem esqueceu finaliza longe da loja, na hora em que lembrou.
             $pdv = $os->pontoVenda;
-            $visita->update([
-                'status' => 'FINALIZADA',
-                'fim_data' => $etapa['fim'],
-                'fim_latitude' => $this->perto($pdv->latitude),
-                'fim_longitude' => $this->perto($pdv->longitude),
-                'fim_distancia_metros' => random_int(3, 40),
-                'checkout_tipo' => 'PROMOTOR',
-                'checkout_recebido_em' => $etapa['fim'],
-            ]);
-            $os->update(['status' => StatusOrdemServico::CONCLUIDA]);
+            $fim = $atrasado ? $agora->copy() : $etapa['fim'];
+            [$lat, $lng] = $atrasado
+                ? [(float) $pdv->latitude + self::AFASTAMENTO_GRAUS, (float) $pdv->longitude + self::AFASTAMENTO_GRAUS]
+                : [$this->perto($pdv->latitude), $this->perto($pdv->longitude)];
+            FinalizacaoVisita::finalizar($visita, $fim, $lat, $lng, CheckoutTipo::PROMOTOR, ['checkout_recebido_em' => $fim]);
         });
 
         return [$abriu, 1];
@@ -367,7 +395,7 @@ class SimularAtividade extends Command
      * GPS a cada 5 min desde o último ponto do dia: parado na loja durante a visita, andando em
      * linha reta entre uma loja e a próxima no deslocamento. Depois da última visita, para.
      */
-    private function registrarPosicoes(Empresa $empresa, Usuario $promotor, array $plano, Carbon $inicioJornada, Carbon $agora): void
+    private function registrarPosicoes(Empresa $empresa, Usuario $promotor, array $plano, Carbon $inicioJornada, Carbon $fimJornada, Carbon $agora): void
     {
         if ($plano === []) {
             return;
@@ -376,7 +404,10 @@ class SimularAtividade extends Command
         $ultimo = DB::table('localizacoes_historico')->where('usuario_id', $promotor->id)
             ->where('capturado_em', '>=', $inicioJornada)->max('capturado_em');
         $instante = $ultimo ? Carbon::parse($ultimo)->addMinutes(5) : $plano[0]['inicio']->copy()->subMinutes(15);
-        $limite = $agora->copy()->min(end($plano)['fim']);
+        // Quem esqueceu de finalizar segue com o GPS ligado depois da última loja (é o que deixa o
+        // monitor de saída enxergar o afastamento); os outros param no fim da última visita.
+        $ultima = end($plano);
+        $limite = $agora->copy()->min($ultima['esquece'] ? $fimJornada->copy()->addMinutes(50) : $ultima['fim']);
 
         $pontos = [];
         for (; $instante->lte($limite); $instante->addMinutes(5)) {
@@ -428,7 +459,17 @@ class SimularAtividade extends Command
             }
             $anterior = $etapa;
         }
-        $pdv = end($plano)['os']->pontoVenda;
+        $ultima = end($plano);
+        $pdv = $ultima['os']->pontoVenda;
+        if ($ultima['esquece']) {
+            // Indo embora: em ~30 min chega a AFASTAMENTO_GRAUS da loja e fica por lá.
+            $t = min(1, $ultima['fim']->diffInMinutes($instante, true) / 30);
+
+            return [
+                $this->perto((float) $pdv->latitude + self::AFASTAMENTO_GRAUS * $t),
+                $this->perto((float) $pdv->longitude + self::AFASTAMENTO_GRAUS * $t),
+            ];
+        }
 
         return [$this->perto($pdv->latitude), $this->perto($pdv->longitude)];
     }
