@@ -192,6 +192,10 @@ Route::middleware(['auth:sanctum', 'licenca', 'assinatura'])->group(function ():
     // Visita fora da agenda autorizada pelo gestor no aparelho do promotor (docs/74).
     Route::post('/visitas/liberacoes', [VisitaController::class, 'liberar'])->middleware('canal.mobile');
     Route::patch('/visitas/{visita}/checkout', [VisitaController::class, 'checkout'])->middleware('canal.mobile');
+    // Checkout pela saída detectada (docs/92): o app consulta a saída e contesta ("ainda estou na
+    // loja"); o admin consulta pra preencher o "Forçar checkout".
+    Route::get('/visitas/{visita}/saida-detectada', [VisitaController::class, 'saidaDetectada']);
+    Route::post('/visitas/{visita}/ainda-na-loja', [VisitaController::class, 'contestarSaida'])->middleware('canal.mobile');
     // Autosserviço: promotor cancela a própria visita em andamento, parametrizável por empresa
     // (VISITA_CANCELAMENTO_PERMITIDO) — mesmo raciocínio do cancelamento de registro, não se
     // confunde com a intervenção administrativa (bloco visitas.intervir abaixo). Ver

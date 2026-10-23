@@ -5,9 +5,9 @@ namespace App\Http\Controllers;
 use App\Enums\AcaoIntervencaoVisita;
 use App\Enums\CheckoutTipo;
 use App\Enums\Permissao;
-use App\Enums\UserType;
 use App\Enums\StatusOrdemServico;
 use App\Enums\StatusVisita;
+use App\Enums\UserType;
 use App\Http\Requests\Visita\CancelarVisitaRequest;
 use App\Http\Requests\Visita\CheckinVisitaRequest;
 use App\Http\Requests\Visita\CheckoutVisitaRequest;
@@ -23,14 +23,16 @@ use App\Models\Usuario;
 use App\Models\Visita;
 use App\Models\VisitaIntervencao;
 use App\Support\AfastamentoVisita;
+use App\Support\AutorizacaoDoGestor;
 use App\Support\CancelamentoVisita;
+use App\Support\CheckoutParametros;
 use App\Support\DirecionamentoParametros;
+use App\Support\FinalizacaoVisita;
 use App\Support\Haversine;
 use App\Support\HorarioDoCampo;
 use App\Support\Instante;
-use App\Support\AutorizacaoDoGestor;
-use App\Support\OrdemDoCheckin;
 use App\Support\MixDaVisita;
+use App\Support\OrdemDoCheckin;
 use App\Support\RaioCheckin;
 use App\Support\Rastreamento;
 use App\Support\RotaObrigatoria;
@@ -426,44 +428,96 @@ class VisitaController extends Controller
             }
         }
 
-        $visita->loadMissing('pontoVenda');
+        $empresa = $request->user()->empresa;
+        $raio = CheckoutParametros::raioMetros($empresa);
 
-        $distancia = Haversine::metros(
-            (float) $dados['latitude'],
-            (float) $dados['longitude'],
-            (float) $visita->pontoVenda->latitude,
-            (float) $visita->pontoVenda->longitude,
-        );
+        // Saída detectada (docs/92 peça B): o promotor aceitou finalizar no horário em que saiu. O
+        // servidor recalcula hora e posição; se ele já voltou à loja, vira um checkout normal.
+        $saida = ($dados['usar_saida_detectada'] ?? false) && CheckoutParametros::sugerirSaida($empresa)
+            ? AfastamentoVisita::saidaDetectada($visita, $raio)
+            : null;
 
-        // Distância de saída é só registrada — a regra de raio (negócio 1) vale só pro
-        // check-in, não bloqueia o checkout.
-        $visita->update([
+        [$fim, $latitude, $longitude, $tipo] = $saida
+            ? [$saida['saiu_em'], $saida['latitude'], $saida['longitude'], CheckoutTipo::SAIDA_DETECTADA]
             // Hora do campo (docs/51 §3.5), nunca antes do check-in.
-            'fim_data' => HorarioDoCampo::resolver($dados['fim_em'] ?? null, $visita->inicio_data),
-            'checkout_recebido_em' => now(),
-            'fim_latitude' => $dados['latitude'],
-            'fim_longitude' => $dados['longitude'],
-            'fim_distancia_metros' => $distancia,
-            'status' => StatusVisita::FINALIZADA,
+            : [HorarioDoCampo::resolver($dados['fim_em'] ?? null, $visita->inicio_data), (float) $dados['latitude'], (float) $dados['longitude'], CheckoutTipo::PROMOTOR];
+
+        // Raio do checkout (docs/92 peça A): sem raio ou REGISTRA/AVISA, aceita e só marca.
+        $distancia = FinalizacaoVisita::distanciaDaLoja($visita, $latitude, $longitude);
+        if ($raio !== null && $distancia > $raio && CheckoutParametros::foraDoRaio($empresa) === 'BLOQUEIA') {
+            return response()->json([
+                'message' => sprintf('Você está a %s da loja. Volte à loja para finalizar ou peça ao seu gestor.', $distancia < 1000 ? round($distancia).' m' : number_format($distancia / 1000, 1, ',', '').' km'),
+                'fora_do_raio' => true,
+                'distancia_metros' => (int) round($distancia),
+                'raio_metros' => $raio,
+            ], 422);
+        }
+
+        FinalizacaoVisita::finalizar($visita, $fim, $latitude, $longitude, $tipo, [
             // Completude que o promotor viu no app (docs/88 §5.1); ausente em app antigo.
             'obrigatorias_feitas' => $dados['obrigatorias_feitas'] ?? null,
             'obrigatorias_total' => $dados['obrigatorias_total'] ?? null,
         ]);
 
-        if ($visita->ordem_servico_id) {
-            OrdemServico::withoutGlobalScopes()
-                ->where('id', $visita->ordem_servico_id)
-                ->update(['status' => StatusOrdemServico::CONCLUIDA]);
-        }
-
-        // Régua de XP (docs/88): calcula a visita assim que o check-out chega.
-        ReguaXp::recalcularVisita($visita);
-        // Régua do mix (docs/90): copia o mix da loja no momento em que o check-out chega.
-        MixDaVisita::gravar($visita);
-
         return response()->json([
             'visita' => new VisitaResource($visita),
         ]);
+    }
+
+    /**
+     * Saída detectada de uma visita aberta (docs/92 §3): o app usa pra sugerir finalizar no
+     * horário em que o promotor saiu (só com CHECKOUT_SUGERIR_SAIDA), e o "Forçar checkout" do
+     * admin usa pra preencher o horário (decisão 6). `saida: null` = não saiu / não dá pra afirmar.
+     */
+    public function saidaDetectada(Request $request, Visita $visita): JsonResponse
+    {
+        $this->autorizarAcesso($request, $visita);
+        $usuario = $request->user();
+        $empresa = $visita->empresa()->withoutGlobalScopes()->first();
+
+        if ($usuario->user_type === UserType::PROMOTOR) {
+            if (! CheckoutParametros::sugerirSaida($empresa)) {
+                return response()->json(['saida' => null]);
+            }
+        } elseif (! $usuario->temPermissao(Permissao::VISITAS_INTERVIR)) {
+            abort(403, 'Você não tem permissão para intervir em visitas.');
+        }
+
+        $raio = CheckoutParametros::raioMetros($empresa);
+        $saida = AfastamentoVisita::saidaDetectada($visita, $raio);
+
+        return response()->json([
+            'saida' => $saida ? [
+                'saiu_em' => $saida['saiu_em']->toIso8601String(),
+                'latitude' => $saida['latitude'],
+                'longitude' => $saida['longitude'],
+                'distancia_metros' => (int) round($saida['distancia_metros']),
+                'dentro_do_raio' => $saida['dentro_do_raio'],
+                'distancia_atual_metros' => (int) round($saida['distancia_atual_metros']),
+                'minutos_fora' => $saida['minutos_fora'],
+            ] : null,
+            'raio_metros' => $raio,
+            'fora_do_raio' => CheckoutParametros::foraDoRaio($empresa),
+        ]);
+    }
+
+    /**
+     * "Ainda estou na loja" (docs/92 §6): o promotor contesta a saída detectada — o GPS pode
+     * errar. Silencia o aviso daquela visita, impede o fechamento automático e fica registrado
+     * pro gestor ver.
+     */
+    public function contestarSaida(Request $request, Visita $visita): JsonResponse
+    {
+        if ($visita->usuario_id !== $request->user()->id) {
+            abort(403, 'Você não tem acesso a esta visita.');
+        }
+        if ($visita->status !== StatusVisita::ABERTA) {
+            return response()->json(['message' => 'Esta visita não está aberta.'], 422);
+        }
+
+        $visita->forceFill(['saida_contestada_em' => now()])->save();
+
+        return response()->json(status: 204);
     }
 
     /**

@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Enums\StatusVisita;
 use App\Models\Visita;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -50,6 +51,101 @@ final class AfastamentoVisita
             Rastreamento::afastamentoMinutos($empresa),
             Rastreamento::toleranciaSemSinalMinutos($empresa),
         );
+    }
+
+    /**
+     * Saída detectada (docs/92 §3): a visita está ABERTA e o promotor está longe da loja AGORA — o
+     * último afastamento não voltou, a posição mais recente é longe e chegou há pouco (dentro da
+     * tolerância de sem sinal). null = não saiu (ou não dá pra afirmar).
+     *
+     * Hora e posição da saída = a última posição ainda perto da loja antes do afastamento (decisão
+     * 1): o último momento em que sabemos que ele estava lá. "Perto" = `$raioMetros` (raio do
+     * checkout, quando a empresa usa) ou RASTREAMENTO_AFASTAMENTO_METROS. Sem posição perto, usa o
+     * check-in. Registro feito depois dessa hora empurra a saída pra hora dele (não encerra antes
+     * de algo feito na visita). Mais antiga que o limite do HorarioDoCampo (48 h) não serve.
+     *
+     * @return array{saiu_em: Carbon, latitude: float, longitude: float, distancia_metros: float, dentro_do_raio: bool|null, distancia_atual_metros: float, minutos_fora: int}|null
+     */
+    public static function saidaDetectada(Visita $visita, ?int $raioMetros = null, ?Carbon $agora = null): ?array
+    {
+        if ($visita->status !== StatusVisita::ABERTA) {
+            return null;
+        }
+        [$refLat, $refLng] = self::referencia($visita);
+        if ($refLat === null) {
+            return null;
+        }
+
+        $agora ??= now();
+        $empresa = $visita->empresa()->withoutGlobalScopes()->first();
+        $metros = Rastreamento::afastamentoMetros($empresa);
+        $tolerancia = Rastreamento::toleranciaSemSinalMinutos($empresa);
+
+        $pontos = DB::table('localizacoes_historico')
+            ->where('usuario_id', $visita->usuario_id)
+            ->whereBetween('capturado_em', [$visita->inicio_data, $agora])
+            ->orderBy('capturado_em')
+            ->get(['latitude', 'longitude', 'capturado_em'])
+            ->map(fn ($p) => ['lat' => (float) $p->latitude, 'lng' => (float) $p->longitude, 'em' => Carbon::parse($p->capturado_em)])
+            ->all();
+        if (! $pontos) {
+            return null;
+        }
+
+        $resultado = self::detectar($pontos, $refLat, $refLng, $visita->inicio_data, $agora, $metros, Rastreamento::afastamentoMinutos($empresa), $tolerancia);
+        $afastamento = $resultado['afastamentos'][count($resultado['afastamentos']) - 1] ?? null;
+        $ultimo = $pontos[count($pontos) - 1];
+        $distanciaAtual = Haversine::metros($refLat, $refLng, $ultimo['lat'], $ultimo['lng']);
+        if (
+            $afastamento === null
+            || $afastamento['fim'] !== null
+            || $distanciaAtual <= $metros
+            || $ultimo['em']->diffInMinutes($agora, true) > $tolerancia
+        ) {
+            return null;
+        }
+
+        $longeDesde = Carbon::parse($afastamento['inicio']);
+        $perto = $raioMetros ?? $metros;
+        $referencia = null;
+        foreach ($pontos as $p) {
+            if ($p['em']->gte($longeDesde)) {
+                break;
+            }
+            $d = Haversine::metros($refLat, $refLng, $p['lat'], $p['lng']);
+            if ($d <= $perto) {
+                $referencia = [$p, $d];
+            }
+        }
+
+        if ($referencia) {
+            [$p, $distancia] = $referencia;
+            [$saiuEm, $lat, $lng] = [$p['em']->copy(), $p['lat'], $p['lng']];
+        } else {
+            $saiuEm = $visita->inicio_data->copy();
+            [$lat, $lng] = [(float) $visita->inicio_latitude, (float) $visita->inicio_longitude];
+            $distancia = (float) $visita->inicio_distancia_metros;
+        }
+
+        $ultimoRegistro = $visita->registros()->whereNull('cancelado_em')->max('created_at');
+        if ($ultimoRegistro !== null && Carbon::parse($ultimoRegistro)->gt($saiuEm)) {
+            $saiuEm = Carbon::parse($ultimoRegistro)->min($agora);
+        }
+        $saiuEm = $saiuEm->max($visita->inicio_data);
+
+        if ($saiuEm->lt($agora->copy()->subHours(HorarioDoCampo::LIMITE_RETROATIVO_HORAS))) {
+            return null;
+        }
+
+        return [
+            'saiu_em' => $saiuEm->utc(),
+            'latitude' => $lat,
+            'longitude' => $lng,
+            'distancia_metros' => $distancia,
+            'dentro_do_raio' => $raioMetros === null ? null : $distancia <= $raioMetros,
+            'distancia_atual_metros' => $distanciaAtual,
+            'minutos_fora' => (int) round($saiuEm->diffInMinutes($agora, true)),
+        ];
     }
 
     /**

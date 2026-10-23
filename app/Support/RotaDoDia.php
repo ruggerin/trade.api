@@ -143,6 +143,8 @@ final class RotaDoDia
                 'inicio' => $v->inicio_data,
                 'fim' => $fim,
                 'minutos' => $fim ? (int) round($v->inicio_data->diffInMinutes($fim, true)) : null,
+                // SAIDA_DETECTADA/AUTOMATICO (docs/92): a tela troca o alerta por uma nota neutra.
+                'checkout_tipo' => $v->checkout_tipo?->value,
                 'afastamentos' => $afastamento['afastamentos'] ?? [],
                 'minutos_fora' => $afastamento['minutos_fora'] ?? 0,
                 'sem_sinal_minutos' => $afastamento['sem_sinal_minutos'] ?? 0,

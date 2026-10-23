@@ -60,9 +60,14 @@ class VisitaResource extends JsonResource
             'fim_latitude' => $this->fim_latitude,
             'fim_longitude' => $this->fim_longitude,
             'fim_distancia_metros' => $this->fim_distancia_metros,
-            // PROMOTOR (checkout normal pelo app), ADMIN (forçado por um gestor, sem GPS) ou null
-            // (visita ainda ABERTA) — ver docs/15-INTERVENCAO-ADMINISTRATIVA-VISITA.md.
+            // PROMOTOR (checkout normal pelo app), ADMIN (forçado por um gestor, sem GPS),
+            // SAIDA_DETECTADA (promotor finalizou no horário em que saiu), AUTOMATICO (o servidor
+            // fechou sozinho) ou null (visita ainda ABERTA) — docs/15 e docs/92.
             'checkout_tipo' => $this->checkout_tipo,
+            // docs/92 §9 — null = a empresa não exige raio no checkout.
+            'checkout_no_raio' => $this->checkout_no_raio,
+            'tempo_confirmado_gps' => $this->tempo_confirmado_gps,
+            'saida_contestada_em' => $this->saida_contestada_em,
             // Quando o servidor recebeu cada passo (docs/51) — a diferença pra inicio_data/fim_data
             // é o atraso de envio do app. null = visita de antes desta versão.
             'checkin_recebido_em' => $this->checkin_recebido_em,

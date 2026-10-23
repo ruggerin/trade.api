@@ -32,6 +32,11 @@ class Visita extends Model
         'fim_longitude',
         'fim_distancia_metros',
         'checkout_tipo',
+        // docs/92: checkout dentro do raio, tempo confirmado por GPS, aviso e contestação da saída.
+        'checkout_no_raio',
+        'tempo_confirmado_gps',
+        'saida_avisada_em',
+        'saida_contestada_em',
         // docs/51 Fase 2 — quando o servidor recebeu cada passo (a hora do campo vem do app).
         'checkin_recebido_em',
         'checkout_recebido_em',
@@ -45,6 +50,10 @@ class Visita extends Model
         return [
             'status' => StatusVisita::class,
             'checkout_tipo' => CheckoutTipo::class,
+            'checkout_no_raio' => 'boolean',
+            'tempo_confirmado_gps' => 'boolean',
+            'saida_avisada_em' => 'datetime',
+            'saida_contestada_em' => 'datetime',
             'inicio_data' => 'datetime',
             'fim_data' => 'datetime',
             'afastamento_qtd' => 'integer',

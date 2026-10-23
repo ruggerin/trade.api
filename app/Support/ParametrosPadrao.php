@@ -54,6 +54,11 @@ final class ParametrosPadrao
         'JORNADA_FIM' => ['valor' => '17:00', 'descricao' => 'Fim da jornada de trabalho (HH:mm) — régua da Operação do Dia (App\Support\OperacaoDoDia)'],
         'JORNADA_INTERVALO_HABILITADO' => ['valor' => 'false', 'descricao' => 'Desconsidera o intervalo (almoço) da cobrança de rastreamento, do "sem sinal" da Operação do Dia e da Rota do dia (docs/95) — false = intervalo conta como jornada'],
         'JORNADA_INTERVALO_INICIO' => ['valor' => '12:00', 'descricao' => 'Início do intervalo (HH:mm), usado com JORNADA_INTERVALO_HABILITADO (docs/95)'],
+        'CHECKOUT_RAIO_METROS' => ['valor' => '0', 'descricao' => 'Raio do checkout, em metros — 0 = sem raio, só registra a distância (App\Support\CheckoutParametros, docs/92 peça A)'],
+        'CHECKOUT_FORA_DO_RAIO' => ['valor' => 'REGISTRA', 'descricao' => 'Checkout fora do CHECKOUT_RAIO_METROS: REGISTRA (aceita), AVISA (aceita e marca) ou BLOQUEIA (recusa) — docs/92 peça A'],
+        'CHECKOUT_SUGERIR_SAIDA' => ['valor' => 'false', 'descricao' => 'Oferece ao promotor finalizar no horário em que saiu da loja (saída detectada pelo rastreamento) — docs/92 peça B'],
+        'CHECKOUT_AVISO_SAIDA_MINUTOS' => ['valor' => '0', 'descricao' => 'Push pro promotor N minutos depois de sair da loja sem finalizar — 0 = sem aviso (docs/92 peça C)'],
+        'CHECKOUT_AUTOMATICO_MINUTOS' => ['valor' => '0', 'descricao' => 'Fecha a visita sozinho no horário da saída depois de N minutos longe da loja (mínimo 30) — 0 = nunca (docs/92 peça D)'],
         'JORNADA_INTERVALO_FIM' => ['valor' => '13:30', 'descricao' => 'Fim do intervalo (HH:mm), usado com JORNADA_INTERVALO_HABILITADO (docs/95)'],
         // Régua de XP (docs/88) — mesmos defaults de App\Support\Xp\ParametrosXp.
         'XP_VISIVEL_PROMOTOR' => ['valor' => 'false', 'descricao' => 'Régua de XP: o promotor vê a pontuação (false = modo prévia, só o gestor vê) — docs/88 §13'],

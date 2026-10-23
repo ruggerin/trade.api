@@ -45,6 +45,10 @@ Schedule::command('rastreamento:limpar-historico')->dailyAt('03:30');
 // visitas finalizadas há 30+ min (espera posição atrasada do app) — filtro da lista e feed.
 Schedule::command('visitas:calcular-afastamento')->everyTenMinutes();
 
+// Saída detectada (docs/92 §6/§7): avisa por push e/ou finaliza sozinho quem saiu da loja sem
+// finalizar — só nas empresas com CHECKOUT_AVISO_SAIDA_MINUTOS / CHECKOUT_AUTOMATICO_MINUTOS.
+Schedule::command('visitas:monitorar-saida')->everyFiveMinutes()->withoutOverlapping(10);
+
 // Push (docs/77 §3.2): confere os recibos da Expo e apaga token de aparelho que desinstalou o app.
 Schedule::command('push:conferir-recibos')->everyFifteenMinutes()->withoutOverlapping(10);
 

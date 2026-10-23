@@ -48,6 +48,34 @@ final class ParametrosMetadados
             'area' => 'visitas', 'rotulo' => 'Jornada — fim', 'tipo' => 'hora', 'grupo' => 'jornada',
             'ajuda' => 'Fim do expediente; precisa ser depois do início.',
         ],
+        'CHECKOUT_RAIO_METROS' => [
+            'area' => 'visitas', 'rotulo' => 'Checkout: raio da loja', 'tipo' => 'numero_ou_zero', 'unidade' => 'm', 'min' => 50, 'max' => 5000, 'grupo' => 'checkout',
+            'ajuda' => '0 = sem raio: o checkout é aceito de qualquer lugar e só a distância fica registrada.',
+        ],
+        'CHECKOUT_FORA_DO_RAIO' => [
+            'area' => 'visitas', 'rotulo' => 'Checkout fora do raio', 'tipo' => 'lista', 'grupo' => 'checkout', 'opcoes' => [
+                'REGISTRA' => 'Registra — aceita e só grava a distância',
+                'AVISA' => 'Avisa — aceita, mas marca como fora do raio',
+                'BLOQUEIA' => 'Bloqueia — recusa (libere só com o app atualizado)',
+            ],
+            'ajuda' => 'Com a sugestão da saída ligada, quem esqueceu e já está longe finaliza pela saída detectada sem voltar à loja.',
+            'depende_de' => ['chave' => 'CHECKOUT_RAIO_METROS', 'motivo' => 'Defina o raio do checkout para ajustar.'],
+        ],
+        'CHECKOUT_SUGERIR_SAIDA' => [
+            'area' => 'visitas', 'rotulo' => 'Sugerir finalizar no horário da saída', 'tipo' => 'bool', 'grupo' => 'checkout',
+            'ajuda' => 'Quando o rastreamento mostra que o promotor saiu da loja sem finalizar, o app oferece finalizar no horário em que ele saiu.',
+            'depende_de' => ['chave' => 'RASTREAMENTO_INTERVALO_SEGUNDOS', 'motivo' => 'Precisa do rastreamento ligado para saber quando o promotor saiu da loja.'],
+        ],
+        'CHECKOUT_AVISO_SAIDA_MINUTOS' => [
+            'area' => 'visitas', 'rotulo' => 'Avisar quem saiu sem finalizar depois de', 'tipo' => 'numero_ou_zero', 'unidade' => 'min', 'min' => 5, 'max' => 240, 'grupo' => 'checkout',
+            'ajuda' => '0 = sem aviso. Manda uma notificação só, por visita.',
+            'depende_de' => ['chave' => 'RASTREAMENTO_INTERVALO_SEGUNDOS', 'motivo' => 'Precisa do rastreamento ligado para saber quando o promotor saiu da loja.'],
+        ],
+        'CHECKOUT_AUTOMATICO_MINUTOS' => [
+            'area' => 'visitas', 'rotulo' => 'Finalizar sozinho depois de', 'tipo' => 'numero_ou_zero', 'unidade' => 'min', 'min' => 30, 'max' => 720, 'grupo' => 'checkout',
+            'ajuda' => '0 = nunca. A visita é finalizada no horário em que ele saiu da loja. Não fecha se ele avisou que ainda está na loja.',
+            'depende_de' => ['chave' => 'RASTREAMENTO_INTERVALO_SEGUNDOS', 'motivo' => 'Precisa do rastreamento ligado para saber quando o promotor saiu da loja.'],
+        ],
         'JORNADA_INTERVALO_HABILITADO' => [
             'area' => 'visitas', 'rotulo' => 'Desconsiderar o intervalo (almoço)', 'tipo' => 'bool', 'grupo' => 'intervalo',
             'ajuda' => 'No intervalo ninguém é cobrado pelo rastreamento nem aparece sem sinal, e a Rota do dia esconde esse horário.',
