@@ -289,7 +289,7 @@ class Doc92CheckoutSaidaDetectadaTest extends TestCase
 
         $this->assertNotNull($this->visita->fresh()->saida_avisada_em);
         Http::assertSentCount(1);
-        Http::assertSent(fn ($r) => ($r->data()[0]['data']['tipo'] ?? null) === 'saida_detectada');
+        Http::assertSent(fn ($r) => ($r->data()[0]['data']['tipo'] ?? null) === 'saida_detectada' && ($r->data()[0]['categoryId'] ?? null) === 'saida_detectada');
         $this->assertSame(StatusVisita::ABERTA, $this->visita->fresh()->status);
     }
 

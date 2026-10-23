@@ -83,6 +83,8 @@ class MonitorarSaidaVisitas extends Command
                                 sprintf('Parece que você saiu da loja há %d min sem finalizar.', $saida['minutos_fora']),
                                 ['tipo' => 'saida_detectada', 'visita_id' => $visita->uuid],
                                 Push::CANAL_AGENDA,
+                                // Botões "Finalizar" e "Ainda estou na loja" (app 1.2.3+; o antigo ignora).
+                                'saida_detectada',
                             );
                             $visita->forceFill(['saida_avisada_em' => now()])->saveQuietly();
                             $avisadas++;
