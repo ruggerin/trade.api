@@ -42,4 +42,10 @@ return [
         'timeout' => 15,
     ],
 
+    // Push notifications (docs/77 §2.3): token do robô `horus-api-push` da conta Expo. Com o
+    // "Enhanced security" ligado no projeto, sem ele a Expo recusa o envio. Vazio = push desligado.
+    'expo' => [
+        'access_token' => env('EXPO_ACCESS_TOKEN'),
+    ],
+
 ];

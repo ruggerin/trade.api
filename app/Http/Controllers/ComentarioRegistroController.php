@@ -7,14 +7,16 @@ use App\Models\Usuario;
 use App\Models\Visita;
 use App\Models\VisitaRegistro;
 use App\Models\VisitaRegistroComentario;
+use App\Support\Push;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 /**
  * Feedback em registros de visita — docs/28-RELATORIOS-FEEDBACK-HISTORICO.md §3. Feed cronológico
- * simples entre o promotor dono da visita e ADMIN/GESTOR (sem thread aninhada, sem push: o aviso é
- * um badge de não lidos consultado por polling). Visibilidade igual à do próprio registro.
+ * simples entre o promotor dono da visita e ADMIN/GESTOR (sem thread aninhada). O aviso é um badge
+ * de não lidos por polling; comentário do gestor também manda push pro promotor (docs/77).
+ * Visibilidade igual à do próprio registro.
  */
 class ComentarioRegistroController extends Controller
 {
@@ -53,6 +55,18 @@ class ComentarioRegistroController extends Controller
             ['visita_registro_id', 'usuario_id'],
             ['lido_em'],
         );
+
+        // Gestor comentou → push pro promotor dono da visita (docs/77 §3.2). O contrário (promotor
+        // respondendo) não tem push: o gestor está no admin web, que já mostra o badge.
+        if ($request->user()->user_type !== UserType::PROMOTOR && $visita->usuario_id !== $request->user()->id) {
+            Push::paraUsuarios(
+                [$visita->usuario_id],
+                'Novo comentário',
+                'Seu gestor comentou num registro da sua visita.',
+                ['tipo' => 'comentario', 'visita_id' => $visita->uuid, 'registro_id' => $registro->uuid],
+                Push::CANAL_COMENTARIOS,
+            );
+        }
 
         return response()->json(['comentario' => $this->formatar($comentario, $request->user())], 201);
     }

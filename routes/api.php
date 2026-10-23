@@ -44,6 +44,7 @@ use App\Http\Controllers\PlanogramaController;
 use App\Http\Controllers\PlanogramaPrateleiraController;
 use App\Http\Controllers\PontoVendaController;
 use App\Http\Controllers\ProdutoAuditoriaController;
+use App\Http\Controllers\PushTokenController;
 use App\Http\Controllers\RamoAtividadeController;
 use App\Http\Controllers\RedeLojaController;
 use App\Http\Controllers\RegistroController;
@@ -288,6 +289,9 @@ Route::middleware(['auth:sanctum', 'licenca', 'assinatura'])->group(function ():
     // Situação do rastreamento informada pelo app (por que está ou não rastreando) e lista de
     // irregulares pro Mapa ao vivo — docs/47-RASTREAMENTO-EXIGENCIA.md.
     Route::patch('/localizacao/situacao', [LocalizacaoController::class, 'situacao'])->middleware('canal.mobile');
+    // Token de push do aparelho da sessão (docs/77 §3.2) — o app manda após o login e apaga no logout.
+    Route::put('/dispositivos/atual/push-token', [PushTokenController::class, 'salvar'])->middleware('canal.mobile');
+    Route::delete('/dispositivos/atual/push-token', [PushTokenController::class, 'apagar'])->middleware('canal.mobile');
     Route::get('/localizacoes/conformidade', [LocalizacaoController::class, 'conformidade'])->middleware('permissao:rastreamento.visualizar');
     Route::get('/localizacoes', [LocalizacaoController::class, 'index'])->middleware('permissao:rastreamento.visualizar');
     // Rota do dia (docs/48-ROTA-DO-DIA.md) — trajeto histórico de um promotor num dia, permissão própria.

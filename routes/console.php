@@ -51,6 +51,9 @@ Schedule::command('visitas:calcular-afastamento')->everyTenMinutes();
 Schedule::command('dev:simular-atividade')->everyFiveMinutes()->withoutOverlapping()
     ->when(fn (): bool => config('simulador.empresas') !== []);
 
+// Push (docs/77 §3.2): confere os recibos da Expo e apaga token de aparelho que desinstalou o app.
+Schedule::command('push:conferir-recibos')->everyFifteenMinutes()->withoutOverlapping(10);
+
 // Sessões do app (docs/67 §4.4): tokens revogados/vencidos há 30+ dias e desafios de atestação vencidos.
 Schedule::command('sessoes:limpar')->dailyAt('03:45');
 

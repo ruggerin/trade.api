@@ -39,6 +39,17 @@ final class NotificacoesPedido
             'data_previsao' => $pedido->data_previsao_entrega?->toDateString(),
             'created_at' => $agora,
         ])->all());
+
+        // O sino continua sendo a lista completa; o push é o aviso que leva até ela (docs/77).
+        Push::paraUsuarios(
+            $promotores,
+            $tipo === self::ENTREGUE ? 'Pedido entregue' : 'Pedido a caminho',
+            $tipo === self::ENTREGUE
+                ? 'Um pedido de uma loja sua foi entregue.'
+                : 'Um pedido de uma loja sua tem previsão de entrega.',
+            ['tipo' => 'pedido', 'pedido_id' => $pedido->uuid],
+            Push::CANAL_PEDIDOS,
+        );
     }
 
     /**
