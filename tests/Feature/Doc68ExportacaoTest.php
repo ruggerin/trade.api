@@ -111,10 +111,10 @@ class Doc68ExportacaoTest extends TestCase
         $resposta = $this->postJson('/api/exportacoes', ['rotina' => 'registros', 'formato' => 'csv'])->assertOk();
         $linhas = $this->csv($resposta);
 
-        $this->assertSame(['Data/Hora', 'Tipo', 'Loja', 'Rede', 'Produto', 'Observação', 'Promotor', 'Status', 'Motivo da resolução'], $linhas[0]);
+        $this->assertSame(['Data/Hora', 'Tipo', 'Código do cliente', 'Loja', 'Rede', 'Produto', 'Observação', 'Promotor', 'Vendedor', 'Status', 'Motivo da resolução'], $linhas[0]);
         $this->assertCount(3, $linhas, 'cabeçalho + 2 registros da própria empresa');
         $this->assertStringNotContainsString('SEGREDO DA OUTRA', $this->conteudo($resposta));
-        $this->assertContains('Aberto', array_column($linhas, 7));
+        $this->assertContains('Aberto', array_column($linhas, 9));
         $this->assertSame('2', $resposta->headers->get('X-Linhas-Exportadas'));
     }
 

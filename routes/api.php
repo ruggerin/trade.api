@@ -251,6 +251,7 @@ Route::middleware(['auth:sanctum', 'licenca', 'assinatura'])->group(function ():
     // direto de outras telas (ex.: "Rupturas por SKU" da Operação do Dia). Cada linha tem o
     // uuid da visita de origem. Ver RegistroController::index e docs/44-TELA-REGISTROS.md.
     Route::get('/registros', [RegistroController::class, 'index'])->middleware('permissao:tela.registros');
+    Route::get('/registros/vendedores', [RegistroController::class, 'vendedores'])->middleware('permissao:tela.registros');
 
     // Relatórios agregados (docs/28-RELATORIOS-FEEDBACK-HISTORICO.md §2) — ADMIN/GESTOR, checado
     // no controller (mesmo padrão do Painel de Atividades). Acesso à tela (docs/64): tela.relatorios

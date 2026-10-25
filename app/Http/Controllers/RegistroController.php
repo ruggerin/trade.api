@@ -7,6 +7,7 @@ use App\Models\PontoVenda;
 use App\Models\ProdutoAuditoria;
 use App\Models\RedeLoja;
 use App\Models\TipoRegistro;
+use App\Models\Vendedor;
 use App\Models\VisitaRegistro;
 use App\Support\Fuso;
 use Illuminate\Http\JsonResponse;
@@ -27,6 +28,23 @@ use Illuminate\Http\Request;
  */
 class RegistroController extends Controller
 {
+    /**
+     * Vendedores ativos pro filtro da tela — rota própria porque GET /vendedores exige
+     * vendedores.gerenciar, que quem só vê Registros não tem (mesmo raciocínio de
+     * RotaDoDiaController::promotores).
+     */
+    public function vendedores(): JsonResponse
+    {
+        return response()->json([
+            'vendedores' => Vendedor::query()
+                ->where('ativo', true)
+                ->orderBy('nome')
+                ->get(['uuid', 'nome', 'codigo_externo'])
+                ->map(fn (Vendedor $v) => ['id' => $v->uuid, 'nome' => $v->nome, 'codigo_externo' => $v->codigo_externo])
+                ->values(),
+        ]);
+    }
+
     public function index(Request $request): JsonResponse
     {
         $usuario = $request->user();
@@ -46,6 +64,11 @@ class RegistroController extends Controller
         $redeLojaId = $request->filled('rede_loja_uuid')
             ? RedeLoja::where('uuid', $request->string('rede_loja_uuid'))->value('id')
             : null;
+        // Código do cliente no ERP (pontos_venda.codigo_externo) e vendedor da loja.
+        $codigoCliente = $request->filled('codigo_externo') ? trim($request->string('codigo_externo')->toString()) : null;
+        $vendedorId = $request->filled('vendedor_uuid')
+            ? Vendedor::where('uuid', $request->string('vendedor_uuid'))->value('id')
+            : null;
 
         $paginado = VisitaRegistro::query()
             ->whereNull('cancelado_em')
@@ -53,12 +76,21 @@ class RegistroController extends Controller
             // por trás do whereHas) — VisitaRegistro não tem empresa_id próprio, e um whereHas
             // "vazio" sem nenhuma condição própria não é confiável o bastante pra isolamento
             // multi-tenant; melhor garantir aqui do que descobrir depois.
-            ->whereHas('visita', function ($q) use ($usuario, $pontoVendaId, $redeLojaId) {
+            ->whereHas('visita', function ($q) use ($usuario, $pontoVendaId, $redeLojaId, $codigoCliente, $vendedorId) {
                 $q->where('empresa_id', $usuario->empresa_id)
                     ->when($pontoVendaId, fn ($q) => $q->where('ponto_venda_id', $pontoVendaId))
                     ->when(
                         $redeLojaId,
                         fn ($q) => $q->whereHas('pontoVenda', fn ($q) => $q->where('rede_loja_id', $redeLojaId)),
+                    )
+                    // Começo do código (o ERP às vezes tem zeros à esquerda / sufixo de filial).
+                    ->when(
+                        $codigoCliente !== null,
+                        fn ($q) => $q->whereHas('pontoVenda', fn ($q) => $q->where('codigo_externo', 'ilike', str_replace(['%', '_'], ['\\%', '\\_'], $codigoCliente).'%')),
+                    )
+                    ->when(
+                        $vendedorId,
+                        fn ($q) => $q->whereHas('pontoVenda.vendedores', fn ($q) => $q->where('vendedores.id', $vendedorId)),
                     );
             })
             // Período por data local no fuso da empresa (docs/50 §4.3), não meia-noite UTC.
@@ -77,7 +109,7 @@ class RegistroController extends Controller
                         fn ($q) => $q->whereNotNull('alerta_resolvido_em'),
                     ),
             )
-            ->with(['visita.pontoVenda.redeLoja', 'visita.usuario', 'tipoRegistro', 'produtoAuditoria', 'motivoResolucao'])
+            ->with(['visita.pontoVenda.redeLoja', 'visita.pontoVenda.vendedores', 'visita.usuario', 'tipoRegistro', 'produtoAuditoria', 'motivoResolucao'])
             ->latest('created_at')
             // `por_pagina` é opt-in (docs/68): a exportação pagina de 200 em 200 com os mesmos filtros.
             ->paginate($request->filled('por_pagina') ? min(max($request->integer('por_pagina'), 1), 200) : null);
@@ -93,6 +125,11 @@ class RegistroController extends Controller
             'ponto_venda' => $registro->visita->pontoVenda ? [
                 'id' => $registro->visita->pontoVenda->uuid,
                 'fantasia' => $registro->visita->pontoVenda->fantasia,
+                'codigo_externo' => $registro->visita->pontoVenda->codigo_externo,
+                // Vendedores da loja (N:N, espelhados do ERP — docs/73).
+                'vendedores' => $registro->visita->pontoVenda->vendedores
+                    ->map(fn ($v) => ['id' => $v->uuid, 'nome' => $v->nome])
+                    ->values(),
                 'rede_loja' => $registro->visita->pontoVenda->redeLoja
                     ? ['id' => $registro->visita->pontoVenda->redeLoja->uuid, 'descricao' => $registro->visita->pontoVenda->redeLoja->descricao]
                     : null,
