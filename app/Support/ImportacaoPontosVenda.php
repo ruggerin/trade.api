@@ -48,6 +48,17 @@ class ImportacaoPontosVenda
             return self::relatorio(0, 0, 0, [['linha' => 1, 'codigo_externo' => null, 'mensagem' => $linhas['erro']]], false);
         }
 
+        return self::aplicar($empresa, $linhas, $simular);
+    }
+
+    /**
+     * As mesmas regras pra linhas já lidas — a API de integração (docs/96 §7.2) manda o JSON por aqui,
+     * pra planilha e API nunca darem resultado diferente.
+     *
+     * @param  list<array{numero: int, dados: array<string, string|null>}>  $linhas
+     */
+    public static function aplicar(Empresa $empresa, array $linhas, bool $simular): array
+    {
         $vendedores = Vendedor::withoutGlobalScopes()->where('empresa_id', $empresa->id)->pluck('id', 'codigo_externo');
 
         $redes = RedeLoja::where('empresa_id', $empresa->id)->get()->keyBy(fn ($r) => self::chaveNome($r->descricao));

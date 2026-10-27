@@ -60,6 +60,10 @@ use App\Http\Controllers\TipoVisitaController;
 use App\Http\Controllers\UsuarioController;
 use App\Http\Controllers\VisitaController;
 use App\Http\Controllers\VisitaRegistroController;
+use App\Http\Controllers\Integracao\LeituraController as IntegracaoLeituraController;
+use App\Http\Controllers\Integracao\EscritaController as IntegracaoEscritaController;
+use App\Http\Controllers\IntegracaoController;
+use App\Http\Controllers\IntegracaoWebhookController;
 use Illuminate\Support\Facades\Route;
 
 // Saúde do servidor pro Uptime Kuma (docs/71): público, só o veredito; o detalhe exige X-Saude-Token.
@@ -84,6 +88,51 @@ Route::get('/produtos-auditoria/imagens/{arquivo}', [ProdutoAuditoriaController:
 // Termos de Uso / Política de Privacidade (docs/58 §5.2) — leitura pública, sem login.
 Route::get('/documentos-legais/{slug}', [DocumentoLegalController::class, 'show'])
     ->where('slug', 'termos-de-uso|politica-de-privacidade');
+
+// API de integração (docs/96 §7): ERP e BI do cliente, com token de integração (nunca token de
+// pessoa — SessaoApp::tokenAceito separa os canais). `integracao` confere pausa, empresa, IP,
+// limite por minuto e grava a auditoria; `escopo:` a permissão de cada rota.
+Route::prefix('integracao/v1')->group(function (): void {
+    // Link temporário de foto que `registros` devolve: vale pela assinatura, sem token.
+    Route::get('/fotos/{imagem}', [IntegracaoLeituraController::class, 'foto'])
+        ->middleware(['signed:relative', 'throttle:600,1'])
+        ->name('integracao.foto');
+
+    Route::middleware(['auth:sanctum', 'integracao'])->group(function (): void {
+        Route::get('/visitas', [IntegracaoLeituraController::class, 'visitas'])->middleware('escopo:visitas:ler');
+        Route::get('/registros', [IntegracaoLeituraController::class, 'registros'])->middleware('escopo:registros:ler');
+        Route::get('/rupturas', [IntegracaoLeituraController::class, 'rupturas'])->middleware('escopo:rupturas:ler');
+        Route::get('/ordens-servico', [IntegracaoLeituraController::class, 'ordensServico'])->middleware('escopo:ordens_servico:ler');
+        Route::get('/xp', [IntegracaoLeituraController::class, 'xp'])->middleware('escopo:xp:ler');
+        Route::get('/lojas', [IntegracaoLeituraController::class, 'lojas'])->middleware('escopo:lojas:ler');
+        Route::get('/produtos', [IntegracaoLeituraController::class, 'produtos'])->middleware('escopo:produtos:ler');
+        Route::get('/usuarios', [IntegracaoLeituraController::class, 'promotores'])->middleware('escopo:usuarios:ler');
+        Route::get('/pedidos', [IntegracaoLeituraController::class, 'pedidos'])->middleware('escopo:pedidos:ler');
+        Route::get('/vendedores', [IntegracaoLeituraController::class, 'vendedores'])->middleware('escopo:vendedores:ler');
+        Route::get('/supervisores', [IntegracaoLeituraController::class, 'supervisores'])->middleware('escopo:vendedores:ler');
+        Route::get('/carteira', [IntegracaoLeituraController::class, 'carteira'])->middleware('escopo:vendedores:ler');
+        Route::get('/mix', [IntegracaoLeituraController::class, 'mix'])->middleware('escopo:mix:ler');
+
+        // Escrita do ERP (docs/96 §7.2): upsert em lote por código, resultado item a item,
+        // `?simular=1` e `Idempotency-Key`. Ver Integracao\EscritaController.
+        Route::middleware('idempotencia')->group(function (): void {
+            Route::put('/lojas', [IntegracaoEscritaController::class, 'lojas'])->middleware('escopo:lojas:escrever');
+            Route::put('/redes', [IntegracaoEscritaController::class, 'redes'])->middleware('escopo:lojas:escrever');
+            Route::put('/ramos-atividade', [IntegracaoEscritaController::class, 'ramos'])->middleware('escopo:lojas:escrever');
+            Route::put('/produtos', [IntegracaoEscritaController::class, 'produtos'])->middleware('escopo:produtos:escrever');
+            Route::put('/marcas', [IntegracaoEscritaController::class, 'marcas'])->middleware('escopo:produtos:escrever');
+            Route::put('/departamentos', [IntegracaoEscritaController::class, 'departamentos'])->middleware('escopo:produtos:escrever');
+            Route::put('/secoes', [IntegracaoEscritaController::class, 'secoes'])->middleware('escopo:produtos:escrever');
+            Route::put('/mix', [IntegracaoEscritaController::class, 'mix'])->middleware('escopo:mix:escrever');
+            Route::put('/supervisores', [IntegracaoEscritaController::class, 'supervisores'])->middleware('escopo:vendedores:escrever');
+            Route::put('/vendedores', [IntegracaoEscritaController::class, 'vendedores'])->middleware('escopo:vendedores:escrever');
+            Route::put('/carteira', [IntegracaoEscritaController::class, 'carteira'])->middleware('escopo:vendedores:escrever');
+            Route::put('/promotores', [IntegracaoEscritaController::class, 'promotores'])->middleware('escopo:usuarios:escrever');
+            Route::put('/pedidos', [IntegracaoEscritaController::class, 'pedidos'])->middleware('escopo:pedidos:escrever');
+            Route::put('/entregas', [IntegracaoEscritaController::class, 'entregas'])->middleware('escopo:pedidos:escrever');
+        });
+    });
+});
 
 // Autenticado (qualquer user_type). `licenca` (docs/67 §5.1): usuário/empresa ativos e aparelho
 // vinculado checados em todo request, não só no login.
@@ -354,6 +403,27 @@ Route::middleware(['auth:sanctum', 'licenca', 'assinatura'])->group(function ():
         Route::post('/perfis', [PerfilController::class, 'store']);
         Route::put('/perfis/{perfil}', [PerfilController::class, 'update']);
         Route::delete('/perfis/{perfil}', [PerfilController::class, 'destroy']);
+
+        // Integrações / tokens de API (docs/96 §8) — também só ADMIN, nunca delegável por perfil.
+        Route::get('/integracoes/escopos', [IntegracaoController::class, 'escopos']);
+        Route::get('/integracoes', [IntegracaoController::class, 'index']);
+        Route::post('/integracoes', [IntegracaoController::class, 'store']);
+        Route::get('/integracoes/{integracao}', [IntegracaoController::class, 'show']);
+        Route::put('/integracoes/{integracao}', [IntegracaoController::class, 'update']);
+        Route::post('/integracoes/{integracao}/pausar', [IntegracaoController::class, 'pausar']);
+        Route::post('/integracoes/{integracao}/reativar', [IntegracaoController::class, 'reativar']);
+        Route::post('/integracoes/{integracao}/rotacionar', [IntegracaoController::class, 'rotacionar']);
+        Route::post('/integracoes/{integracao}/revogar', [IntegracaoController::class, 'revogar']);
+        Route::get('/integracoes/{integracao}/requisicoes', [IntegracaoController::class, 'requisicoes']);
+        // Webhooks da integração (docs/96 Fase 4).
+        Route::get('/integracoes/{integracao}/webhooks', [IntegracaoWebhookController::class, 'index']);
+        Route::post('/integracoes/{integracao}/webhooks', [IntegracaoWebhookController::class, 'store']);
+        Route::put('/integracoes/{integracao}/webhooks/{webhook}', [IntegracaoWebhookController::class, 'update']);
+        Route::delete('/integracoes/{integracao}/webhooks/{webhook}', [IntegracaoWebhookController::class, 'destroy']);
+        Route::post('/integracoes/{integracao}/webhooks/{webhook}/segredo', [IntegracaoWebhookController::class, 'novoSegredo']);
+        Route::post('/integracoes/{integracao}/webhooks/{webhook}/testar', [IntegracaoWebhookController::class, 'testar']);
+        Route::get('/integracoes/{integracao}/webhooks/{webhook}/entregas', [IntegracaoWebhookController::class, 'entregas']);
+        Route::post('/integracoes/{integracao}/webhooks/{webhook}/entregas/{entrega}/reenviar', [IntegracaoWebhookController::class, 'reenviar']);
     });
 
     // Suporte (SUPERADMIN) — fora do multi-tenancy. CRUD de empresas clientes (planos, limites,

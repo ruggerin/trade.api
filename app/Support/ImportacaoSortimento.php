@@ -44,6 +44,16 @@ class ImportacaoSortimento
             return self::relatorio(0, 0, 0, [['linha' => 1, 'codigo_externo' => null, 'mensagem' => $linhas['erro']]], false, $substituir ? [] : null, 0);
         }
 
+        return self::aplicar($empresa, $linhas, $simular, $substituir);
+    }
+
+    /**
+     * As mesmas regras pra linhas já lidas (API de integração, docs/96 §7.2).
+     *
+     * @param  list<array{numero: int, dados: array<string, string|null>}>  $linhas
+     */
+    public static function aplicar(Empresa $empresa, array $linhas, bool $simular, bool $substituir = false): array
+    {
         $lojas = self::resolverPorCodigo(
             PontoVenda::withoutGlobalScopes()->where('empresa_id', $empresa->id),
             array_column(array_column($linhas, 'dados'), 'codigo_externo_loja'),
