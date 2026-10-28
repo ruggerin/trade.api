@@ -1,4 +1,5 @@
 @php($base = url('/api/integracao/v1'))
+@php($modelos = \App\Support\DocumentacaoIntegracao::modelos())
 <!doctype html>
 <html lang="pt-BR">
 <head>
@@ -34,6 +35,13 @@
   .get { background:#0e7490; } .put { background:#7c3aed; }
   .nota { border-left:3px solid var(--accent); background:var(--code); padding:10px 14px; border-radius:0 6px 6px 0; margin:14px 0; }
   .aviso { border-left-color:var(--warn); }
+  .modelo { margin-top:36px; }
+  .modelo h3 { font-size:19px; margin-bottom:4px; }
+  .rotas { display:flex; flex-direction:column; gap:4px; margin:8px 0 10px; font-size:14px; }
+  .tag { margin-left:6px; font-size:11px; padding:0 6px; border-radius:10px; border:1px solid var(--line); color:var(--muted); white-space:nowrap; }
+  .campos td:nth-child(3), .campos td:nth-child(4) { text-align:center; color:var(--ok); }
+  .tipo { color:var(--muted); white-space:nowrap; font-size:13px; }
+  summary { cursor:pointer; color:var(--muted); font-size:14px; margin:8px 0; }
   @media (max-width: 860px) { .wrap { grid-template-columns:1fr; } nav { display:none; } main { padding:20px 16px 60px; } }
 </style>
 </head>
@@ -56,6 +64,23 @@
   <a href="#rotas-escrita">Rotas e campos</a>
   <a href="#pedidos">Pedidos e entregas</a>
   <a href="#idempotencia">Reenvio seguro</a>
+  <b>Modelos</b>
+  <a href="#modelo-loja">Loja</a>
+  <a href="#modelo-produto">Produto</a>
+  <a href="#modelo-mix">Mix da loja</a>
+  <a href="#modelo-supervisor">Supervisor</a>
+  <a href="#modelo-vendedor">Vendedor</a>
+  <a href="#modelo-carteira">Carteira</a>
+  <a href="#modelo-promotor">Promotor</a>
+  <a href="#modelo-pedido">Pedido</a>
+  <a href="#modelo-item-pedido">Item do pedido</a>
+  <a href="#modelo-entrega">Entrega</a>
+  <a href="#modelo-apoio">Rede, ramo, marca, departamento e seção</a>
+  <a href="#modelo-visita">Visita</a>
+  <a href="#modelo-registro">Registro</a>
+  <a href="#modelo-ruptura">Ruptura</a>
+  <a href="#modelo-ordem-servico">Ordem de serviço</a>
+  <a href="#modelo-xp">Lançamento de XP</a>
   <b>Avisos</b>
   <a href="#webhooks">Webhooks</a>
   <a href="#assinatura">Conferir a assinatura</a>
@@ -284,6 +309,39 @@
   -H "Idempotency-Key: carga-lojas-2026-10-22-parte-1" \
   -d @lojas.json "{{ $base }}/lojas"</code></pre>
 <p>Sem a chave a escrita funciona normalmente; o upsert por código já impede cadastro duplicado.</p>
+
+<h2 id="modelos">Modelos</h2>
+<p>Cada modelo com todos os campos. <b>L</b> = vem na leitura; <b>E</b> = aceito na escrita; <b>obrigatório</b> = exigido ao criar (na atualização, mande só o que mudou); <b>chave</b> = identifica o registro no upsert. Todo campo pode vir <code>null</code>, exceto chaves e <code>uuid</code>.</p>
+<p>Tipos: <code>texto</code>, <code>inteiro</code>, <code>decimal</code> (ponto como separador), <code>booleano</code>, <code>data</code> (<code>AAAA-MM-DD</code>), <code>data-hora</code> (ISO 8601 UTC), <code>uuid</code>, <code>enum</code> (um dos valores listados).</p>
+@foreach ($modelos as $m)
+  <section class="modelo" id="{{ $m['id'] }}">
+    <h3>{{ $m['nome'] }}</h3>
+    <p>{{ $m['descricao'] }}</p>
+    <div class="rotas">
+      @isset($m['ler'])<span><span class="metodo get">GET</span> <code>{{ substr($m['ler'][0], 4) }}</code> · <code>{{ $m['ler'][1] }}</code>@if($m['ler'][2]) · <code>from</code>/<code>to</code> por {{ $m['ler'][2] }}@endif</span>@endisset
+      @isset($m['escrever'])<span><span class="metodo put">PUT</span> <code>{{ substr($m['escrever'][0], 4) }}</code> · <code>{{ $m['escrever'][1] }}</code></span>@endisset
+    </div>
+    @isset($m['nota'])<div class="nota">{!! \App\Support\DocumentacaoIntegracao::texto($m['nota']) !!}</div>@endisset
+    <table class="campos">
+      <tr><th>Campo</th><th>Tipo</th><th>L</th><th>E</th><th>Descrição</th></tr>
+      @foreach ($m['campos'] as [$nome, $tipo, $desc, $flags])
+        <tr>
+          <td><code>{{ $nome }}</code>@if(str_contains($flags, 'K'))<span class="tag">chave</span>@elseif(str_contains($flags, 'C'))<span class="tag">obrigatório</span>@endif</td>
+          <td class="tipo">{{ $tipo }}</td>
+          <td>{{ str_contains($flags, 'L') ? '✓' : '' }}</td>
+          <td>{{ str_contains($flags, 'E') ? '✓' : '' }}</td>
+          <td>{!! \App\Support\DocumentacaoIntegracao::texto($desc) !!}</td>
+        </tr>
+      @endforeach
+    </table>
+    @if (isset($m['ler']) || ! isset($m['escrever']))
+      <details open><summary>Exemplo de leitura</summary><pre><code>{{ \App\Support\DocumentacaoIntegracao::exemplo($m, 'L') }}</code></pre></details>
+    @endif
+    @isset($m['escrever'])
+      <details><summary>Exemplo de item na escrita</summary><pre><code>{{ \App\Support\DocumentacaoIntegracao::exemplo($m, 'E') }}</code></pre></details>
+    @endisset
+  </section>
+@endforeach
 
 <h2 id="webhooks">Webhooks</h2>
 <p>O administrador cadastra, na integração, a URL <code>https</code> que vai receber os avisos e marca os eventos. Cada evento exige a permissão de leitura correspondente.</p>
