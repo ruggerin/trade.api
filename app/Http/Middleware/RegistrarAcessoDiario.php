@@ -22,7 +22,8 @@ class RegistrarAcessoDiario
         $response = $next($request);
 
         $usuario = $request->user();
-        if ($usuario && $response->getStatusCode() < 400 && ! ($request->isMethod('PATCH') && $request->is('api/localizacao'))) {
+        // Integração (docs/96) não é pessoa: não entra na medição de adesão.
+        if ($usuario instanceof \App\Models\Usuario && $response->getStatusCode() < 400 && ! ($request->isMethod('PATCH') && $request->is('api/localizacao'))) {
             try {
                 Adesao::registrar($usuario, Adesao::appDaRequisicao($request, $usuario));
             } catch (\Throwable $e) {

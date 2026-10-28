@@ -32,6 +32,34 @@ class AppServiceProvider extends ServiceProvider
         // produção. Parâmetro anulável: a página é pública (não há sessão web nesta API).
         Gate::define('viewApiDocs', fn ($usuario = null): bool => (bool) config('scramble.publica'));
 
+        // Webhooks da API de integração (docs/96 Fase 4): o aviso entra na fila na mesma transação
+        // do fato; o integracoes:entregar-webhooks entrega. Sem webhook na empresa, não faz nada.
+        \App\Models\Visita::updated(function (\App\Models\Visita $visita): void {
+            if ($visita->wasChanged('status') && in_array($visita->status, [\App\Enums\StatusVisita::FINALIZADA, \App\Enums\StatusVisita::CANCELADA], true)) {
+                $evento = $visita->status === \App\Enums\StatusVisita::FINALIZADA ? 'visita.finalizada' : 'visita.cancelada';
+                \App\Support\Webhooks::disparar($visita->empresa_id, $evento, fn () => \App\Support\Webhooks::dadosVisita($visita));
+            }
+        });
+        \App\Models\VisitaRegistro::created(function (\App\Models\VisitaRegistro $registro): void {
+            $empresaId = \App\Models\Visita::withoutGlobalScopes()->whereKey($registro->visita_id)->value('empresa_id');
+            if ($empresaId === null) {
+                return;
+            }
+            $dados = fn () => \App\Support\Webhooks::dadosRegistro($registro);
+            \App\Support\Webhooks::disparar($empresaId, 'registro.criado', $dados);
+            if ($registro->ruptura) {
+                \App\Support\Webhooks::disparar($empresaId, 'ruptura.registrada', $dados);
+            }
+        });
+        \App\Models\VisitaRegistro::updated(function (\App\Models\VisitaRegistro $registro): void {
+            if ($registro->ruptura && $registro->wasChanged('alerta_resolvido_em') && $registro->alerta_resolvido_em !== null) {
+                $empresaId = \App\Models\Visita::withoutGlobalScopes()->whereKey($registro->visita_id)->value('empresa_id');
+                if ($empresaId !== null) {
+                    \App\Support\Webhooks::disparar($empresaId, 'ruptura.resolvida', fn () => \App\Support\Webhooks::dadosRegistro($registro));
+                }
+            }
+        });
+
         // Tokens com canal/rotação (docs/67 §4.4) — reaproveitar token rotacionado derruba as
         // sessões mobile do usuário, ver SessaoApp::tokenAceito.
         Sanctum::usePersonalAccessTokenModel(PersonalAccessToken::class);

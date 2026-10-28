@@ -41,6 +41,16 @@ class ImportacaoProdutos
             return self::relatorio(0, 0, 0, [['linha' => 1, 'codigo_externo' => null, 'mensagem' => $linhas['erro']]], false);
         }
 
+        return self::aplicar($empresa, $linhas, $simular);
+    }
+
+    /**
+     * As mesmas regras pra linhas já lidas (API de integração, docs/96 §7.2).
+     *
+     * @param  list<array{numero: int, dados: array<string, string|null>}>  $linhas
+     */
+    public static function aplicar(Empresa $empresa, array $linhas, bool $simular): array
+    {
         $departamentos = DepartamentoAuditoria::where('empresa_id', $empresa->id)->get()->keyBy(fn ($d) => LeitorCsv::chaveNome($d->descricao));
         $marcas = MarcaAuditoria::where('empresa_id', $empresa->id)->get()->keyBy(fn ($m) => LeitorCsv::chaveNome($m->descricao));
         $secoes = SecaoAuditoria::where('empresa_id', $empresa->id)->get()->groupBy(fn ($s) => LeitorCsv::chaveNome($s->descricao));

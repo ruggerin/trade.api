@@ -60,6 +60,9 @@ Schedule::command('push:conferir-recibos')->everyFifteenMinutes()->withoutOverla
 
 // Sessões do app (docs/67 §4.4): tokens revogados/vencidos há 30+ dias e desafios de atestação vencidos.
 Schedule::command('sessoes:limpar')->dailyAt('03:45');
+Schedule::command('integracoes:limpar-requisicoes')->dailyAt('03:40');
+// Webhooks das integrações (docs/96 Fase 4): sem worker de fila, o cron entrega a cada minuto.
+Schedule::command('integracoes:entregar-webhooks')->everyMinute()->withoutOverlapping(5);
 
 // "Ainda está lá?" (docs/83): prazo máximo vencido vira EXPIRADO.
 Schedule::command('acompanhamentos:expirar')->dailyAt('03:50');

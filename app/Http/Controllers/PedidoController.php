@@ -6,10 +6,9 @@ use App\Http\Requests\Pedido\StorePedidoEntregaRequest;
 use App\Http\Requests\Pedido\StorePedidoRequest;
 use App\Models\Pedido;
 use App\Models\PontoVenda;
-use App\Models\ProdutoAuditoria;
 use App\Support\Faturamento;
 use App\Support\NotificacoesPedido;
-use App\Support\ValoresDoPedido;
+use App\Support\PedidosErp;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -25,65 +24,19 @@ class PedidoController extends Controller
     /**
      * Idempotente por (empresa, numero_pedido): reenviar o mesmo pedido substitui cabeçalho e
      * itens em vez de duplicar (201 na criação, 200 na atualização). As entregas nunca são
-     * tocadas aqui — chegam por `entregar`.
+     * tocadas aqui — chegam por `entregar`. Regra em App\Support\PedidosErp (a mesma da API de
+     * integração, docs/96).
      */
     public function store(StorePedidoRequest $request): JsonResponse
     {
         $dados = $request->validated();
-        $empresaId = $request->user()->empresa_id;
         $pontoVendaId = PontoVenda::where('uuid', $dados['ponto_venda_uuid'])->value('id');
 
-        $previsaoAnterior = null;
-        $pedido = DB::transaction(function () use ($dados, $empresaId, $pontoVendaId, &$previsaoAnterior) {
-            $pedido = Pedido::where('numero_pedido', $dados['numero_pedido'])->first();
-            $previsaoAnterior = $pedido?->data_previsao_entrega?->toDateString();
-            // Valor e faturamento (docs/61): sempre gravados, com o parâmetro ligado ou não — só a
-            // EXPOSIÇÃO é controlada (Faturamento::podeVer). Assim nada se perde se ligarem depois.
-            $valores = ValoresDoPedido::calcular($dados);
-            $atributos = $valores['pedido'] + [
-                'ponto_venda_id' => $pontoVendaId,
-                'numero_nf' => $dados['numero_nf'] ?? null,
-                'data_pedido' => $dados['data_pedido'],
-                'data_previsao_entrega' => $dados['data_previsao_entrega'] ?? null,
-                'observacao' => $dados['observacao'] ?? null,
-            ];
-
-            if ($pedido) {
-                $pedido->update($atributos);
-                $pedido->itens()->delete();
-            } else {
-                $pedido = Pedido::create(['empresa_id' => $empresaId, 'numero_pedido' => $dados['numero_pedido']] + $atributos);
-            }
-
-            // Resolve o vínculo com o catálogo pelo código externo; sem match o item fica com a
-            // descrição crua do ERP (produto_id null) em vez de derrubar o pedido inteiro.
-            $codigos = collect($dados['itens'])->pluck('codigo_externo_produto')->unique();
-            $produtos = ProdutoAuditoria::whereIn('codigo_externo', $codigos)->pluck('id', 'codigo_externo');
-
-            foreach ($dados['itens'] as $i => $item) {
-                $pedido->itens()->create($valores['itens'][$i] + [
-                    'produto_id' => $produtos[$item['codigo_externo_produto']] ?? null,
-                    'codigo_externo_produto' => $item['codigo_externo_produto'],
-                    'descricao_produto' => $item['descricao_produto'],
-                    'quantidade' => $item['quantidade'],
-                ]);
-            }
-
-            return $pedido;
-        });
-
-        $pedido->load(['itens.produto', 'entregas', 'pontoVenda']);
-
-        // Aviso "pedido a caminho" (docs/54 §5 Fase 3): quando a previsão aparece ou muda (o ERP
-        // revisou a data) — reenvio igual não avisa de novo; pedido já entregue não avisa.
-        $previsaoNova = $pedido->data_previsao_entrega?->toDateString();
-        if ($previsaoNova !== null && $previsaoNova !== $previsaoAnterior && $pedido->entregas->isEmpty()) {
-            NotificacoesPedido::avisar($pedido, NotificacoesPedido::PREVISTO);
-        }
+        [$pedido, $criado] = PedidosErp::gravar($request->user()->empresa, $pontoVendaId, $dados);
 
         return response()->json(
             ['pedido' => $this->formatar($pedido, $this->verValores($request))],
-            $pedido->wasRecentlyCreated ? 201 : 200,
+            $criado ? 201 : 200,
         );
     }
 
@@ -92,22 +45,13 @@ class PedidoController extends Controller
     {
         $dados = $request->validated();
 
-        $entrega = $pedido->entregas()->firstOrCreate(
-            ['data_entrega' => $dados['data_entrega']],
-            ['observacao' => $dados['observacao'] ?? null],
-        );
-
-        // Aviso "pedido entregue" — só na primeira vez (reenvio da mesma entrega não avisa).
-        if ($entrega->wasRecentlyCreated) {
-            NotificacoesPedido::avisar($pedido, NotificacoesPedido::ENTREGUE);
-        }
+        [, $criada] = PedidosErp::entregar($pedido, $dados['data_entrega'], $dados['observacao'] ?? null);
 
         return response()->json(
             ['pedido' => $this->formatar($pedido->load(['itens.produto', 'entregas', 'pontoVenda']), $this->verValores($request))],
-            $entrega->wasRecentlyCreated ? 201 : 200,
+            $criada ? 201 : 200,
         );
     }
-
     /** Pedidos da loja, mais recentes primeiro — consulta do promotor (e do admin no detalhe do PDV). */
     public function porPontoVenda(Request $request, PontoVenda $pontoVenda): JsonResponse
     {

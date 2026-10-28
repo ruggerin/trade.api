@@ -31,6 +31,9 @@ return Application::configure(basePath: dirname(__DIR__))
             'canal.mobile' => \App\Http\Middleware\EnsureCanalMobile::class,
             'assinatura' => \App\Http\Middleware\EnsureAssinaturaAparelho::class,
             'xp' => \App\Http\Middleware\EnsureControleXp::class,
+            'integracao' => \App\Http\Middleware\EnsureIntegracao::class,
+            'escopo' => \App\Http\Middleware\EnsureEscopoIntegracao::class,
+            'idempotencia' => \App\Http\Middleware\EnsureIdempotencia::class,
         ]);
 
         // App é só API, sem tela de login web — sem isso, uma request sem header Accept
@@ -52,6 +55,33 @@ return Application::configure(basePath: dirname(__DIR__))
         // Garante resposta em JSON pra qualquer exceção em /api/*, independente do header
         // Accept enviado pelo cliente.
         $exceptions->shouldRenderJsonWhen(fn ($request, $e) => $request->is('api/*') || $request->expectsJson());
+
+        // API de integração (docs/96 §7.3): todo erro no formato "problem details", inclusive 401,
+        // validação e 500 (com um id pro suporte achar no log). Antes dos outros renders.
+        $exceptions->render(function (\Throwable $e, Request $request) {
+            if (! $request->is('api/integracao/*')) {
+                return null;
+            }
+
+            return match (true) {
+                $e instanceof \Illuminate\Auth\AuthenticationException => \App\Support\ProblemaIntegracao::resposta(401, 'Token ausente, inválido, vencido ou revogado.'),
+                $e instanceof \Illuminate\Validation\ValidationException => \App\Support\ProblemaIntegracao::resposta(422, 'Confira os campos em `erros`.', $e->errors()),
+                $e instanceof \Illuminate\Database\Eloquent\ModelNotFoundException,
+                $e instanceof QueryException && $e->getCode() === '22P02' => \App\Support\ProblemaIntegracao::resposta(404, 'Recurso não encontrado.'),
+                $e instanceof \Symfony\Component\HttpKernel\Exception\HttpExceptionInterface => \App\Support\ProblemaIntegracao::resposta(
+                    $e->getStatusCode(),
+                    $e->getMessage() ?: 'Não foi possível atender a requisição.',
+                    null,
+                    $e->getHeaders(),
+                ),
+                default => (function () use ($e) {
+                    $id = (string) \Illuminate\Support\Str::uuid();
+                    \Illuminate\Support\Facades\Log::error('Erro na API de integração', ['erro_id' => $id, 'exception' => $e]);
+
+                    return \App\Support\ProblemaIntegracao::resposta(500, "Erro interno. Informe ao suporte o código {$id}.");
+                })(),
+            };
+        });
 
         // Sessão revogada com motivo (docs/67 §4.5): o 401 diz por que caiu, pro app mostrar
         // "Sua conta entrou em outro aparelho (Moto G, 14:32)" na tela de login.

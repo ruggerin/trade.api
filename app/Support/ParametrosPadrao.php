@@ -122,13 +122,13 @@ final class ParametrosPadrao
 
             // withoutGlobalScopes: quem chama pode ser o SUPERADMIN (sem empresa) ou um comando de
             // console — o empresa_id vai explícito, nunca herdado do usuário logado.
-            Parametro::withoutGlobalScopes()->create([
+            HistoricoParametros::comOrigem(HistoricoParametros::PADROES, fn () => Parametro::withoutGlobalScopes()->create([
                 'empresa_id' => $empresa->id,
                 'chave' => $chave,
                 'valor' => $config['valor'],
                 'descricao' => $config['descricao'],
                 'ativo' => true,
-            ]);
+            ]));
             $criadas[] = $chave;
         }
 

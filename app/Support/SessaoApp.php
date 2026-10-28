@@ -109,6 +109,12 @@ class SessaoApp
             return false;
         }
 
+        // Token de integração (docs/96 §6.2.6) só abre /api/integracao/*, e lá só ele entra: um token
+        // de pessoa não vira chave de integração, nem o de integração abre o app ou o admin.
+        if (($token->canal === TokenIntegracao::CANAL) !== request()->is('api/integracao/*')) {
+            return false;
+        }
+
         if ($token->revogado_em !== null) {
             request()->attributes->set(self::ATRIBUTO_SESSAO_ENCERRADA, [
                 'motivo' => $token->revogado_motivo,
