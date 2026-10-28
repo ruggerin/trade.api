@@ -23,11 +23,15 @@ final class ConfiguracoesEmpresa
     public static function catalogo(Empresa $empresa): array
     {
         $linhas = Parametro::withoutGlobalScopes()->where('empresa_id', $empresa->id)->get()->keyBy('chave');
+        // Quem mexeu por último em cada configuração (auditoria, App\Support\HistoricoParametros).
+        $ultimas = \App\Models\ParametroHistorico::withoutGlobalScopes()->where('empresa_id', $empresa->id)
+            ->whereIn('id', fn ($q) => $q->from('parametro_historico')->where('empresa_id', $empresa->id)->selectRaw('max(id)')->groupBy('chave'))
+            ->get()->keyBy('chave');
 
         $itens = collect(ParametrosPadrao::CATALOGO)
             // Recurso de plano desligado: os parâmetros dele nem aparecem (ex.: régua de XP, docs/88 §2.1).
             ->reject(fn (array $padrao, string $chave) => ($campo = ParametrosMetadados::de($chave)['so_com'] ?? null) !== null && ! $empresa->{$campo})
-            ->map(function (array $padrao, string $chave) use ($linhas, $empresa) {
+            ->map(function (array $padrao, string $chave) use ($linhas, $empresa, $ultimas) {
             $meta = ParametrosMetadados::de($chave);
             /** @var Parametro|null $linha */
             $linha = $linhas->get($chave);
@@ -61,6 +65,7 @@ final class ConfiguracoesEmpresa
                 // Recurso não contratado: a tela mostra travado, com o motivo (o lote recusa mexer).
                 'bloqueado' => self::bloqueioDeContrato($empresa, $chave),
                 'grupo' => $meta['grupo'] ?? null,
+                'ultima_alteracao' => ($u = $ultimas->get($chave)) ? ['por' => $u->usuario_nome, 'origem' => $u->origem, 'em' => $u->created_at?->toIso8601String()] : null,
                 'ativo_significa' => $meta['ativo_significa'] ?? null,
                 'padrao' => self::normalizar($tipo, $padrao['valor'], $meta, $padrao['valor']),
                 'valor' => $valor,

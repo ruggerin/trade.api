@@ -29,6 +29,11 @@ class Parametro extends Model
         // A régua de XP guarda os parâmetros lidos durante a requisição (App\Support\Xp\ParametrosXp).
         static::saved(fn () => \App\Support\Xp\ParametrosXp::limparCache());
         static::deleted(fn () => \App\Support\Xp\ParametrosXp::limparCache());
+
+        // Auditoria: toda mudança de valor ou de ligado/desligado (App\Support\HistoricoParametros).
+        static::created(fn (self $p) => \App\Support\HistoricoParametros::registrar($p, 'created'));
+        static::updated(fn (self $p) => \App\Support\HistoricoParametros::registrar($p, 'updated'));
+        static::deleted(fn (self $p) => \App\Support\HistoricoParametros::registrar($p, 'deleted'));
     }
 
     public function empresa(): BelongsTo
