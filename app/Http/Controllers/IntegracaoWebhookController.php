@@ -94,7 +94,7 @@ class IntegracaoWebhookController extends Controller
         $this->daIntegracao($integracao, $webhook);
         $entrega = $webhook->entregas()->create([
             'evento' => Webhooks::EVENTO_TESTE,
-            'payload' => ['evento' => Webhooks::EVENTO_TESTE, 'criado_em' => now()->utc()->toIso8601ZuluString(), 'dados' => ['integracao' => $integracao->nome]],
+            'payload' => ['event' => Webhooks::EVENTO_TESTE, 'created_at' => now()->utc()->toIso8601ZuluString(), 'data' => ['integracao' => $integracao->nome]],
             'proxima_tentativa_em' => now(),
         ]);
         $ok = Webhooks::entregar($entrega->setRelation('webhook', $webhook));

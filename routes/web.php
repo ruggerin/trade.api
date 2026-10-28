@@ -19,6 +19,9 @@ Route::get('/manual/{arquivo}', [ManualController::class, 'show'])
     ->where('arquivo', '[A-Za-z0-9\-]+\.md')
     ->name('manual.show');
 
+// Documentação pública da API de integração (docs/96), pro dev do ERP/BI do cliente — sem login.
+Route::view('/docs/integracao', 'docs-integracao')->name('docs.integracao');
+
 // Termos de Uso e Política de Privacidade públicos (docs/58 §5.2) — URL da Play Store e dos
 // links nos logins. `?versao=2026-10-06` abre uma versão anterior.
 Route::get('/{slug}', [DocumentoLegalController::class, 'pagina'])

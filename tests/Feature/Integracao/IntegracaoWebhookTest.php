@@ -117,11 +117,11 @@ class IntegracaoWebhookTest extends TestCase
 
         Http::assertSentCount(2);
         Http::assertSent(function (RequisicaoHttp $req) {
-            [$t, $v1] = array_map(fn ($p) => explode('=', $p, 2)[1], explode(',', $req->header('X-Horus-Assinatura')[0]));
+            [$t, $v1] = array_map(fn ($p) => explode('=', $p, 2)[1], explode(',', $req->header('X-Horus-Signature')[0]));
 
-            return $req->header('X-Horus-Evento')[0] === 'visita.finalizada'
+            return $req->header('X-Horus-Event')[0] === 'visita.finalizada'
                 && hash_equals(hash_hmac('sha256', $t.'.'.$req->body(), 'whsec_teste'), $v1)
-                && $req['dados']['loja_codigo_externo'] === 'L1';
+                && $req['data']['loja_codigo_externo'] === 'L1';
         });
         $this->assertSame(0, IntegracaoWebhookEntrega::whereNull('entregue_em')->count());
     }

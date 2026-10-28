@@ -6,7 +6,7 @@ use Illuminate\Http\JsonResponse;
 
 /**
  * Formato único de erro da API de integração (docs/96 §7.3, RFC 9457 "problem details"), em
- * português como o resto da API: `{ tipo, titulo, status, detalhe, erros? }`. As rotas do app e
+ * português como o resto da API: estrutura em inglês `{ type, title, status, detail, errors? }`, texto em português. As rotas do app e
  * do admin continuam com o `{ message }` de sempre.
  */
 class ProblemaIntegracao
@@ -28,11 +28,11 @@ class ProblemaIntegracao
         $titulo = self::TITULOS[$status] ?? ($status >= 500 ? 'Erro interno' : 'Erro');
 
         return new JsonResponse(array_filter([
-            'tipo' => 'https://horus.prossigatec.com.br/docs/api/erros#'.$status,
-            'titulo' => $titulo,
+            'type' => url('/docs/integracao').'#erros',
+            'title' => $titulo,
             'status' => $status,
-            'detalhe' => $detalhe,
-            'erros' => $erros,
+            'detail' => $detalhe,
+            'errors' => $erros,
         ], fn ($v) => $v !== null), $status, $headers + ['Content-Type' => 'application/problem+json']);
     }
 }

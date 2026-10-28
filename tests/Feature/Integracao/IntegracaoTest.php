@@ -151,9 +151,9 @@ class IntegracaoTest extends TestCase
 
         $this->getComToken($token, '/api/integracao/v1/visitas')
             ->assertOk()
-            ->assertJsonCount(1, 'dados')
-            ->assertJsonPath('dados.0.uuid', $minha->uuid)
-            ->assertJsonMissingPath('dados.0.id');
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.uuid', $minha->uuid)
+            ->assertJsonMissingPath('data.0.id');
     }
 
     public function test_escopo_faltando_da_403_dizendo_qual(): void
@@ -164,7 +164,7 @@ class IntegracaoTest extends TestCase
             ->assertForbidden()
             ->assertHeader('Content-Type', 'application/problem+json')
             ->assertJsonPath('status', 403)
-            ->assertJsonPath('detalhe', 'Este token não tem a permissão xp:ler.');
+            ->assertJsonPath('detail', 'Este token não tem a permissão xp:ler.');
     }
 
     public function test_editar_escopos_vale_na_hora(): void
@@ -278,7 +278,7 @@ class IntegracaoTest extends TestCase
         [$integracao, $token] = $this->criarIntegracao();
         $this->visitaDaEmpresa($this->empresa);
 
-        $this->getComToken($token, '/api/integracao/v1/visitas?limite=10')->assertOk();
+        $this->getComToken($token, '/api/integracao/v1/visitas?limit=10')->assertOk();
         $this->getComToken($token, '/api/integracao/v1/xp')->assertForbidden();
 
         $requisicoes = $integracao->requisicoes()->orderBy('id')->get();
@@ -301,24 +301,24 @@ class IntegracaoTest extends TestCase
         $visitas = collect(range(1, 3))->map(fn () => $this->visitaDaEmpresa($this->empresa));
         Visita::whereKey($visitas[0]->id)->update(['updated_at' => now()->subDays(5)]);
 
-        $pagina1 = $this->getComToken($token, '/api/integracao/v1/visitas?limite=2')->assertOk()->assertJsonCount(2, 'dados');
-        $this->assertSame($visitas[0]->uuid, $pagina1->json('dados.0.uuid'));
-        $cursor = $pagina1->json('proximo_cursor');
+        $pagina1 = $this->getComToken($token, '/api/integracao/v1/visitas?limit=2')->assertOk()->assertJsonCount(2, 'data');
+        $this->assertSame($visitas[0]->uuid, $pagina1->json('data.0.uuid'));
+        $cursor = $pagina1->json('next_cursor');
         $this->assertNotNull($cursor);
 
-        $pagina2 = $this->getComToken($token, '/api/integracao/v1/visitas?limite=2&cursor='.urlencode($cursor))->assertOk()->assertJsonCount(1, 'dados');
-        $this->assertNull($pagina2->json('proximo_cursor'));
+        $pagina2 = $this->getComToken($token, '/api/integracao/v1/visitas?limit=2&cursor='.urlencode($cursor))->assertOk()->assertJsonCount(1, 'data');
+        $this->assertNull($pagina2->json('next_cursor'));
 
         $desde = now()->subDay()->toIso8601ZuluString();
-        $this->getComToken($token, '/api/integracao/v1/visitas?alterado_desde='.urlencode($desde))->assertOk()->assertJsonCount(2, 'dados');
-        $this->getComToken($token, '/api/integracao/v1/visitas?limite=5000')->assertUnprocessable()->assertJsonPath('status', 422)->assertJsonStructure(['erros' => ['limite']]);
+        $this->getComToken($token, '/api/integracao/v1/visitas?updated_since='.urlencode($desde))->assertOk()->assertJsonCount(2, 'data');
+        $this->getComToken($token, '/api/integracao/v1/visitas?limit=5000')->assertUnprocessable()->assertJsonPath('status', 422)->assertJsonStructure(['errors' => ['limit']]);
     }
 
     public function test_usuarios_nao_expoe_dado_pessoal(): void
     {
         [, $token] = $this->criarIntegracao(['escopos' => ['usuarios:ler']]);
 
-        $dados = $this->getComToken($token, '/api/integracao/v1/usuarios')->assertOk()->json('dados.0');
+        $dados = $this->getComToken($token, '/api/integracao/v1/usuarios')->assertOk()->json('data.0');
         $this->assertSame(['uuid', 'nome', 'codigo_externo', 'tipo', 'supervisor_uuid', 'ativo', 'alterado_em'], array_keys($dados));
     }
 
@@ -335,9 +335,9 @@ class IntegracaoTest extends TestCase
 
         $url = $this->getComToken($token, '/api/integracao/v1/registros')
             ->assertOk()
-            ->assertJsonPath('dados.0.uuid', $registro->uuid)
-            ->json('dados.0.fotos.0.url');
-        $this->getComToken($token, '/api/integracao/v1/rupturas')->assertOk()->assertJsonCount(1, 'dados');
+            ->assertJsonPath('data.0.uuid', $registro->uuid)
+            ->json('data.0.fotos.0.url');
+        $this->getComToken($token, '/api/integracao/v1/rupturas')->assertOk()->assertJsonCount(1, 'data');
 
         $this->esquecerLogin();
         $this->withHeaders(['Authorization' => ''])->get($url)->assertOk();
