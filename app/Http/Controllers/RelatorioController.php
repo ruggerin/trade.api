@@ -18,6 +18,7 @@ use App\Models\VisitaRegistro;
 use App\Relatorios\Periodo;
 use App\Support\EsforcoRetorno;
 use App\Support\Faturamento;
+use App\Support\LojasDoPlanejamento;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
@@ -104,6 +105,60 @@ class RelatorioController extends Controller implements HasMiddleware
         }
 
         return response()->json($resposta);
+    }
+
+    /**
+     * Lojas de uma linha "dia × promotor" do relatório (abrir a linha): visitada, não visitada,
+     * a vencer, cancelada ou espontânea, com horário e tempo na loja. `sem_promotor=1` = a linha
+     * das OS que ninguém pegou. Ver App\Support\LojasDoPlanejamento.
+     */
+    public function visitasPlanejadasLojas(Request $request): JsonResponse
+    {
+        $this->exigirAdminOuGestor($request);
+        $request->validate([
+            'data' => ['required', 'date_format:Y-m-d'],
+            'tz' => ['nullable', 'timezone:all'],
+            'sem_promotor' => ['nullable', 'boolean'],
+        ]);
+        $tz = $request->input('tz') ?: config('app.timezone');
+        $inicio = Carbon::parse($request->string('data'), $tz)->startOfDay()->utc();
+        $fim = Carbon::parse($request->string('data'), $tz)->endOfDay()->utc();
+        [$usuarioId, $pontoVendaId] = $this->filtrosPromotorELoja($request);
+
+        return response()->json([
+            'lojas' => LojasDoPlanejamento::itens($inicio, $fim, $tz, $usuarioId, $pontoVendaId, $request->boolean('sem_promotor')),
+        ]);
+    }
+
+    /**
+     * Visão por loja do período: o que foi planejado, visitado e perdido em cada loja, e em quais
+     * dias. `so_perdidas=1` deixa só as lojas com visita perdida.
+     */
+    public function visitasPlanejadasPorLoja(Request $request): JsonResponse
+    {
+        $this->exigirAdminOuGestor($request);
+        [$inicio, $fim, $tz] = $this->periodo($request);
+        $request->validate(['so_perdidas' => ['nullable', 'boolean']]);
+        [$usuarioId, $pontoVendaId] = $this->filtrosPromotorELoja($request);
+
+        $itens = LojasDoPlanejamento::itens($inicio, $fim, $tz, $usuarioId, $pontoVendaId);
+        $lojas = LojasDoPlanejamento::porLoja($itens, $tz, $request->boolean('so_perdidas'));
+
+        return response()->json([
+            'periodo' => $this->periodoLocal($inicio, $fim, $tz),
+            'lojas' => $lojas,
+            'total_lojas' => $itens->pluck('loja.id')->filter()->unique()->count(),
+            'lojas_com_perda' => $itens->where('situacao', LojasDoPlanejamento::NAO_VISITADA)->pluck('loja.id')->filter()->unique()->count(),
+        ]);
+    }
+
+    /** @return array{0: ?int, 1: ?int} */
+    private function filtrosPromotorELoja(Request $request): array
+    {
+        return [
+            $request->filled('usuario_uuid') ? Usuario::where('uuid', $request->string('usuario_uuid'))->value('id') : null,
+            $request->filled('ponto_venda_uuid') ? PontoVenda::where('uuid', $request->string('ponto_venda_uuid'))->value('id') : null,
+        ];
     }
 
     /**

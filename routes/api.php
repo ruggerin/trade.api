@@ -308,6 +308,11 @@ Route::middleware(['auth:sanctum', 'licenca', 'assinatura'])->group(function ():
     // libera com ordens_servico.gerenciar.
     Route::get('/relatorios/visitas-planejadas-x-executadas', [RelatorioController::class, 'visitasPlanejadasXExecutadas'])
         ->middleware('permissao:tela.relatorios,ordens_servico.gerenciar');
+    // Lojas por trás dos números: abrir a linha "dia × promotor" e a visão por loja do período.
+    Route::get('/relatorios/visitas-planejadas-x-executadas/lojas', [RelatorioController::class, 'visitasPlanejadasLojas'])
+        ->middleware('permissao:tela.relatorios,ordens_servico.gerenciar');
+    Route::get('/relatorios/visitas-planejadas-x-executadas/por-loja', [RelatorioController::class, 'visitasPlanejadasPorLoja'])
+        ->middleware('permissao:tela.relatorios,ordens_servico.gerenciar');
     Route::middleware('permissao:tela.relatorios')->group(function (): void {
         Route::get('/relatorios/tempo-na-loja', [RelatorioController::class, 'tempoNaLoja']);
         Route::get('/relatorios/respostas-formulario', [RelatorioController::class, 'respostasFormulario']);
@@ -599,6 +604,8 @@ Route::middleware(['auth:sanctum', 'licenca', 'assinatura'])->group(function ():
 
     // Tela de Configurações (docs/62). `lote` vem antes de `/parametros/{parametro}` pra não ser lido como uuid.
     Route::get('/parametros/catalogo', [ParametroController::class, 'catalogo'])->middleware('permissao:parametros.gerenciar');
+    // Auditoria das configurações: quem mudou o quê, de quanto pra quanto (App\Support\HistoricoParametros).
+    Route::get('/parametros/historico', [ParametroController::class, 'historico'])->middleware('permissao:parametros.gerenciar');
     Route::put('/parametros/lote', [ParametroController::class, 'lote'])->middleware('permissao:parametros.gerenciar');
     Route::post('/parametros', [ParametroController::class, 'store'])->middleware('permissao:parametros.gerenciar');
     Route::put('/parametros/{parametro}', [ParametroController::class, 'update'])->middleware('permissao:parametros.gerenciar');

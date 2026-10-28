@@ -201,6 +201,12 @@ final class RotaDoDia
                 'raio_metros' => $raioDesvio,
                 'lojas' => $lojasRoteiro,
             ],
+            // O que estava planejado pro dia e não virou visita (não visitada, a vencer, em andamento,
+            // cancelada com motivo) — a tela mostra com o checkbox "Planejadas não feitas". Mesma
+            // classificação do relatório de cumprimento (App\Support\LojasDoPlanejamento).
+            'planejadas_nao_feitas' => LojasDoPlanejamento::itens($inicioDia, $fimDia, $dia->tzName, $promotor->id, null)
+                ->whereNotIn('situacao', [LojasDoPlanejamento::VISITADA, LojasDoPlanejamento::ESPONTANEA])
+                ->values(),
             'resumo' => [
                 'visitas' => $visitasFormatadas->count(),
                 // Tempo em loja honesto (docs/49 §4): desconta o tempo fora durante as visitas.
