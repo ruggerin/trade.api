@@ -56,7 +56,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
             return match (true) {
                 $e instanceof \Illuminate\Auth\AuthenticationException => \App\Support\ProblemaIntegracao::resposta(401, 'Token ausente, inválido, vencido ou revogado.'),
-                $e instanceof \Illuminate\Validation\ValidationException => \App\Support\ProblemaIntegracao::resposta(422, 'Confira os campos em `erros`.', $e->errors()),
+                $e instanceof \Illuminate\Validation\ValidationException => \App\Support\ProblemaIntegracao::resposta(422, 'Confira os campos em `errors`.', $e->errors()),
                 $e instanceof \Illuminate\Database\Eloquent\ModelNotFoundException,
                 $e instanceof QueryException && $e->getCode() === '22P02' => \App\Support\ProblemaIntegracao::resposta(404, 'Recurso não encontrado.'),
                 $e instanceof \Symfony\Component\HttpKernel\Exception\HttpExceptionInterface => \App\Support\ProblemaIntegracao::resposta(

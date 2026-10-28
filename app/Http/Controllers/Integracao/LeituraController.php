@@ -30,11 +30,11 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 /**
  * Leitura da API de integração (docs/96 §7.1), pra BI. Todas as listas seguem o mesmo contrato:
  *
- * - paginação por cursor (`?cursor=…&limite=500`, máximo 1000), estável com dado chegando;
- * - leitura incremental: `?alterado_desde=2026-10-22T00:00:00Z` traz só o que mudou desde então,
+ * - paginação por cursor (`?cursor=…&limit=500`, máximo 1000), estável com dado chegando;
+ * - leitura incremental: `?updated_since=2026-10-22T00:00:00Z` traz só o que mudou desde então,
  *   em ordem de alteração, então o BI guarda o último `alterado_em` e pede dali na próxima vez;
- * - filtros `de`/`ate` (data principal do recurso), `loja` e `promotor` (uuid) onde fazem sentido;
- * - só uuid (nunca o id interno), datas ISO 8601 em UTC e o fuso da empresa em `fuso`.
+ * - filtros `from`/`to` (data principal do recurso), `loja` e `promotor` (uuid) onde fazem sentido;
+ * - só uuid (nunca o id interno), datas ISO 8601 em UTC e o fuso da empresa em `timezone`.
  *
  * `v1` não quebra: campo novo pode aparecer, campo existente não muda nem some (§7.4).
  * O escopo de cada rota é conferido no middleware (routes/api.php); a empresa, pelo BelongsToEmpresa
@@ -128,16 +128,16 @@ class LeituraController extends Controller
 
     /**
      * Lançamentos de XP não têm updated_at: a "alteração" é a criação ou a resolução (aprovação,
-     * contestação), então `alterado_desde` olha as duas e a ordem é pelo id.
+     * contestação), então `updated_since` olha as duas e a ordem é pelo id.
      */
     public function xp(Request $request): JsonResponse
     {
         $dados = $this->validarLista($request);
         $query = XpLancamento::query()
             ->with(['usuario:id,uuid', 'visita:id,uuid', 'ordemServico:id,uuid'])
-            ->when($dados['alterado_desde'] ?? null, fn ($q, $desde) => $q->where(fn ($w) => $w->where('created_at', '>=', $desde)->orWhere('resolvido_em', '>=', $desde)))
-            ->when($dados['de'] ?? null, fn ($q, $de) => $q->where('competencia', '>=', $de))
-            ->when($dados['ate'] ?? null, fn ($q, $ate) => $q->where('competencia', '<=', $ate))
+            ->when($dados['updated_since'] ?? null, fn ($q, $desde) => $q->where(fn ($w) => $w->where('created_at', '>=', $desde)->orWhere('resolvido_em', '>=', $desde)))
+            ->when($dados['from'] ?? null, fn ($q, $de) => $q->where('competencia', '>=', $de))
+            ->when($dados['to'] ?? null, fn ($q, $ate) => $q->where('competencia', '<=', $ate))
             ->when($request->query('promotor'), fn ($q, $uuid) => $q->whereHas('usuario', fn ($u) => $u->where('uuid', $uuid)))
             ->orderBy('id');
 
@@ -255,7 +255,7 @@ class LeituraController extends Controller
 
     /**
      * Carteira vendedor × loja, um par por linha. O vínculo removido some (não fica marcado como
-     * excluído): pra conferir a carteira inteira, leia sem `alterado_desde`.
+     * excluído): pra conferir a carteira inteira, leia sem `updated_since`.
      */
     public function carteira(Request $request): JsonResponse
     {
@@ -265,13 +265,13 @@ class LeituraController extends Controller
             ->join('pontos_venda as pv', 'pv.id', '=', 'c.ponto_venda_id')
             ->join('vendedores as v', 'v.id', '=', 'c.vendedor_id')
             ->where('pv.empresa_id', $empresaId)
-            ->when($dados['alterado_desde'] ?? null, fn ($q, $desde) => $q->where('c.updated_at', '>=', $desde))
+            ->when($dados['updated_since'] ?? null, fn ($q, $desde) => $q->where('c.updated_at', '>=', $desde))
             ->when($request->query('loja'), fn ($q, $uuid) => $q->where('pv.uuid', $uuid))
             ->orderBy('c.ponto_venda_id')
             ->orderBy('c.vendedor_id')
             ->select(['c.ponto_venda_id', 'c.vendedor_id', 'pv.uuid as loja_uuid', 'pv.codigo_externo as loja_codigo_externo', 'v.codigo_externo as vendedor_codigo_externo', 'c.updated_at']);
 
-        $pagina = $query->cursorPaginate((int) ($dados['limite'] ?? self::LIMITE_PADRAO), ['*'], 'cursor', $dados['cursor'] ?? null);
+        $pagina = $query->cursorPaginate((int) ($dados['limit'] ?? self::LIMITE_PADRAO), ['*'], 'cursor', $dados['cursor'] ?? null);
         $itens = collect($pagina->items())->map(fn ($c) => [
             'loja_uuid' => $c->loja_uuid,
             'loja_codigo_externo' => $c->loja_codigo_externo,
@@ -382,16 +382,16 @@ class LeituraController extends Controller
         return $this->listar($request, $query, 'created_at', $formatar);
     }
 
-    /** Lista padrão: `alterado_desde` em updated_at, `de`/`ate` na coluna de data do recurso. */
+    /** Lista padrão: `updated_since` em updated_at, `from`/`to` na coluna de data do recurso. */
     private function listar(Request $request, Builder $query, string $colunaData, callable $formatar): JsonResponse
     {
         $dados = $this->validarLista($request);
         $tabela = $query->getModel()->getTable();
 
         $query
-            ->when($dados['alterado_desde'] ?? null, fn ($q, $desde) => $q->where("{$tabela}.updated_at", '>=', $desde))
-            ->when($dados['de'] ?? null, fn ($q, $de) => $q->where("{$tabela}.{$colunaData}", '>=', $de))
-            ->when($dados['ate'] ?? null, fn ($q, $ate) => $q->where("{$tabela}.{$colunaData}", '<', \Carbon\Carbon::parse($ate)->addDay()->toDateString()))
+            ->when($dados['updated_since'] ?? null, fn ($q, $desde) => $q->where("{$tabela}.updated_at", '>=', $desde))
+            ->when($dados['from'] ?? null, fn ($q, $de) => $q->where("{$tabela}.{$colunaData}", '>=', $de))
+            ->when($dados['to'] ?? null, fn ($q, $ate) => $q->where("{$tabela}.{$colunaData}", '<', \Carbon\Carbon::parse($ate)->addDay()->toDateString()))
             ->orderBy("{$tabela}.updated_at")
             ->orderBy("{$tabela}.id");
 
@@ -402,10 +402,10 @@ class LeituraController extends Controller
     {
         return $request->validate([
             'cursor' => ['nullable', 'string', 'max:500'],
-            'limite' => ['nullable', 'integer', 'min:1', 'max:'.self::LIMITE_MAXIMO],
-            'alterado_desde' => ['nullable', 'date'],
-            'de' => ['nullable', 'date_format:Y-m-d'],
-            'ate' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:de'],
+            'limit' => ['nullable', 'integer', 'min:1', 'max:'.self::LIMITE_MAXIMO],
+            'updated_since' => ['nullable', 'date'],
+            'from' => ['nullable', 'date_format:Y-m-d'],
+            'to' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:from'],
             'loja' => ['nullable', 'uuid'],
             'promotor' => ['nullable', 'uuid'],
         ]);
@@ -413,7 +413,7 @@ class LeituraController extends Controller
 
     private function paginar(Request $request, Builder $query, array $dados, callable $formatar): JsonResponse
     {
-        $pagina = $query->cursorPaginate((int) ($dados['limite'] ?? self::LIMITE_PADRAO), ['*'], 'cursor', $dados['cursor'] ?? null);
+        $pagina = $query->cursorPaginate((int) ($dados['limit'] ?? self::LIMITE_PADRAO), ['*'], 'cursor', $dados['cursor'] ?? null);
         $itens = collect($pagina->items())->map(fn (Model $m) => $formatar($m))->values();
 
         return $this->resposta($request, $itens, $pagina->nextCursor()?->encode());
@@ -424,9 +424,9 @@ class LeituraController extends Controller
         $request->attributes->set(EnsureIntegracao::ATRIBUTO_REGISTROS, $itens->count());
 
         return response()->json([
-            'dados' => $itens,
-            'proximo_cursor' => $proximoCursor,
-            'fuso' => $request->user()->empresa?->fuso ?? 'America/Sao_Paulo',
+            'data' => $itens,
+            'next_cursor' => $proximoCursor,
+            'timezone' => $request->user()->empresa?->fuso ?? 'America/Sao_Paulo',
         ]);
     }
 

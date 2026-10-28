@@ -19,8 +19,8 @@ use Illuminate\Support\Str;
  * - O aviso entra numa fila (tabela) na mesma transação do fato, e o `integracoes:entregar-webhooks`
  *   (cron, a cada minuto) entrega. A API não tem worker de fila, e um cliente lento ou fora do ar não
  *   pode atrasar o check-out do promotor.
- * - Assinatura: `X-Horus-Assinatura: t=<unix>,v1=<hex>`, com v1 = HMAC-SHA256(segredo, "<t>.<corpo>").
- *   O cliente confere e recusa aviso com `t` velho (repetição). `X-Horus-Entrega` é o id do aviso:
+ * - Assinatura: `X-Horus-Signature: t=<unix>,v1=<hex>`, com v1 = HMAC-SHA256(segredo, "<t>.<corpo>").
+ *   O cliente confere e recusa aviso com `t` velho (repetição). `X-Horus-Delivery` é o id do aviso:
  *   pode chegar mais de uma vez (nova tentativa), então o cliente ignora id repetido.
  * - Novas tentativas: 1, 5, 15, 60, 240 e 720 minutos. Depois disso o aviso é abandonado. Com
  *   FALHAS_PARA_DESATIVAR falhas seguidas o webhook é desligado e a tela avisa.
@@ -83,7 +83,7 @@ class Webhooks
             foreach ($webhooks as $webhook) {
                 $webhook->entregas()->create([
                     'evento' => $evento,
-                    'payload' => ['evento' => $evento, 'criado_em' => now()->utc()->toIso8601ZuluString(), 'dados' => $dados],
+                    'payload' => ['event' => $evento, 'created_at' => now()->utc()->toIso8601ZuluString(), 'data' => $dados],
                     'proxima_tentativa_em' => now(),
                 ]);
             }
@@ -144,9 +144,9 @@ class Webhooks
                     ->withHeaders([
                         'Content-Type' => 'application/json',
                         'User-Agent' => 'Horus-Webhooks/1',
-                        'X-Horus-Evento' => $entrega->evento,
-                        'X-Horus-Entrega' => $entrega->uuid,
-                        'X-Horus-Assinatura' => 't='.$instante.',v1='.self::assinar($webhook->segredo, $instante, $corpo),
+                        'X-Horus-Event' => $entrega->evento,
+                        'X-Horus-Delivery' => $entrega->uuid,
+                        'X-Horus-Signature' => 't='.$instante.',v1='.self::assinar($webhook->segredo, $instante, $corpo),
                     ])
                     ->withBody($corpo, 'application/json')
                     ->post($webhook->url);

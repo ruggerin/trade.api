@@ -89,7 +89,7 @@ class LoteIntegracao
             $resultados[$l['numero']] = [
                 'item' => $l['numero'],
                 'codigo_externo' => $codigo,
-                'resultado' => $codigo !== null && isset($jaExistiam[$codigo]) ? 'atualizado' : 'criado',
+                'result' => $codigo !== null && isset($jaExistiam[$codigo]) ? 'updated' : 'created',
             ];
         }
 
@@ -111,22 +111,22 @@ class LoteIntegracao
 
     private static function erro(int $numero, ?string $codigo, string $mensagem): array
     {
-        return ['item' => $numero, 'codigo_externo' => $codigo, 'resultado' => 'erro', 'mensagem' => $mensagem];
+        return ['item' => $numero, 'codigo_externo' => $codigo, 'result' => 'error', 'message' => $mensagem];
     }
 
     private static function relatorio(bool $simular, int $total, array $resultados, ?string $erroGeral, ?array $detalhes = null): array
     {
-        $contar = fn (string $r) => count(array_filter($resultados, fn ($x) => $x['resultado'] === $r));
+        $contar = fn (string $r) => count(array_filter($resultados, fn ($x) => $x['result'] === $r));
 
         return array_filter([
-            'simulacao' => $simular,
+            'dry_run' => $simular,
             'total' => $total,
-            'criados' => $contar('criado'),
-            'atualizados' => $contar('atualizado'),
-            'erros' => $contar('erro'),
-            'resultados' => $resultados,
-            'erro_geral' => $erroGeral,
-            'detalhes' => $detalhes,
+            'created' => $contar('created'),
+            'updated' => $contar('updated'),
+            'errors' => $contar('error'),
+            'results' => $resultados,
+            'error' => $erroGeral,
+            'details' => $detalhes,
         ], fn ($v) => $v !== null);
     }
 }

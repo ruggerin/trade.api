@@ -33,11 +33,11 @@ use Illuminate\Support\Facades\DB;
  * Escrita da API de integração (docs/96 §7.2), pro ERP do cliente. Todas as rotas seguem o mesmo
  * contrato:
  *
- * - `PUT` com `{"itens": [...]}`: upsert em lote pelo código do ERP (`codigo_externo`; nos cadastros
+ * - `PUT` com `{"items": [...]}`: upsert em lote pelo código do ERP (`codigo_externo`; nos cadastros
  *   de apoio, o nome). Cria o que não existe, atualiza o que existe, campo ausente não apaga nada.
  * - Resultado item a item (`criado`, `atualizado`, `erro` + motivo). Um item ruim não derruba o
  *   lote; erro que vale pro lote todo (limite do plano) recusa tudo com 422.
- * - `?simular=1` valida e devolve o mesmo resultado sem gravar.
+ * - `?dry_run=1` valida e devolve o mesmo resultado sem gravar.
  * - `Idempotency-Key` (middleware `idempotencia`): reenvio devolve a mesma resposta.
  * - As regras são as das importações por planilha (App\Support\Importacao*, EquipeComercial,
  *   CarteiraVendedores), pra API e planilha nunca darem resultado diferente.
@@ -123,12 +123,12 @@ class EscritaController extends Controller
         );
     }
 
-    /** Mix da loja (sortimento): aditivo; `substituir: true` deixa cada loja do lote só com o que veio. */
+    /** Mix da loja (sortimento): aditivo; `replace: true` deixa cada loja do lote só com o que veio. */
     public function mix(Request $request): JsonResponse
     {
         $empresa = $this->empresa($request);
-        $request->validate(['substituir' => ['sometimes', 'boolean']]);
-        $substituir = $request->boolean('substituir');
+        $request->validate(['replace' => ['sometimes', 'boolean']]);
+        $substituir = $request->boolean('replace');
 
         return $this->lote(
             $request, $this->itens($request, ImportacaoSortimento::MAX_LINHAS), ImportacaoSortimento::COLUNAS,
@@ -246,13 +246,13 @@ class EscritaController extends Controller
 
     private function lote(Request $request, array $itens, ?array $colunas, callable $chave, callable $existentes, callable $aplicar): JsonResponse
     {
-        $resultado = LoteIntegracao::executar($itens, $colunas, $chave, $existentes, $aplicar, $request->boolean('simular'));
+        $resultado = LoteIntegracao::executar($itens, $colunas, $chave, $existentes, $aplicar, $request->boolean('dry_run'));
 
-        if (isset($resultado['erro_geral'])) {
-            return ProblemaIntegracao::resposta(422, $resultado['erro_geral']);
+        if (isset($resultado['error'])) {
+            return ProblemaIntegracao::resposta(422, $resultado['error']);
         }
 
-        $request->attributes->set(EnsureIntegracao::ATRIBUTO_REGISTROS, $resultado['criados'] + $resultado['atualizados']);
+        $request->attributes->set(EnsureIntegracao::ATRIBUTO_REGISTROS, $resultado['created'] + $resultado['updated']);
 
         return response()->json($resultado);
     }
@@ -260,13 +260,13 @@ class EscritaController extends Controller
     private function itens(Request $request, int $maximo = LoteIntegracao::MAX_ITENS): array
     {
         $request->validate([
-            'itens' => ['required', 'array', 'min:1', 'max:'.$maximo],
+            'items' => ['required', 'array', 'min:1', 'max:'.$maximo],
         ], [
-            'itens.required' => 'Envie os registros em "itens": [...].',
-            'itens.max' => 'Máximo de :max itens por chamada: divida em partes.',
+            'items.required' => 'Envie os registros em "items": [...].',
+            'items.max' => 'Máximo de :max itens por chamada: divida em partes.',
         ]);
 
-        return array_values($request->input('itens'));
+        return array_values($request->input('items'));
     }
 
     private function empresa(Request $request): Empresa

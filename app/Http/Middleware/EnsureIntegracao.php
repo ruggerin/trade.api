@@ -90,7 +90,7 @@ class EnsureIntegracao
             $erro = null;
             if ($status >= 400) {
                 $corpo = json_decode((string) $response->getContent(), true);
-                $erro = mb_substr((string) ($corpo['detalhe'] ?? $corpo['message'] ?? ''), 0, 1000) ?: null;
+                $erro = mb_substr((string) ($corpo['detail'] ?? $corpo['message'] ?? ''), 0, 1000) ?: null;
             }
 
             $integracao->requisicoes()->create([
