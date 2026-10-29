@@ -141,6 +141,7 @@ class TipoRegistroController extends Controller
                 'filtra_marca' => $dados['filtra_marca'] ?? false,
                 'permite_ruptura' => $dados['permite_ruptura'] ?? true,
                 'permite_foto_livre' => $dados['permite_foto_livre'] ?? true,
+                ...self::configLinhas($dados),
                 'permite_marca_nova' => $dados['permite_marca_nova'] ?? true,
                 'lista_produtos_origem' => $dados['lista_produtos_origem'] ?? TipoRegistro::LISTA_PRODUTOS_FIXA,
                 'varias_embalagens' => $dados['varias_embalagens'] ?? true,
@@ -201,6 +202,16 @@ class TipoRegistroController extends Controller
                 'campos', 'excecoes_granularidade', 'pontos_venda_uuids', 'redes_lojas_uuids', 'produtos_uuids', 'marcas_uuids',
                 'escopo_tipo_vinculo', 'escopo_secao_uuid', 'escopo_departamento_uuid', 'escopo_marca_uuid', 'ramos_atividade_uuids',
             ])->all());
+            // Lista guiada (docs/100): mesma normalização do store(), com o que ficou gravado.
+            $tipoRegistro->update(self::configLinhas([
+                'granularidade_padrao' => $tipoRegistro->granularidade_padrao?->value,
+                'escolhe_marca' => $tipoRegistro->escolhe_marca,
+                'escolhe_departamento' => $tipoRegistro->escolhe_departamento,
+                'escolhe_secao' => $tipoRegistro->escolhe_secao,
+                'linha_nivel' => $tipoRegistro->linha_nivel,
+                'linha_origem' => $tipoRegistro->linha_origem,
+                'linhas_fixas' => $tipoRegistro->linhas_fixas,
+            ]));
             // Mesma regra de store(): com escolha de recorte a granularidade é sempre LINHA.
             if ($tipoRegistro->temEscolhaDeRecorte() && $tipoRegistro->granularidade_padrao?->value !== 'LINHA') {
                 $tipoRegistro->update(['granularidade_padrao' => 'LINHA']);
@@ -586,6 +597,7 @@ class TipoRegistroController extends Controller
                     : null,
                 'sortimento_segue_escolha' => $segueEscolha,
                 'confirmar_ruptura_ausentes' => $campo['confirmar_ruptura_ausentes'] ?? false,
+                'sortimento_modo' => ($campo['tipo_campo'] ?? null) === TipoCampoRegistro::SORTIMENTO->value ? ($campo['sortimento_modo'] ?? 'PRESENTE') : 'PRESENTE',
                 ...self::configFoto($campo),
             ]);
 
@@ -640,6 +652,9 @@ class TipoRegistroController extends Controller
                 'filtra_marca' => $tipoRegistro->filtra_marca,
                 'permite_ruptura' => $tipoRegistro->permite_ruptura,
                 'permite_foto_livre' => $tipoRegistro->permite_foto_livre,
+                'linha_nivel' => $tipoRegistro->linha_nivel,
+                'linha_origem' => $tipoRegistro->linha_origem,
+                'linhas_fixas' => $tipoRegistro->linhas_fixas,
                 'permite_marca_nova' => $tipoRegistro->permite_marca_nova,
                 'lista_produtos_origem' => $tipoRegistro->lista_produtos_origem,
                 'varias_embalagens' => $tipoRegistro->varias_embalagens,
@@ -683,6 +698,7 @@ class TipoRegistroController extends Controller
                     'sortimento_marca_id' => $original->sortimento_marca_id,
                     'sortimento_segue_escolha' => $original->sortimento_segue_escolha,
                     'confirmar_ruptura_ausentes' => $original->confirmar_ruptura_ausentes,
+                    'sortimento_modo' => $original->sortimento_modo,
                     'foto_min' => $original->foto_min,
                     'foto_max' => $original->foto_max,
                     'foto_reaproveitar' => $original->foto_reaproveitar,
@@ -775,6 +791,27 @@ class TipoRegistroController extends Controller
             'foto_max' => $max !== null && $min !== null && $max < $min ? $min : $max,
             'foto_reaproveitar' => $campo['foto_reaproveitar'] ?? 'NAO',
             'foto_dica' => isset($campo['foto_dica']) && trim((string) $campo['foto_dica']) !== '' ? trim((string) $campo['foto_dica']) : null,
+        ];
+    }
+
+    /**
+     * Lista guiada de seções/linhas (docs/100): só com "Cada seção / linha" (granularidade LINHA,
+     * sem escolha de recorte). Lista fixa só com origem FIXA. Fora disso volta ao padrão.
+     *
+     * @param  array<string, mixed>  $dados
+     * @return array<string, mixed>
+     */
+    private static function configLinhas(array $dados): array
+    {
+        // "O promotor escolhe" também grava LINHA, mas é livre: sem lista guiada.
+        $escolhe = ! empty($dados['escolhe_marca']) || ! empty($dados['escolhe_departamento']) || ! empty($dados['escolhe_secao']);
+        $nivel = ($dados['granularidade_padrao'] ?? null) === 'LINHA' && ! $escolhe ? ($dados['linha_nivel'] ?? null) : null;
+        $origem = $nivel ? ($dados['linha_origem'] ?? 'MIX_LOJA') : 'MIX_LOJA';
+
+        return [
+            'linha_nivel' => $nivel,
+            'linha_origem' => $origem,
+            'linhas_fixas' => $nivel && $origem === 'FIXA' ? array_values(array_unique($dados['linhas_fixas'] ?? [])) : null,
         ];
     }
 }

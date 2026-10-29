@@ -79,6 +79,10 @@ class TipoRegistroResource extends JsonResource
             'filtra_marca' => (bool) $this->filtra_marca,
             'permite_ruptura' => $this->permite_ruptura ?? true,
             'permite_foto_livre' => $this->permite_foto_livre ?? true,
+            // Lista guiada de seções/linhas (docs/100): nível, origem e a lista fixa com nomes.
+            'linha_nivel' => $this->linha_nivel,
+            'linha_origem' => $this->linha_origem ?? 'MIX_LOJA',
+            'linhas_fixas' => \App\Support\LinhasGuiadas::fixas($this->resource),
             // "Ainda está lá?" (docs/83 §3.1).
             'acompanha' => (bool) $this->acompanha,
             'acompanha_gatilho_chave' => $this->acompanha_gatilho_chave,

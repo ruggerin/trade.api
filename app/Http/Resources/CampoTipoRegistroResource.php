@@ -47,6 +47,8 @@ class CampoTipoRegistroResource extends JsonResource
                 'id' => $produto->uuid, 'descricao' => $produto->descricao,
             ])),
             'confirmar_ruptura_ausentes' => $this->confirmar_ruptura_ausentes,
+            // PRESENTE (tudo presente de saída) | CONFERIR (Tem / Não tem item a item) — docs/100.
+            'sortimento_modo' => $this->sortimento_modo ?? 'PRESENTE',
             // Pergunta FOTO (docs/98).
             'foto_min' => $this->foto_min,
             'foto_max' => $this->foto_max,

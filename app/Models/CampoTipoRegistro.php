@@ -30,6 +30,8 @@ class CampoTipoRegistro extends Model
         'confirmar_ruptura_ausentes',
         // Pergunta FOTO (docs/98).
         'foto_min', 'foto_max', 'foto_reaproveitar', 'foto_dica',
+        // Checklist: PRESENTE | CONFERIR (docs/100).
+        'sortimento_modo',
     ];
 
     protected function casts(): array

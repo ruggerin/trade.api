@@ -48,6 +48,10 @@ class TipoRegistro extends Model
         'permite_ruptura',
         // Área de foto livre no app (padrão ligado, docs/98).
         'permite_foto_livre',
+        // Lista guiada de seções/linhas (docs/100).
+        'linha_nivel',
+        'linha_origem',
+        'linhas_fixas',
         // Concorrentes por marca e embalagem (docs/85).
         'permite_marca_nova',
         'varias_embalagens',
@@ -91,6 +95,7 @@ class TipoRegistro extends Model
             'filtra_marca' => 'boolean',
             'permite_ruptura' => 'boolean',
             'permite_foto_livre' => 'boolean',
+            'linhas_fixas' => 'array',
             'permite_marca_nova' => 'boolean',
             'varias_embalagens' => 'boolean',
             'acompanha' => 'boolean',

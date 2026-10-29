@@ -59,6 +59,11 @@ class UpdateTipoRegistroRequest extends FormRequest
             'marcas_uuids.*' => ['string', 'distinct', Rule::exists('marcas_auditoria', 'uuid')->where('empresa_id', $this->user()->empresa_id)],
             'permite_marca_nova' => ['nullable', 'boolean'],
             // Lista guiada da granularidade PRODUTO: fixa (a do admin) ou o Mix da loja (docs/85 §7).
+            // Lista guiada de seções/linhas (docs/100).
+            'linha_nivel' => ['nullable', Rule::in(['SECAO', 'DEPARTAMENTO', 'MARCA'])],
+            'linha_origem' => ['nullable', Rule::in(['MIX_LOJA', 'FIXA'])],
+            'linhas_fixas' => ['nullable', 'array', 'max:200'],
+            'linhas_fixas.*' => ['string', 'uuid'],
             'lista_produtos_origem' => ['nullable', Rule::in([\App\Models\TipoRegistro::LISTA_PRODUTOS_FIXA, \App\Models\TipoRegistro::LISTA_PRODUTOS_MIX_LOJA])],
             'varias_embalagens' => ['nullable', 'boolean'],
             'pontos_venda_uuids' => ['sometimes', 'nullable', 'array', 'max:2000'],
@@ -126,6 +131,8 @@ class UpdateTipoRegistroRequest extends FormRequest
                 'string', Rule::exists('produtos_auditoria', 'uuid')->where('empresa_id', $this->user()->empresa_id),
             ],
             'campos.*.confirmar_ruptura_ausentes' => ['nullable', 'boolean'],
+            // Checklist: tudo presente de saída ou conferência item a item (docs/100).
+            'campos.*.sortimento_modo' => ['nullable', Rule::in(['PRESENTE', 'CONFERIR'])],
             // Pergunta FOTO (docs/98): quantas fotos, se pode reaproveitar e a dica no app.
             'campos.*.foto_min' => ['nullable', 'integer', 'min:0', 'max:20'],
             'campos.*.foto_max' => ['nullable', 'integer', 'min:1', 'max:20'],
