@@ -91,6 +91,32 @@ class TipoRegistroTest extends TestCase
             ->assertOk()->assertJsonPath('tipo_registro.eh_alerta', false);
     }
 
+    public function test_botao_de_ruptura_nasce_ligado_e_pode_ser_desligado(): void
+    {
+        $empresa = Empresa::factory()->create();
+        $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
+        Sanctum::actingAs($admin);
+
+        $response = $this->postJson('/api/tipos-registro', ['descricao' => 'Preço']);
+        $response->assertCreated()->assertJsonPath('tipo_registro.permite_ruptura', true);
+
+        $tipoUuid = $response->json('tipo_registro.id');
+        $this->putJson("/api/tipos-registro/{$tipoUuid}", ['permite_ruptura' => false])
+            ->assertOk()->assertJsonPath('tipo_registro.permite_ruptura', false);
+    }
+
+    public function test_foto_livre_nasce_ligada_e_pode_ser_desligada(): void
+    {
+        $empresa = Empresa::factory()->create();
+        Sanctum::actingAs(Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]));
+
+        $response = $this->postJson('/api/tipos-registro', ['descricao' => 'Conquista']);
+        $response->assertCreated()->assertJsonPath('tipo_registro.permite_foto_livre', true);
+
+        $this->putJson('/api/tipos-registro/'.$response->json('tipo_registro.id'), ['permite_foto_livre' => false])
+            ->assertOk()->assertJsonPath('tipo_registro.permite_foto_livre', false);
+    }
+
     public function test_chave_de_campo_invalida_retorna_422(): void
     {
         $empresa = Empresa::factory()->create();

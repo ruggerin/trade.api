@@ -32,7 +32,7 @@ class RotaDoDiaController extends Controller
                 ->map(fn (Usuario $u) => [
                     'id' => $u->uuid,
                     'nome' => $u->nome,
-                    'foto_url' => $u->foto_path ? url("/api/usuarios/{$u->uuid}/foto") : null,
+                    'foto_url' => $u->fotoUrl(),
                 ])
                 ->values(),
         ]);
@@ -55,7 +55,7 @@ class RotaDoDiaController extends Controller
             'promotor' => [
                 'id' => $promotor->uuid,
                 'nome' => $promotor->nome,
-                'foto_url' => $promotor->foto_path ? url("/api/usuarios/{$promotor->uuid}/foto") : null,
+                'foto_url' => $promotor->fotoUrl(),
             ],
             // "Dia" = meia-noite a meia-noite no fuso da EMPRESA (docs/50 §4.3) — não de quem olha
             // nem do servidor: o histórico é UTC e o corte precisa ser o mesmo pra todo gestor.

@@ -85,6 +85,9 @@ class LeituraController extends Controller
             'fotos' => $r->imagens->map(fn (ImagemRegistro $img) => [
                 'uuid' => $img->uuid,
                 'url' => $this->linkFoto($img),
+                // Pergunta FOTO que a foto responde (null = foto livre) e a captura (docs/98).
+                'pergunta' => $img->pivot?->campo_chave,
+                'capturada_em' => $img->capturada_em?->toIso8601String(),
             ])->values(),
         ]);
     }

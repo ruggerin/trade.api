@@ -162,7 +162,8 @@ class VisitaRegistro extends Model
     public function imagens(): BelongsToMany
     {
         return $this->belongsToMany(ImagemRegistro::class, 'visita_registro_imagem')
-            ->withPivot('ordem')
+            // campo_chave/origem: pergunta FOTO que a foto responde e de onde veio (docs/98).
+            ->withPivot('ordem', 'campo_chave', 'origem')
             ->orderByPivot('ordem');
     }
 }

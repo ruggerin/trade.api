@@ -341,7 +341,8 @@ class RelatorioController extends Controller implements HasMiddleware
 
         $tipo = $this->tipoRegistro($request);
         $campos = $tipo->campos
-            ->filter(fn (CampoTipoRegistro $c) => $c->tipo_campo !== TipoCampoRegistro::SORTIMENTO)
+            // SORTIMENTO tem relatório próprio; FOTO não tem resposta, as fotos ficam na pivô (docs/98).
+            ->filter(fn (CampoTipoRegistro $c) => ! in_array($c->tipo_campo, [TipoCampoRegistro::SORTIMENTO, TipoCampoRegistro::FOTO], true))
             ->when($request->filled('campo_chave'), fn (Collection $c) => $c->where('chave', $request->string('campo_chave')->toString()))
             ->values();
 

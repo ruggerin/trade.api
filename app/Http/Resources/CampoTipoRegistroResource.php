@@ -47,6 +47,11 @@ class CampoTipoRegistroResource extends JsonResource
                 'id' => $produto->uuid, 'descricao' => $produto->descricao,
             ])),
             'confirmar_ruptura_ausentes' => $this->confirmar_ruptura_ausentes,
+            // Pergunta FOTO (docs/98).
+            'foto_min' => $this->foto_min,
+            'foto_max' => $this->foto_max,
+            'foto_reaproveitar' => $this->foto_reaproveitar ?? 'NAO',
+            'foto_dica' => $this->foto_dica,
         ];
     }
 }

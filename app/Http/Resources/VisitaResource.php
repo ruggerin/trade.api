@@ -33,7 +33,7 @@ class VisitaResource extends JsonResource
             'usuario' => $this->whenLoaded('usuario', fn () => [
                 'id' => $this->usuario->uuid,
                 'nome' => $this->usuario->nome,
-                'foto_url' => $this->usuario->foto_path ? url("/api/usuarios/{$this->usuario->uuid}/foto") : null,
+                'foto_url' => $this->usuario->fotoUrl(),
             ]),
             // Só presente quando havia exatamente uma campanha ativa/vigente da empresa no
             // momento do check-in — ver VisitaController::resolverCampanhaUnica.

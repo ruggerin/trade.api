@@ -22,4 +22,8 @@ enum TipoCampoRegistro: string
     // checklist de produtos presente/ausente, ver App\Support\ResolverSortimentoCampo e
     // docs/20-FORMULARIO-DINAMICO-CAMPANHA.md decisão 3.
     case SORTIMENTO = 'SORTIMENTO';
+
+    // Foto nomeada (docs/98): a pergunta não tem resposta em valores_campos — as fotos ficam
+    // na pivô visita_registro_imagem com campo_chave = a chave da pergunta.
+    case FOTO = 'FOTO';
 }

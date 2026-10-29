@@ -77,6 +77,8 @@ class TipoRegistroResource extends JsonResource
             // docs/82: o que a lista "Onde é" mostra e o filtro de marca depois da seção/departamento.
             'lista_recorte' => $this->lista_recorte ?? TipoRegistro::LISTA_PRIMEIRO_DA_LOJA,
             'filtra_marca' => (bool) $this->filtra_marca,
+            'permite_ruptura' => $this->permite_ruptura ?? true,
+            'permite_foto_livre' => $this->permite_foto_livre ?? true,
             // "Ainda está lá?" (docs/83 §3.1).
             'acompanha' => (bool) $this->acompanha,
             'acompanha_gatilho_chave' => $this->acompanha_gatilho_chave,

@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\CheckoutTipo;
+use App\Enums\StatusVisita;
 use App\Enums\UserType;
 use App\Http\Requests\Usuario\AtualizarFotoUsuarioRequest;
 use App\Http\Requests\Usuario\StoreUsuarioRequest;
@@ -317,6 +319,43 @@ class UsuarioController extends Controller
      * eventos) — sem isso, um usuário com muita atividade recente poderia nunca alcançar um
      * período mais antigo dentro do limite de 100 linhas por fonte.
      */
+    /**
+     * Reincidência de checkout esquecido (docs/92 §9): nos últimos `dias` (padrão 30, até 180),
+     * quantas visitas finalizadas do usuário fecharam pela saída detectada, automaticamente ou fora
+     * do raio. É o número que o gestor leva pro acompanhamento de campo ou pra um plano de ação.
+     */
+    public function reincidenciaCheckout(Request $request, Usuario $usuario): JsonResponse
+    {
+        $dias = max(1, min(180, (int) $request->integer('dias', 30)));
+        $desde = now()->subDays($dias)->startOfDay();
+
+        $visitas = $usuario->visitas()
+            ->where('status', StatusVisita::FINALIZADA)
+            ->where('inicio_data', '>=', $desde);
+
+        $porTipo = (clone $visitas)
+            ->selectRaw('checkout_tipo, count(*) as total')
+            ->groupBy('checkout_tipo')
+            ->pluck('total', 'checkout_tipo');
+        $tipo = fn (CheckoutTipo $t) => (int) ($porTipo[$t->value] ?? 0);
+
+        $saida = $tipo(CheckoutTipo::SAIDA_DETECTADA);
+        $automatico = $tipo(CheckoutTipo::AUTOMATICO);
+
+        return response()->json([
+            'reincidencia' => [
+                'dias' => $dias,
+                'visitas_finalizadas' => (int) $porTipo->sum(),
+                'saida_detectada' => $saida,
+                'automatico' => $automatico,
+                'fora_do_raio' => (clone $visitas)->where('checkout_no_raio', false)->count(),
+                'forcado_pelo_gestor' => $tipo(CheckoutTipo::ADMIN),
+                // "Esqueceu o checkout": fechou pela saída ou sozinho.
+                'esqueceu' => $saida + $automatico,
+            ],
+        ]);
+    }
+
     public function historico(Request $request, Usuario $usuario): JsonResponse
     {
         $limitePorFonte = 100;

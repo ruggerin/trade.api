@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Enums\UserType;
 use App\Enums\StatusVisita;
+use App\Enums\TipoCampoRegistro;
 use App\Enums\TipoItemCampanha;
 use App\Http\Requests\VisitaRegistro\ResolverAlertaRequest;
 use App\Http\Requests\VisitaRegistro\StoreVisitaRegistroRequest;
@@ -20,8 +21,10 @@ use App\Models\Visita;
 use App\Models\VisitaRegistro;
 use App\Support\Acompanhamentos;
 use App\Support\ConcorrentesPorMarca;
+use App\Support\FotosNomeadas;
 use App\Support\CancelamentoRegistro;
 use App\Support\HorarioDoCampo;
+use Illuminate\Support\Carbon;
 use App\Support\Xp\CalculoVisitaXp;
 use App\Support\Xp\ParametrosXp;
 use App\Support\Xp\ReguaXp;
@@ -110,6 +113,14 @@ class VisitaRegistroController extends Controller
         // de create) porque o Eloquent respeita um created_at já preenchido.
         $criadoEm = HorarioDoCampo::resolver($dados['criado_em'] ?? null, $visita->inicio_data);
 
+        // Pergunta FOTO não tem resposta em valores_campos (docs/98): as fotos vão pra pivô.
+        $valoresCampos = $dados['valores_campos'] ?? null;
+        if (is_array($valoresCampos) && $tipoRegistroModel) {
+            foreach ($tipoRegistroModel->campos->where('tipo_campo', TipoCampoRegistro::FOTO) as $campoFoto) {
+                unset($valoresCampos[$campoFoto->chave]);
+            }
+        }
+
         $registro = new VisitaRegistro([
             'visita_id' => $visita->id,
             'idempotency_key' => $dados['idempotency_key'] ?? null,
@@ -121,7 +132,7 @@ class VisitaRegistroController extends Controller
             'marca_id' => $marcaId,
             'ruptura' => $dados['ruptura'] ?? false,
             'observacao' => $dados['observacao'] ?? null,
-            'valores_campos' => $dados['valores_campos'] ?? null,
+            'valores_campos' => $valoresCampos ?: null,
             'acompanhamento_id' => ! empty($dados['acompanhamento_uuid'])
                 ? AcompanhamentoRegistro::where('uuid', $dados['acompanhamento_uuid'])->value('id')
                 : null,
@@ -186,6 +197,22 @@ class VisitaRegistroController extends Controller
             }
         }
 
+        // Fotos de visitas anteriores nesta loja numa pergunta FOTO (docs/98 §9.1) — já validadas
+        // contra FotosNomeadas::historicoDaLoja no request.
+        if (! empty($dados['imagens_historico'])) {
+            $porUuid = FotosNomeadas::historicoDaLoja($visita)
+                ->whereIn('uuid', collect($dados['imagens_historico'])->pluck('uuid'))
+                ->get()
+                ->keyBy('uuid');
+
+            foreach ($dados['imagens_historico'] as $item) {
+                $imagem = $porUuid->get($item['uuid']);
+                if ($imagem && ! $registro->imagens()->whereKey($imagem->id)->exists()) {
+                    $registro->imagens()->attach($imagem->id, ['ordem' => $ordem++, 'campo_chave' => $item['campo_chave'], 'origem' => 'HISTORICO']);
+                }
+            }
+        }
+
         // Evita 1 query extra só pra montar a url de cada imagem (ver VisitaRegistroResource).
         $registro->setRelation('visita', $visita);
         // Sem isso, os whenLoaded (produtoAuditoria, tipoRegistro etc.) sempre vêm null na
@@ -216,7 +243,24 @@ class VisitaRegistroController extends Controller
         $dados = $request->validate([
             'imagem' => ['required', 'file', 'image', 'max:8192'],
             'idempotency_key' => ['nullable', 'string', 'max:100'],
+            // Pergunta FOTO e origem (docs/98). Sem campo_chave = foto livre do registro.
+            'campo_chave' => ['nullable', 'string', 'max:50'],
+            'origem' => ['nullable', 'in:'.implode(',', FotosNomeadas::ORIGENS)],
+            // Captura no aparelho (galeria Horus, docs/98 §9.1).
+            'capturada_em' => ['nullable', 'date'],
+            'latitude' => ['nullable', 'numeric', 'between:-90,90'],
+            'longitude' => ['nullable', 'numeric', 'between:-180,180'],
+            'precisao_metros' => ['nullable', 'numeric', 'min:0'],
         ]);
+
+        $campoChave = $dados['campo_chave'] ?? null;
+        if ($campoChave !== null) {
+            $campoFoto = $registro->tipoRegistro()->withoutGlobalScopes()->first()?->campos
+                ->first(fn ($c) => $c->chave === $campoChave && $c->tipo_campo === TipoCampoRegistro::FOTO);
+            if (! $campoFoto) {
+                return response()->json(['message' => 'Pergunta de foto inválida para este formulário.', 'errors' => ['campo_chave' => ['Pergunta de foto inválida.']]], 422);
+            }
+        }
 
         $imagem = ! empty($dados['idempotency_key'])
             ? ImagemRegistro::where('visita_id', $visita->id)->where('idempotency_key', $dados['idempotency_key'])->first()
@@ -226,17 +270,29 @@ class VisitaRegistroController extends Controller
             $arquivo = $request->file('imagem');
             $nomeArquivo = Str::uuid()->toString().'.'.($arquivo->extension() ?: 'jpg');
             $arquivo->storeAs("visitas/{$visita->id}", $nomeArquivo, config('filesystems.default'));
+            $latitude = isset($dados['latitude']) ? (float) $dados['latitude'] : null;
+            $longitude = isset($dados['longitude']) ? (float) $dados['longitude'] : null;
             $imagem = ImagemRegistro::create([
                 'visita_id' => $visita->id,
                 'caminho' => "visitas/{$visita->id}/{$nomeArquivo}",
                 'idempotency_key' => $dados['idempotency_key'] ?? null,
+                // Relógio do aparelho nunca no futuro do servidor.
+                'capturada_em' => isset($dados['capturada_em']) ? Carbon::parse($dados['capturada_em'])->min(now()) : null,
+                'latitude' => $latitude,
+                'longitude' => $longitude,
+                'precisao_metros' => isset($dados['precisao_metros']) ? (int) round((float) $dados['precisao_metros']) : null,
+                'distancia_loja_metros' => FotosNomeadas::distanciaDaLoja($visita, $latitude, $longitude),
             ]);
         }
 
         if (! $registro->imagens()->whereKey($imagem->id)->exists()) {
             // Vai pro fim: as fotos chegam na ordem em que o promotor tirou.
             $ultima = DB::table('visita_registro_imagem')->where('visita_registro_id', $registro->id)->max('ordem');
-            $registro->imagens()->attach($imagem->id, ['ordem' => $ultima === null ? 0 : $ultima + 1]);
+            $registro->imagens()->attach($imagem->id, [
+                'ordem' => $ultima === null ? 0 : $ultima + 1,
+                'campo_chave' => $campoChave,
+                'origem' => $dados['origem'] ?? ($campoChave !== null ? 'CAMERA' : null),
+            ]);
         }
 
         $registro->setRelation('visita', $visita);

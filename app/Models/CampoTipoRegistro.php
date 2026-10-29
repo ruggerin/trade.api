@@ -28,6 +28,8 @@ class CampoTipoRegistro extends Model
         'sortimento_origem', 'sortimento_tipo_vinculo', 'sortimento_secao_id',
         'sortimento_departamento_id', 'sortimento_marca_id', 'sortimento_segue_escolha',
         'confirmar_ruptura_ausentes',
+        // Pergunta FOTO (docs/98).
+        'foto_min', 'foto_max', 'foto_reaproveitar', 'foto_dica',
     ];
 
     protected function casts(): array
@@ -41,6 +43,8 @@ class CampoTipoRegistro extends Model
             'sortimento_tipo_vinculo' => TipoItemCampanha::class,
             'sortimento_segue_escolha' => 'boolean',
             'confirmar_ruptura_ausentes' => 'boolean',
+            'foto_min' => 'integer',
+            'foto_max' => 'integer',
         ];
     }
 

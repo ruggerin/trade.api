@@ -349,4 +349,36 @@ class Doc92CheckoutSaidaDetectadaTest extends TestCase
 
         $this->postJson("/api/visitas/{$this->visita->uuid}/ainda-na-loja")->assertForbidden();
     }
+
+    public function test_reincidencia_conta_checkout_esquecido_por_promotor(): void
+    {
+        $base = ['empresa_id' => $this->empresa->id, 'usuario_id' => $this->promotor->id, 'ponto_venda_id' => $this->loja->id,
+            'status' => StatusVisita::FINALIZADA, 'inicio_data' => Carbon::parse('2026-10-20 08:00'), 'fim_data' => Carbon::parse('2026-10-20 09:00')];
+        Visita::factory()->create([...$base, 'checkout_tipo' => CheckoutTipo::SAIDA_DETECTADA]);
+        Visita::factory()->create([...$base, 'checkout_tipo' => CheckoutTipo::SAIDA_DETECTADA, 'checkout_no_raio' => false]);
+        Visita::factory()->create([...$base, 'checkout_tipo' => CheckoutTipo::AUTOMATICO]);
+        Visita::factory()->create([...$base, 'checkout_tipo' => CheckoutTipo::PROMOTOR, 'checkout_no_raio' => true]);
+        // Fora da janela de 30 dias e de outro promotor: não contam.
+        Visita::factory()->create([...$base, 'checkout_tipo' => CheckoutTipo::AUTOMATICO, 'inicio_data' => Carbon::parse('2026-08-01 08:00')]);
+        Visita::factory()->create([...$base, 'checkout_tipo' => CheckoutTipo::AUTOMATICO,
+            'usuario_id' => Usuario::factory()->promotor()->create(['empresa_id' => $this->empresa->id])->id]);
+
+        Sanctum::actingAs(Usuario::factory()->admin()->create(['empresa_id' => $this->empresa->id]));
+
+        $this->getJson("/api/usuarios/{$this->promotor->uuid}/reincidencia-checkout")
+            ->assertOk()
+            ->assertJsonPath('reincidencia.dias', 30)
+            ->assertJsonPath('reincidencia.visitas_finalizadas', 4)
+            ->assertJsonPath('reincidencia.saida_detectada', 2)
+            ->assertJsonPath('reincidencia.automatico', 1)
+            ->assertJsonPath('reincidencia.esqueceu', 3)
+            ->assertJsonPath('reincidencia.fora_do_raio', 1);
+    }
+
+    public function test_reincidencia_exige_permissao_de_usuarios(): void
+    {
+        $this->comoPromotor();
+
+        $this->getJson("/api/usuarios/{$this->promotor->uuid}/reincidencia-checkout")->assertForbidden();
+    }
 }

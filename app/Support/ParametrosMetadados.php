@@ -94,6 +94,10 @@ final class ParametrosMetadados
             'area' => 'visitas', 'rotulo' => 'Promotor pode cancelar a própria visita', 'tipo' => 'bool',
             'ajuda' => 'Permite cancelar uma visita em andamento pelo aplicativo.',
         ],
+        'FOTOS_REAPROVEITAR_DIAS' => [
+            'area' => 'visitas', 'rotulo' => 'Fotos de visitas anteriores: até quantos dias atrás', 'tipo' => 'numero', 'unidade' => 'dias', 'min' => 1, 'max' => 365,
+            'ajuda' => 'Na pergunta de foto que aceita reaproveitar, o promotor vê as fotos tiradas nesta loja neste período (de qualquer promotor).',
+        ],
         'REGISTRO_CANCELAMENTO_PERMITIDO' => [
             'area' => 'visitas', 'rotulo' => 'Promotor pode cancelar o próprio registro', 'tipo' => 'bool',
             'ajuda' => 'Permite cancelar um registro feito na visita. O registro continua guardado como cancelado.',

@@ -403,7 +403,7 @@ final class PainelXp
         return [
             'id' => $u->uuid,
             'nome' => $u->nome,
-            'foto_url' => $u->foto_path ? url("/api/usuarios/{$u->uuid}/foto").'?v='.$u->updated_at?->timestamp : null,
+            'foto_url' => $u->fotoUrl(),
         ];
     }
 

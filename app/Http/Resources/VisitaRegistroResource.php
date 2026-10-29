@@ -4,6 +4,7 @@ namespace App\Http\Resources;
 
 use App\Support\CalculadoraPontuacao;
 use App\Support\FormatadorValoresCampos;
+use App\Support\FotosNomeadas;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -77,7 +78,30 @@ class VisitaRegistroResource extends JsonResource
             'imagens' => $this->whenLoaded('imagens', fn () => $this->imagens->map(fn ($img) => [
                 'id' => $img->uuid,
                 'url' => url("/api/visitas/{$this->visita->uuid}/imagens/{$img->uuid}"),
+                // Fotos nomeadas (docs/98): pergunta FOTO que a foto responde (null = foto livre),
+                // de onde veio e a captura no aparelho (null = foto de app antigo).
+                'campo_chave' => $img->pivot?->campo_chave,
+                'origem' => $img->pivot?->origem,
+                'capturada_em' => $img->capturada_em?->toIso8601String(),
+                'latitude' => $img->latitude,
+                'longitude' => $img->longitude,
+                'distancia_loja_metros' => $img->distancia_loja_metros,
+                // Reaproveitada de visita anterior: a data daquela visita, pro selo "da visita de 21/10".
+                'de_outra_visita' => $img->visita_id !== $this->visita_id,
             ])),
+            // Perguntas FOTO do formulário, na ordem (nome e posição de cada grupo no admin) — só
+            // quando quem carregou trouxe os campos do formulário.
+            'perguntas_foto' => $this->when(
+                $this->relationLoaded('tipoRegistro') && $this->tipoRegistro?->relationLoaded('campos'),
+                fn () => $this->tipoRegistro->campos
+                    ->where('tipo_campo', \App\Enums\TipoCampoRegistro::FOTO)
+                    ->sortBy('ordem')
+                    ->map(fn ($c) => ['chave' => $c->chave, 'rotulo' => $c->rotulo])
+                    ->values(),
+            ),
+            'alertas_fotos' =>$this->whenLoaded('imagens', fn () => $this->imagens->contains(fn ($img) => $img->pivot?->campo_chave !== null || $img->capturada_em !== null)
+                ? FotosNomeadas::alertas($this->resource, FotosNomeadas::raioDaVisita($this->visita))
+                : []),
             // Uuid da visita dona — o lightbox de fotos do admin precisa dele pra abrir o feed de
             // comentários do registro (rota aninhada em /visitas/{visita}/registros/{registro}).
             'visita_id' => $this->whenLoaded('visita', fn () => $this->visita->uuid),

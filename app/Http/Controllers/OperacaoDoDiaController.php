@@ -86,7 +86,7 @@ class OperacaoDoDiaController extends Controller
                 'usuario' => [
                     'id' => $promotor->uuid,
                     'nome' => $promotor->nome,
-                    'foto_url' => $promotor->foto_path ? url("/api/usuarios/{$promotor->uuid}/foto") : null,
+                    'foto_url' => $promotor->fotoUrl(),
                 ],
                 'status' => $linha['status'],
                 'ponto_venda_atual' => $visita?->pontoVenda

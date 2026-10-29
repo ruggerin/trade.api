@@ -11,6 +11,7 @@ use App\Models\MarcaAuditoria;
 use App\Models\ProdutoAuditoria;
 use App\Models\SecaoAuditoria;
 use App\Models\TipoRegistro;
+use App\Support\FotosNomeadas;
 use App\Support\LinhaAusente;
 use App\Models\SortimentoPontoVenda;
 use App\Models\Visita;
@@ -44,6 +45,16 @@ class StoreVisitaRegistroRequest extends FormRequest
             // Fotos que o app manda logo depois, uma por vez (POST .../registros/{r}/imagens) — o
             // registro sobe sem esperar o upload em rede lenta. Conta pra exigência de foto.
             'imagens_a_enviar' => ['nullable', 'integer', 'min:0', 'max:20'],
+            // Pergunta FOTO (docs/98): quantas fotos o app vai mandar pra cada pergunta (as novas e as
+            // reaproveitadas desta visita, que sobem pelo POST .../imagens). Ausente = app antigo:
+            // a regra por pergunta não é cobrada, só a exigência geral de foto.
+            'imagens_por_campo' => ['nullable', 'array'],
+            'imagens_por_campo.*' => ['integer', 'min:0', 'max:20'],
+            // Fotos de visitas anteriores nesta loja reaproveitadas numa pergunta FOTO — já estão
+            // no servidor, só vira vínculo (validadas contra FotosNomeadas::historicoDaLoja).
+            'imagens_historico' => ['nullable', 'array', 'max:20'],
+            'imagens_historico.*.uuid' => ['required', 'string', 'uuid'],
+            'imagens_historico.*.campo_chave' => ['required', 'string', 'max:50'],
             'imagens_existentes_uuids' => ['nullable', 'array'],
             'imagens_existentes_uuids.*' => [
                 'bail', 'string', 'uuid',
@@ -129,9 +140,11 @@ class StoreVisitaRegistroRequest extends FormRequest
                 return;
             }
 
+            $historico = collect($this->input('imagens_historico', []))->filter(fn ($i) => is_array($i));
             $totalImagens = ($this->hasFile('imagens') ? count($this->file('imagens')) : 0)
                 + count($this->input('imagens_existentes_uuids', []))
-                + (int) $this->input('imagens_a_enviar', 0);
+                + (int) $this->input('imagens_a_enviar', 0)
+                + $historico->count();
             if ($tipoRegistro->exige_foto && $totalImagens === 0) {
                 $validator->errors()->add('imagens', "Obrigatória para o tipo de registro \"{$tipoRegistro->descricao}\".");
             }
@@ -156,6 +169,12 @@ class StoreVisitaRegistroRequest extends FormRequest
                     if (! $condicaoSatisfeita) {
                         continue;
                     }
+                }
+
+                if ($campo->tipo_campo === TipoCampoRegistro::FOTO) {
+                    $this->validarFotos($validator, $campo, $historico, $emRuptura);
+
+                    continue;
                 }
 
                 $valor = $valores[$campo->chave] ?? null;
@@ -199,6 +218,56 @@ class StoreVisitaRegistroRequest extends FormRequest
                 }
             }
         });
+    }
+
+    /**
+     * Pergunta FOTO (docs/98): a quantidade de fotos respeita obrigatória, mínimo e máximo, e as
+     * fotos de visita anterior precisam ser desta loja, da janela da empresa e de uma pergunta que
+     * aceita o histórico. Sem `imagens_por_campo` (app antigo) só confere o histórico, se vier.
+     *
+     * @param  \Illuminate\Support\Collection<int, array<string, mixed>>  $historico
+     */
+    private function validarFotos(Validator $validator, CampoTipoRegistro $campo, \Illuminate\Support\Collection $historico, bool $emRuptura): void
+    {
+        $chave = "imagens_por_campo.{$campo->chave}";
+        $doHistorico = $historico->where('campo_chave', $campo->chave);
+
+        if ($doHistorico->isNotEmpty()) {
+            if ($campo->foto_reaproveitar !== 'HISTORICO') {
+                $validator->errors()->add($chave, "A pergunta \"{$campo->rotulo}\" não aceita foto de visita anterior.");
+
+                return;
+            }
+            /** @var Visita $visita */
+            $visita = $this->route('visita');
+            $validas = FotosNomeadas::historicoDaLoja($visita)->whereIn('uuid', $doHistorico->pluck('uuid'))->count();
+            if ($validas !== $doHistorico->pluck('uuid')->unique()->count()) {
+                $validator->errors()->add($chave, "Foto de visita anterior indisponível para a pergunta \"{$campo->rotulo}\".");
+
+                return;
+            }
+        }
+
+        if (! $this->has('imagens_por_campo')) {
+            return;
+        }
+
+        $total = (int) ($this->input('imagens_por_campo', [])[$campo->chave] ?? 0) + $doHistorico->count();
+        $minimo = (int) ($campo->foto_min ?? 0);
+
+        if ($total === 0) {
+            if ($campo->obrigatorio && ! $emRuptura) {
+                $validator->errors()->add($chave, "Faça o registro fotográfico \"{$campo->rotulo}\".");
+            }
+
+            return;
+        }
+        if ($total < $minimo) {
+            $validator->errors()->add($chave, "A pergunta \"{$campo->rotulo}\" pede pelo menos {$minimo} fotos.");
+        }
+        if ($campo->foto_max !== null && $total > $campo->foto_max) {
+            $validator->errors()->add($chave, "A pergunta \"{$campo->rotulo}\" aceita no máximo {$campo->foto_max} fotos.");
+        }
     }
 
     /**

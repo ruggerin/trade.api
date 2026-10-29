@@ -83,6 +83,18 @@ class Usuario extends Authenticatable
     /**
      * Coluna de senha própria (senha_hash), não a `password` padrão do Laravel.
      */
+    /**
+     * URL da foto de perfil, com a versão da foto (`?v=`). Cada upload grava um arquivo com nome
+     * novo, então a versão muda junto e o cache de avatares do admin (avatarCache.ts) busca a foto
+     * nova. Use sempre esta: URL sem versão fica presa na primeira foto.
+     */
+    public function fotoUrl(): ?string
+    {
+        return $this->foto_path
+            ? url("/api/usuarios/{$this->uuid}/foto").'?v='.substr(md5($this->foto_path), 0, 10)
+            : null;
+    }
+
     public function getAuthPassword(): string
     {
         return $this->senha_hash;

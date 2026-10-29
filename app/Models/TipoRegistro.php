@@ -44,6 +44,10 @@ class TipoRegistro extends Model
         'escolhe_secao',
         'lista_recorte',
         'filtra_marca',
+        // Botão "Produto em ruptura" no app (padrão ligado).
+        'permite_ruptura',
+        // Área de foto livre no app (padrão ligado, docs/98).
+        'permite_foto_livre',
         // Concorrentes por marca e embalagem (docs/85).
         'permite_marca_nova',
         'varias_embalagens',
@@ -85,6 +89,8 @@ class TipoRegistro extends Model
             'escolhe_departamento' => 'boolean',
             'escolhe_secao' => 'boolean',
             'filtra_marca' => 'boolean',
+            'permite_ruptura' => 'boolean',
+            'permite_foto_livre' => 'boolean',
             'permite_marca_nova' => 'boolean',
             'varias_embalagens' => 'boolean',
             'acompanha' => 'boolean',

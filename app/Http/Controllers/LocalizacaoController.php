@@ -104,7 +104,7 @@ class LocalizacaoController extends Controller
             'localizacoes' => $promotores->map(fn (Usuario $u) => [
                 'id' => $u->uuid,
                 'nome' => $u->nome,
-                'foto_url' => $u->foto_path ? url("/api/usuarios/{$u->uuid}/foto") : null,
+                'foto_url' => $u->fotoUrl(),
                 'latitude' => $u->ultima_localizacao_latitude,
                 'longitude' => $u->ultima_localizacao_longitude,
                 'ultima_localizacao_em' => $u->ultima_localizacao_em,
@@ -180,7 +180,7 @@ class LocalizacaoController extends Controller
                     return $motivo === null ? null : [
                         'id' => $u->uuid,
                         'nome' => $u->nome,
-                        'foto_url' => $u->foto_path ? url("/api/usuarios/{$u->uuid}/foto") : null,
+                        'foto_url' => $u->fotoUrl(),
                         'motivo' => $motivo,
                         'detalhe' => $u->rastreamento_situacao_detalhe,
                         'desde' => $desde,

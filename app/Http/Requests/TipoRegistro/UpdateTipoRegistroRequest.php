@@ -126,6 +126,11 @@ class UpdateTipoRegistroRequest extends FormRequest
                 'string', Rule::exists('produtos_auditoria', 'uuid')->where('empresa_id', $this->user()->empresa_id),
             ],
             'campos.*.confirmar_ruptura_ausentes' => ['nullable', 'boolean'],
+            // Pergunta FOTO (docs/98): quantas fotos, se pode reaproveitar e a dica no app.
+            'campos.*.foto_min' => ['nullable', 'integer', 'min:0', 'max:20'],
+            'campos.*.foto_max' => ['nullable', 'integer', 'min:1', 'max:20'],
+            'campos.*.foto_reaproveitar' => ['nullable', Rule::in(['NAO', 'VISITA', 'HISTORICO'])],
+            'campos.*.foto_dica' => ['nullable', 'string', 'max:255'],
             // Mix segue o recorte escolhido pelo promotor no registro (docs/79 §4.2).
             'campos.*.sortimento_segue_escolha' => ['nullable', 'boolean'],
             // Promotor escolhe o recorte no início do formulário — ver docs/79 §4.1.
@@ -135,6 +140,8 @@ class UpdateTipoRegistroRequest extends FormRequest
             // docs/82 §6.1.
             'lista_recorte' => ['sometimes', Rule::in([TipoRegistro::LISTA_PRIMEIRO_DA_LOJA, TipoRegistro::LISTA_SO_DA_LOJA])],
             'filtra_marca' => ['sometimes', 'boolean'],
+            'permite_ruptura' => ['sometimes', 'boolean'],
+            'permite_foto_livre' => ['sometimes', 'boolean'],
             // "Ainda está lá?" (docs/83 §3.1).
             'acompanha' => ['sometimes', 'boolean'],
             'acompanha_gatilho_chave' => ['sometimes', 'nullable', 'string', 'max:100'],

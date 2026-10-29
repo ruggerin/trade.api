@@ -33,6 +33,23 @@ class FotoPerfilTest extends TestCase
         return new UploadedFile($caminho, $nome, 'image/png', null, true);
     }
 
+    public function test_trocar_a_foto_muda_a_url_em_todo_lugar(): void
+    {
+        // A URL leva a versão da foto: sem isso o cache de avatares do admin ficava preso na
+        // primeira foto (Painel de Atividades, Operação do Dia...).
+        Storage::fake('local');
+        $empresa = Empresa::factory()->create();
+        $promotor = Usuario::factory()->promotor()->create(['empresa_id' => $empresa->id]);
+        Sanctum::actingAs($promotor);
+
+        $primeira = $this->postJson('/api/auth/me/foto', ['imagem' => $this->imagemFake()])->json('usuario.foto_url');
+        $segunda = $this->postJson('/api/auth/me/foto', ['imagem' => $this->imagemFake()])->json('usuario.foto_url');
+
+        $this->assertStringContainsString('?v=', $segunda);
+        $this->assertNotSame($primeira, $segunda);
+        $this->assertSame($segunda, $promotor->refresh()->fotoUrl());
+    }
+
     public function test_usuario_envia_a_propria_foto(): void
     {
         Storage::fake('local');

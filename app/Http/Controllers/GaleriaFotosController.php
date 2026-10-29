@@ -130,7 +130,7 @@ class GaleriaFotosController extends Controller
             'usuario' => $registro->visita->usuario ? [
                 'id' => $registro->visita->usuario->uuid,
                 'nome' => $registro->visita->usuario->nome,
-                'foto_url' => $registro->visita->usuario->foto_path ? url("/api/usuarios/{$registro->visita->usuario->uuid}/foto") : null,
+                'foto_url' => $registro->visita->usuario->fotoUrl(),
             ] : null,
             'registro' => new VisitaRegistroResource($registro),
         ]);

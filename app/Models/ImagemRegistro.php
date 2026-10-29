@@ -21,12 +21,19 @@ class ImagemRegistro extends Model
 
     public $timestamps = false;
 
-    protected $fillable = ['visita_id', 'caminho', 'idempotency_key'];
+    protected $fillable = [
+        'visita_id', 'caminho', 'idempotency_key',
+        // Captura no aparelho (docs/98 §9.1).
+        'capturada_em', 'latitude', 'longitude', 'precisao_metros', 'distancia_loja_metros',
+    ];
 
     protected function casts(): array
     {
         return [
             'created_at' => 'datetime',
+            'capturada_em' => 'datetime',
+            'latitude' => 'float',
+            'longitude' => 'float',
         ];
     }
 

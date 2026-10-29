@@ -257,6 +257,9 @@ Route::middleware(['auth:sanctum', 'licenca', 'assinatura'])->group(function ():
     // Serve o arquivo de uma foto de evidência — não depende mais de um registro específico
     // (uma foto pode evidenciar N registros), ver docs/21-EVIDENCIA-EM-FOTOS.md.
     Route::get('/visitas/{visita}/imagens/{imagem}', [ImagemRegistroController::class, 'show']);
+    // Galeria Horus (docs/98): fotos de visitas anteriores nesta loja pra reaproveitar numa pergunta FOTO.
+    Route::get('/visitas/{visita}/fotos-anteriores', [ImagemRegistroController::class, 'anteriores']);
+    Route::get('/visitas/{visita}/fotos-anteriores/{imagem}', [ImagemRegistroController::class, 'arquivoAnterior']);
     // Cancelamento (soft) de um registro já feito — parametrizável por empresa pra PROMOTOR
     // (REGISTRO_CANCELAMENTO_PERMITIDO), ADMIN/GESTOR sempre podem. Ver
     // VisitaRegistroController::cancelar.
@@ -618,6 +621,7 @@ Route::middleware(['auth:sanctum', 'licenca', 'assinatura'])->group(function ():
         Route::get('/usuarios', [UsuarioController::class, 'index']);
         Route::get('/usuarios/{usuario}', [UsuarioController::class, 'show']);
         Route::get('/usuarios/{usuario}/historico', [UsuarioController::class, 'historico']);
+        Route::get('/usuarios/{usuario}/reincidencia-checkout', [UsuarioController::class, 'reincidenciaCheckout']);
         Route::get('/usuarios/{usuario}/aceites', [DocumentoLegalController::class, 'historico']);
         Route::post('/usuarios', [UsuarioController::class, 'store']);
         Route::put('/usuarios/{usuario}', [UsuarioController::class, 'update']);

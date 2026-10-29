@@ -503,7 +503,7 @@ class AtividadeController extends Controller
         return [
             'id' => $usuario->uuid,
             'nome' => $usuario->nome,
-            'foto_url' => $usuario->foto_path ? url("/api/usuarios/{$usuario->uuid}/foto") : null,
+            'foto_url' => $usuario->fotoUrl(),
         ];
     }
 }

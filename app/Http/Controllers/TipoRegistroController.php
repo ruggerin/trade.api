@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Enums\EscopoAcaoTipoRegistro;
+use App\Enums\TipoCampoRegistro;
 use App\Http\Requests\TipoRegistro\MoverTipoRegistroRequest;
 use App\Http\Requests\TipoRegistro\StoreTipoRegistroRequest;
 use App\Http\Requests\TipoRegistro\UpdateTipoRegistroRequest;
@@ -138,6 +139,8 @@ class TipoRegistroController extends Controller
                 'escolhe_secao' => $dados['escolhe_secao'] ?? false,
                 'lista_recorte' => $dados['lista_recorte'] ?? TipoRegistro::LISTA_PRIMEIRO_DA_LOJA,
                 'filtra_marca' => $dados['filtra_marca'] ?? false,
+                'permite_ruptura' => $dados['permite_ruptura'] ?? true,
+                'permite_foto_livre' => $dados['permite_foto_livre'] ?? true,
                 'permite_marca_nova' => $dados['permite_marca_nova'] ?? true,
                 'lista_produtos_origem' => $dados['lista_produtos_origem'] ?? TipoRegistro::LISTA_PRODUTOS_FIXA,
                 'varias_embalagens' => $dados['varias_embalagens'] ?? true,
@@ -583,6 +586,7 @@ class TipoRegistroController extends Controller
                     : null,
                 'sortimento_segue_escolha' => $segueEscolha,
                 'confirmar_ruptura_ausentes' => $campo['confirmar_ruptura_ausentes'] ?? false,
+                ...self::configFoto($campo),
             ]);
 
             // Lista curada (sortimento_origem = FIXO) — mesmo raciocínio de "tipo planograma".
@@ -634,6 +638,8 @@ class TipoRegistroController extends Controller
                 'escolhe_secao' => $tipoRegistro->escolhe_secao,
                 'lista_recorte' => $tipoRegistro->lista_recorte,
                 'filtra_marca' => $tipoRegistro->filtra_marca,
+                'permite_ruptura' => $tipoRegistro->permite_ruptura,
+                'permite_foto_livre' => $tipoRegistro->permite_foto_livre,
                 'permite_marca_nova' => $tipoRegistro->permite_marca_nova,
                 'lista_produtos_origem' => $tipoRegistro->lista_produtos_origem,
                 'varias_embalagens' => $tipoRegistro->varias_embalagens,
@@ -677,6 +683,10 @@ class TipoRegistroController extends Controller
                     'sortimento_marca_id' => $original->sortimento_marca_id,
                     'sortimento_segue_escolha' => $original->sortimento_segue_escolha,
                     'confirmar_ruptura_ausentes' => $original->confirmar_ruptura_ausentes,
+                    'foto_min' => $original->foto_min,
+                    'foto_max' => $original->foto_max,
+                    'foto_reaproveitar' => $original->foto_reaproveitar,
+                    'foto_dica' => $original->foto_dica,
                 ]);
                 $criado->produtosFixos()->sync($original->produtosFixos->pluck('id'));
 
@@ -741,5 +751,30 @@ class TipoRegistroController extends Controller
                 'granularidade' => $excecao['granularidade'],
             ]);
         }
+    }
+
+    /**
+     * Configuração da pergunta FOTO (docs/98). Nos outros tipos fica tudo no padrão, pra uma
+     * pergunta que mudou de tipo não carregar sobra.
+     *
+     * @param  array<string, mixed>  $campo
+     * @return array<string, mixed>
+     */
+    private static function configFoto(array $campo): array
+    {
+        if (($campo['tipo_campo'] ?? null) !== TipoCampoRegistro::FOTO->value) {
+            return ['foto_min' => null, 'foto_max' => null, 'foto_reaproveitar' => 'NAO', 'foto_dica' => null];
+        }
+
+        $min = isset($campo['foto_min']) ? (int) $campo['foto_min'] : null;
+        $max = isset($campo['foto_max']) ? (int) $campo['foto_max'] : null;
+
+        return [
+            'foto_min' => $min ?: null,
+            // Máximo menor que o mínimo vira o mínimo (nunca uma pergunta impossível de responder).
+            'foto_max' => $max !== null && $min !== null && $max < $min ? $min : $max,
+            'foto_reaproveitar' => $campo['foto_reaproveitar'] ?? 'NAO',
+            'foto_dica' => isset($campo['foto_dica']) && trim((string) $campo['foto_dica']) !== '' ? trim((string) $campo['foto_dica']) : null,
+        ];
     }
 }
