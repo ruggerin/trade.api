@@ -293,16 +293,24 @@ class TipoRegistroTest extends TestCase
             ->assertJsonPath('tipo_registro.campos.0.confirmar_ruptura_ausentes', true);
     }
 
-    public function test_sortimento_dinamico_sem_tipo_vinculo_retorna_422(): void
+    public function test_sortimento_dinamico_sem_recorte_e_o_mix_inteiro_mas_recorte_sem_item_retorna_422(): void
     {
         $empresa = Empresa::factory()->create();
         $admin = Usuario::factory()->admin()->create(['empresa_id' => $empresa->id]);
         Sanctum::actingAs($admin);
 
+        // Sem seção/departamento/marca = o Mix inteiro de cada loja (verificação de mix).
+        $this->postJson('/api/tipos-registro', [
+            'descricao' => 'Verificação mix',
+            'campos' => [
+                ['chave' => 'mix', 'rotulo' => 'Mix', 'tipo_campo' => 'SORTIMENTO', 'sortimento_origem' => 'DINAMICO'],
+            ],
+        ])->assertCreated();
+
         $this->postJson('/api/tipos-registro', [
             'descricao' => 'Loja Perfeita',
             'campos' => [
-                ['chave' => 'mix', 'rotulo' => 'Mix', 'tipo_campo' => 'SORTIMENTO', 'sortimento_origem' => 'DINAMICO'],
+                ['chave' => 'mix', 'rotulo' => 'Mix', 'tipo_campo' => 'SORTIMENTO', 'sortimento_origem' => 'DINAMICO', 'sortimento_tipo_vinculo' => 'MARCA'],
             ],
         ])->assertStatus(422)->assertJsonValidationErrors('campos.0.sortimento_tipo_vinculo');
     }

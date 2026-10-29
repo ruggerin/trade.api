@@ -27,7 +27,10 @@ trait ValidaRecorteDoMix
                 continue;
             }
 
-            if ($origem === 'DINAMICO' && empty($campo['sortimento_tipo_vinculo'])) {
+            // Sem recorte = o Mix inteiro de cada loja (verificação de mix). Com recorte, precisa do item.
+            $tipoVinculo = $campo['sortimento_tipo_vinculo'] ?? null;
+            $chaveItem = ['SECAO' => 'sortimento_secao_uuid', 'DEPARTAMENTO' => 'sortimento_departamento_uuid', 'MARCA' => 'sortimento_marca_uuid'][$tipoVinculo] ?? null;
+            if ($origem === 'DINAMICO' && $chaveItem !== null && empty($campo[$chaveItem])) {
                 $validator->errors()->add("campos.{$indice}.sortimento_tipo_vinculo", 'Escolha a seção, o departamento ou a marca do mix.');
             }
         }

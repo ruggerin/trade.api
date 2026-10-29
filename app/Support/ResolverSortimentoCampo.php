@@ -92,8 +92,9 @@ class ResolverSortimentoCampo
                 default => null,
             }];
 
-        // Campo com recorte fixo mal configurado: nada a listar, como antes.
-        if (! $campo->sortimento_segue_escolha && ($tipo === null || $id === null)) {
+        // Recorte escolhido no cadastro mas sem o item: mal configurado, nada a listar. Sem recorte
+        // nenhum = o Mix inteiro da loja (verificação de mix).
+        if (! $campo->sortimento_segue_escolha && $tipo !== null && $id === null) {
             return collect();
         }
 
